@@ -25,6 +25,7 @@ import {
   serializeDocInto, serializeAuto, suggestedFileName, downloadFile, openedFileName, fileBase,
   hasFileHandle, writeUpdatedFile, writeUpdatedFileAs,
 } from './save.ts'
+import { lsDel, lsGet, lsSet } from './storage.ts'
 
 declare const __APP_VERSION__: string
 
@@ -41,23 +42,23 @@ export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __AP
  */
 export const offlineEnabled = (): boolean => {
   try {
-    return localStorage.getItem('bento-offline') === 'on'
+    return lsGet('bento-offline') === 'on'
   } catch {
     return false
   }
 }
 export const setOffline = (on: boolean): void => {
   try {
-    localStorage.setItem('bento-offline', on ? 'on' : 'off')
+    lsSet('bento-offline', on ? 'on' : 'off')
   } catch {
     /* storage unavailable */
   }
 }
 
-export const autoCheckEnabled = (): boolean => localStorage.getItem('bento-auto-check') !== 'off'
+export const autoCheckEnabled = (): boolean => lsGet('bento-auto-check') !== 'off'
 export const setAutoCheck = (on: boolean): void => {
-  if (on) localStorage.removeItem('bento-auto-check')
-  else localStorage.setItem('bento-auto-check', 'off')
+  if (on) lsDel('bento-auto-check')
+  else lsSet('bento-auto-check', 'off')
 }
 
 /** Where shipped files look for releases (per-app, from configureApp).
@@ -83,6 +84,13 @@ export interface ReleaseInfo {
   /** absolute URL of the release shell */
   url: string
   notes?: string
+  /**
+   * Per-version lead-ins, newest first, e.g. { '1.0.13': ['…'], '1.0.12': ['…'] }.
+   * Lets a client show exactly the versions it skipped rather than only the
+   * newest. ADDITIVE — `notes` remains the string every already-shipped file
+   * reads, because their update code is frozen and cannot learn this field.
+   */
+  notesFrom?: Record<string, string[]>
   at?: string
 }
 
@@ -207,7 +215,7 @@ async function verifyManifest(raw: string): Promise<ReleaseInfo> {
 
 /** Ask the release origin for the latest version. */
 export async function checkForUpdates(manifestUrl?: string): Promise<UpdateCheck> {
-  const url = manifestUrl ?? localStorage.getItem('bento-update-url') ?? updateManifestUrl()
+  const url = manifestUrl ?? lsGet('bento-update-url') ?? updateManifestUrl()
   try {
     const res = await fetch(url, { cache: 'no-store' })
     if (!res.ok) throw new Error(`release server answered ${res.status}`)

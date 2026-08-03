@@ -14,6 +14,92 @@ Decision. Why. Pointers.
 
 ---
 
+## 2026-08-02 — dash budgets BYTES with consent, not rows with a refusal
+
+**Supersedes the hard stop proposed in the dash design doc §3.2** (refuse at
+1,000,000 rows or 25 MB, on the importer and every other write path). The two
+guards it sat on top of are unchanged and are not optional.
+
+**What stands, because the failure past the budget is SILENT.** Measured at a
+539 MB file: the `#bento-doc` element still holds exactly one child text node,
+of length **zero**. `textContent` returns `''` — a string, no throw — so the
+workbook opens EMPTY, and self-save then re-splices whatever is in memory over
+the user's file. Unrecoverable loss caused by a successful parse of nothing. So,
+from the first commit that can save:
+
+1. `parseDoc` returns a tagged result, never `null`. Only an **absent or empty**
+   block boots the starter document.
+2. **Refuse to serialize if the boot parse did not succeed** — a hard error
+   surface offering "Save an untouched copy" and "Copy document JSON", with the
+   editor and autosave disabled.
+
+Those two are what prevent the data loss. The row cap was belt-and-braces on
+top of them, and it costs precisely the users who know what they are doing.
+
+**What changes:**
+
+- **Budget in BYTES, not rows.** 1M × 12 is 65 MB; 1M × 2 is ~10 MB and
+  comfortable. A row cap refuses workable files and admits unworkable ones.
+  Excel's 1,048,576 is a *structural* limit users have learned; ours would be a
+  proxy for a quantity we can measure directly.
+- **Warn, then take informed consent — never refuse.** Past the ceiling, say
+  what will actually break, in this browser, with numbers.
+- **The threshold scales with `canWriteInPlace()`** (`kernel/src/save.ts:470`).
+  With the File System Access API a save is an in-place write; without it —
+  Safari, Firefox, every iOS browser — every ⌘S downloads the whole file to
+  `~/Downloads`, so the practical ceiling is far lower. One global constant
+  cannot express that.
+- **Import offers an alternative, not a no**: the first N rows, an aggregate, or
+  the whole thing with the warning accepted.
+
+**The target is unchanged at 100,000 rows × ~12 columns (~6 MB)** — where the
+file emails under attachment limits, downloads in a second, round-trips as JSON
+per PLATFORM §7, and the 2.5 s autosave rewrites it imperceptibly. It is a
+target, not a cap.
+
+Compute is not the constraint and is not close: hand-written columnar JS over
+typed arrays, zero dependencies, single-threaded, measured on **10,000,000
+rows** — scan-sum 5.9 ms, filter+sum 10.6 ms, two-dimension group-by 11.5 ms.
+
+## 2026-08-02 — `bento/dash` is settled, and it stands for DAta SHeets
+
+**Keep `bento/dash`.** The name contracts **DA**ta **SH**eets — the two halves
+of the app, the typed data model and the grid. It is not short for "dashboard";
+a dashboard is something the app can produce, not what it is.
+
+Recorded because the 2026-07-24 naming entry justifies it as "spreadsheet +
+tables + dashboards", which leads with the output surface and reads as
+mis-scoped. That framing is what caused the name to be re-opened and argued at
+length today. Don't re-open it without a new argument.
+
+This blocked the first commit that writes a `FORMAT` constant — PLATFORM §3
+puts the string into every saved file and there is no server to migrate
+anything — and it is now unblocked.
+
+**Weighed and set aside** (collisions verified live, not recalled):
+
+- `cells` — best suite fit, but it sounds like Ex**cel**. A replacement that
+  echoes the incumbent's name reads as derivative of it.
+- `views` — genuinely dual (a SQL view *and* a visual view), but it names
+  *looking* when the app's own boundary rule is *reckoning* ("does it
+  recalculate → dash").
+- `measures` — the BI term of art, and the convergent pick of two independent
+  root analyses, but "bento measures" parses as a verb clause.
+- `base` — its retirement reason above has **inverted**: it was dropped partly
+  for reading as "database, which this platform does not have", and dash now
+  is one. Set aside as flat rather than wrong; reconsider only if `dash` ever
+  proves to mis-signal in the field.
+- `figures` parses as a verb clause; `grid` collides with "bento grid", an
+  established UI design-trend phrase; `rows` is rows.com, a live "AI Data
+  Analyst" product; `calc` is LibreOffice Calc, and is clipped besides.
+
+**Namespace was deliberately down-weighted.** PyPI `dash` is Plotly's dataviz
+framework and npm `dash` is the cryptocurrency, but the app never ships as a
+bare word — it is `bento/dash`, at `bento.page/dash`, in
+`Bento_Dash.bento.html`. That is the mitigation the 2026-07-24 entry already
+prescribes for the crowded Bento namespace: always carry the `bento/<app>`
+form and the descriptor.
+
 ## 2026-07-28 — Vault is a capability broker; identity is multi-user from commit one
 
 **Refines the 2026-07-27 vault entry rather than superseding it.** Three
@@ -708,3 +794,787 @@ Consequence already implemented: each document gets its OWN origin
 (`bento-tray://<sha256 of path>`), because a shared origin would let one
 document read another's localStorage and IndexedDB — tolerable when every file
 is yours, a real leak between unrelated third-party apps.
+
+## 2026-08-02 — Agents get tools to measure and check, not a layout engine
+
+Issue #160 was an agent authoring a deck from `agents.md` alone; #194 split out
+its largest finding — that an agent cannot measure text, so every card, caption
+and two-line heading is a guess, and overflow and collisions all follow from
+that. The proposed remedies were `h: "auto"`, declarative layout containers,
+and a `validate()` call. We shipped the checking tools and deliberately did NOT
+build the layout engine.
+
+**`h: "auto"` is impossible, not merely unwise.** `h` is a required `number`
+that morph does arithmetic on — `a.h + (b.h - a.h) * p`, then `scale(h / b.h)`.
+A string there yields `height: "autopx"` (invalid CSS, silently dropped) and
+`scale(NaN)` in every SHIPPED copy of Bento, which is frozen code we can never
+fix. Any future auto-height must be an ADDITIVE flag (`autoHeight: true`) with
+`h` still holding the last resolved number, so old shells read a valid box.
+
+**Layout containers are declined for now.** A `layout: {type, gap, cols}`
+container resolved to concrete pixels would work — the file would stay
+absolute-pixel, so morph, the drag handles and old shells are untouched. It is
+declined because the hole it was proposed to fill is now filled: with
+`window.bento.measure()` an agent can compute a row or grid directly, and
+`agents.md` carries the column arithmetic pre-computed. Containers would make
+correct layout DECLARATIVE, not POSSIBLE — convenience, not capability.
+
+The cost is not the arithmetic, it is the semantics. Every element is draggable
+today and the model says where it is; inside a container, dragging a child must
+either be disabled (confusing, the handles are right there) or break it out
+(needs UI and a rule for what "out" means). That is more design work than
+`measure()` and `validate()` together were.
+
+If containers are ever built, note the constraint that makes them safe:
+resolution must be PURE GEOMETRY (gaps, weights, counts) so every replica
+derives the same answer, which is what lets `syncLinkedCharts` and
+`syncConnectors` derive-not-commit. The moment resolution measures text it
+becomes environment-dependent — a webfont that has loaded on one replica and
+not another gives different heights — and replicas LWW-fight over the geometry.
+That, not the layout maths, is the reason auto-height children are the hard case.
+
+**What shipped instead** (#193, #195, #197, #198): `measure()` sizes text from
+a spec, before the element exists; `validate()` reports what the runtime
+silently swallows; both go through the real renderer, and through ONE module,
+so they cannot disagree about whether a box fits. The unknown-key tables are
+generated from `model.ts` via the TypeScript AST and pinned in CI, because a
+validator that reports a real property as unknown is worse than none — an agent
+acting on that deletes working configuration.
+
+Also settled while here: on a morph arrival the rule is PER ELEMENT and turns
+on whether the element has a morph partner. With a partner it is already in
+motion, so `fx.enter` and `fx.countUp` are both skipped. With no partner it is
+new to the slide, has no tween to fight, and both run. Do not "simplify" this
+back into a blanket morph-vs-entrance branch; that blanket rule is what made
+count-ups silently dead and `slide-left` silently mean "rise 14px".
+
+## 2026-08-02 — Publishing one app may never delete another's artifacts
+
+`site/` is assembled for ONE app and mirrored into `bento-site` with
+`rsync -a --delete`, so anything that build did not write is removed from
+bento.page. Measured, not theorised: a cloned `release.mjs --app spaces`
+staged a spaces site, and a publish against a copy of the real published tree
+removed **47 live files** — `releases/slides/Bento_Slides.bento.html`,
+`releases/slides/manifest.json`, `packs.json`, all 22 signed language packs,
+`slides/index.html`, all four gallery decks, `guestbook/index.html` — with
+every existing gate reporting green.
+
+Shipped slides files check `releases/slides/manifest.json` at launch
+(`slides/src/main.ts`) and their pack channel at `releases/slides/packs.json`
+(`slides/src/packs.ts`). Both are frozen URLs in files already on disks, so a
+deletion takes those channels offline permanently, for every copy in the
+world, with no client-side repair. It is the one publish mistake with no way
+back.
+
+**Why nothing caught it: the existing gates are fail-OPEN.** The
+shell-consistency gate and the pack-index gate are both
+`if (existsSync(<path in site/>))` — an artifact that is *missing* skips the
+check instead of tripping it, and missing is exactly the dangerous case.
+PR #192's `--exclude guestbook.bento.html` is one hardcoded filename, not a
+mechanism; it must not be read as evidence that protection exists.
+
+**The gate is a deletion inventory of the DESTINATION, and it is fail-closed.**
+Before mirroring, walk the published tree and refuse if any path would
+disappear. If the destination cannot be inventoried at all, refuse — that is
+the case where we know least about what we are about to overwrite.
+Deliberate removal is `--allow-deletions`, which lists what it would drop.
+
+Deletions are singled out from changes on purpose. A changed file is a release
+doing its job; the one byte-change nobody can repair, a manifest going
+backwards, already has its own monotonicity gate.
+
+Gate on the published INVENTORY, not on `releases/*/manifest.json`. The
+deletion set included `slides/index.html`, the gallery, `agents.md`,
+`skills/`, `LICENSE`, `404.html`, `help/`, `q/`, `og.png`, `robots.txt` and
+`sitemap.xml` — none of which a manifest-shaped gate would have seen.
+
+Rig: `scripts/test-publish-gate.mjs`; shared logic `scripts/site-inventory.mjs`.
+This is the first half of the multi-app release work
+(`working/spaces-design.md` §6.1); per-app assembly — build one app, restore
+the others byte-identically from the published tree — is the second, and
+spaces cannot be released until both exist.
+
+## 2026-08-02 — bento/home runs documents in a per-document origin, or not at all
+
+`bento/home` is a launcher (`home/`, `working/home-design.md`): it holds no
+document content, only `FileSystemFileHandle`s in IndexedDB, so a deck you were
+working on reopens with write access after one permission click. That part is
+measured and built. **How a document is actually OPENED is the hard part, and
+this entry records why the obvious answers are wrong.**
+
+**The constraint.** Opening a deck with silent save means running that file's
+own code somewhere AND getting the handle to it. A blob URL inherits the
+creating page's origin, so `window.open(URL.createObjectURL(file))` runs the
+document on *home's* origin — with full access to home's store of writable
+handles to every other deck. A file someone emailed you could rewrite all of
+them. That is a real escalation over double-clicking it, where the file gets an
+opaque origin and reaches nothing.
+
+**A shared runner origin (`run.bento.page`) was considered and REJECTED.** It
+fixes the wrong half. Documents could no longer read home's handles, but they
+would all share one origin with each other, and a Bento document persists:
+
+- `bento-autosave` IndexedDB — `recovery` (PLAINTEXT doc JSON, keyed by docId)
+  and `versions` (a timeline of the same)
+- `localStorage` `bento-member-<docId>` — the device's collab member PRIVATE KEY
+
+So one runner origin creates a pooled store, which does not exist today, holding
+the full plaintext content and version history of every document opened through
+it plus the keys that authorise writing to their collab rooms. Any document on
+that origin can read all of it. This is the same conclusion the 2026-07-24 tray
+entry reached from the other direction ("a shared origin would let one document
+read another's localStorage and IndexedDB"), and it is not a coincidence: it is
+the same threat with a different host.
+
+**`file_handlers` + `launchQueue` is NOT an isolation approach.** It delivers a
+double-clicked file to the *installed PWA* — home's own origin. It answers "how
+does the OS reach us", not "where does the document execute". It composes with
+per-document isolation; it does not substitute for it.
+
+**Ruled: per-document origin, or home does not open documents.** Home may
+acquire a handle any way it can (picker, drop, `launchQueue` when installed) and
+must hand off to an origin derived from the document's identity. Until that
+exists, `home/src/launch.ts` REFUSES and says so in the UI, rather than quietly
+taking the blob route. A launcher that silently widened the blast radius of
+every deck you open would be worse than one that does not open them yet.
+
+Also considered: a shared runner with storage deliberately neutered (no
+autosave, no member keys, `Clear-Site-Data` per load). It removes the pool by
+breaking recovery, version history and collab identity, and stays safe only for
+as long as every future feature remembers not to persist anything. Per-document
+origins get the same property structurally. Not adopted.
+
+**Hosting consequence, measured 2026-08-02.** `bento.page` is GitHub Pages
+behind Cloudflare (`x-github-request-id` on the apex); `sync.bento.page` is
+Cloudflare-only. GitHub Pages serves one custom domain per repo and no
+wildcards, so per-document origins cannot be hosted the way the rest of the site
+is — the runner belongs on Cloudflare beside the relay, with its own deploy
+cadence and the deploy-order care that implies (`docs/PLATFORM.md` §5).
+
+**To confirm before building** (none of it testable in an automated browser —
+permission-gated APIs report `denied` there without prompting,
+`working/home-design.md` §3.2, a trap that already produced two wrong
+conclusions):
+
+1. Does a `FileSystemFileHandle` survive a cross-origin `postMessage` and stay
+   usable? Permissions are per-origin, so the receiving origin re-prompting once
+   is expected and acceptable; being unusable is not, and would sink this shape.
+2. Cloudflare Universal SSL covers one label (`x.bento.page`), not two
+   (`x.run.bento.page`). If so, a single hyphenated label — `<hash>-run.bento.page`
+   — avoids paying for Advanced Certificate Manager. Worth checking before
+   committing to a naming scheme, because it is baked into every stored origin.
+
+**Naming.** `run`, not `slides` or `deck`. The runner never parses the format —
+it executes a self-contained file that may be slides, spaces or sheets. An
+app-named origin would isolate nothing extra (every deck would still share an
+origin with every other deck) and app names should stay free for the apps' own
+pages. The precedent is `sync.bento.page`: a subdomain marks a TRUST BOUNDARY,
+not a product. An origin that executes files strangers sent your users is the
+last one that should share a name with anything you want trusted.
+
+## 2026-08-02 — MEASURED: a file handle cannot be delegated across origins
+
+Follow-up to the entry above, which ruled that bento/home must run documents in
+a per-document origin. **That is not reachable, and the measurement says so
+unambiguously.**
+
+`tray/webext/probe/` (run it with `node scripts/probe-origins.mjs`) picks a file on one
+origin, grants write access there, and `postMessage`s the handle to another
+origin. Chrome 150, macOS, 2026-08-02:
+
+```
+SENT     control ping → http://localhost:5302
+SENT     handle       → http://localhost:5302
+  [runner] CONTROL  plain object arrived — the channel works.
+  [runner] MESSAGEERROR — a message arrived but could not be deserialised
+```
+
+The control object lands; the handle does not. `postMessage` **succeeds on the
+sending side** — the handle serialises fine — and the receiving origin fires
+`messageerror` instead of `message`, meaning deserialisation was refused. This
+is why the first run of the probe looked like silence: nothing was listening for
+`messageerror`, and a refusal is indistinguishable from a lost message without
+it.
+
+**The consequence is larger than "option B needs a different transport".** The
+origin that acquires a handle is the only origin that can ever use it. So:
+
+- Home cannot be a broker. It cannot hold handles for an isolated runner.
+- Per-document origins cannot be reached the other way either, by having the
+  document's own origin do the picking: the origin name depends on which
+  document it is, and you cannot know that before reading the file, and you
+  cannot move the handle after. The circularity is not incidental.
+
+**What that leaves**, none free:
+
+1. **Home and documents share one origin.** Rejected in the entry above and the
+   reasons are unchanged: `bento-autosave` (plaintext doc JSON, version
+   history) and `bento-member-<docId>` (collab private keys) pool into one
+   store any document can read.
+2. **Home never opens documents** — a drop target and a list, with opening left
+   to the OS. Safe, and much less useful.
+3. **Sandboxed iframe + save proxy.** Run the document in
+   `<iframe sandbox="allow-scripts">` WITHOUT `allow-same-origin`, so it gets an
+   opaque origin and can reach no storage at all — not home's, not another
+   document's. Home keeps the handle and performs the write itself, with the
+   document asking through a postMessage protocol.
+
+Option 3 is the tray shape, and tray already proves the protocol half:
+`tray/bridge.js` polyfills `showSaveFilePicker`, so `save.ts` needs no
+host-specific code and the app does not know it is hosted. Reusing that contract
+rather than inventing a second one is the point of the 2026-08-01 entry on
+`tray/android/`.
+
+**To measure before committing to option 3** (again: not testable in an
+automated browser): an opaque-origin document has NO localStorage and NO
+IndexedDB, so `bento-autosave`, version history, `bento-member-<docId>`,
+language choice and reduce-motion all fail or degrade. Whether the runtime
+survives that gracefully, and whether the degradation is acceptable, decides
+whether home can open documents at all.
+
+## 2026-08-02 — MEASURED: an opaque origin is blocked by unguarded storage, not by incapability
+
+Third measurement in the bento/home sequence (`tray/webext/probe/sandbox.html`, Chrome
+150, macOS). Same deck loaded twice from a blob: once in a plain iframe, once in
+`<iframe sandbox="allow-scripts">` with no `allow-same-origin`, so the second
+gets an opaque origin. The control is what makes the result readable — it
+separates what the sandbox breaks from what breaks anyway.
+
+| capability | control | sandboxed (opaque) |
+|---|---|---|
+| `localStorage` read/write | ok | **SecurityError** — sandboxed, lacks `allow-same-origin` |
+| `indexedDB` present | object | object |
+| `indexedDB.open` | ok | **SecurityError** — access denied in this context |
+| `caches` | object | **SecurityError** |
+| `crypto.randomUUID` / `subtle` | ok | **ok** — secure context survives |
+| app boot | ✓ 17 slides | ✗ nothing |
+
+**The interesting part is the failure mode.** Nothing reached `window.onerror`
+and no promise rejected, so from outside it looked like a silent death. The
+shell's own loader had caught it and printed to the page:
+
+> This file could not start: Failed to read the 'localStorage' property from
+> 'Window': The document is sandboxed and lacks the 'allow-same-origin' flag.
+
+So the runtime does not fail because it NEEDS storage. It fails on the first
+unguarded `localStorage` touch during boot — `kernel/src/i18n.ts` `resolve()`
+reading `bento-lang`, which runs at module scope and therefore before anything
+else. There are 39 `localStorage` call sites across `kernel/src` and
+`slides/src` and no safe accessor.
+
+**That is bounded and mechanical, not architectural.** A guarded accessor
+(returns null / no-ops when storage throws) would let a document boot in an
+opaque origin.
+
+> **RESOLVED, same day (#205, `c1e8902`).** `kernel/src/storage.ts` now guards
+> every one of those call sites, and the table above is out of date in its last
+> row: the built shell boots in an opaque origin with **17 slides and 19
+> surfaces, identical to the unsandboxed control, zero errors**. Do not re-run
+> the sandbox probe expecting a failure — it passes now. What the table still
+> reports correctly is the *storage* rows: `localStorage`, `indexedDB.open` and
+> `caches` all throw there, and always will. Worth doing on its own merits regardless of home: the same
+unguarded reads mean a deck opened with cookies-and-site-data blocked, or in
+some embedded webviews, shows "this file could not start" rather than working
+with default preferences.
+
+**What it does NOT fix**, and this is the actual product decision: an opaque
+origin has no persistent storage at all, so a document hosted this way loses
+auto-save and crash recovery, local version history, and its collab member
+identity (`bento-member-<docId>` is re-minted per session). Whether a launcher
+may open documents that quietly cannot autosave is a question about what Bento
+promises, not about what the browser permits.
+
+Sequence so far: handles cannot be delegated across origins (entry above), so
+the only isolation left is an opaque-origin frame with home proxying saves; an
+opaque-origin frame is reachable once storage access is guarded; and what
+remains is deciding whether a document with no persistence is one we are willing
+to serve. Not settled here.
+
+## 2026-08-02 — bento/home is closed; the host is a WebExtension (`tray/webext/`)
+
+Home was a web page that would remember your decks and reopen them with write
+access. Three measurements in one session closed it, and the same three point at
+the successor.
+
+**What killed it.** A `FileSystemFileHandle` cannot be delegated across origins
+(entry above): `postMessage` serialises it and the receiving origin fires
+`messageerror`. So the origin that ACQUIRES a handle is the only origin that can
+use it — home cannot be a broker. Per-document origins are unreachable from the
+other side too, because the origin name depends on which document it is, which
+is unknowable before reading the file, and the handle cannot move after. What
+remained was: run every document on one shared origin, where `bento-autosave`
+(plaintext doc JSON, version history) and `bento-member-<docId>` (collab private
+keys) pool into a store any document can read. Rejected.
+
+A launcher that can list decks but not open them is not worth building.
+
+**MEASURED, and it is the unlock** (Chrome 150, macOS,
+`tray/webext/probe/directory.html`): a DIRECTORY grant is not per-file.
+
+```
+GRANTED  <folder>                       queryPermission: granted
+  ── reload ──
+RESTORED <folder>  kind=directory       queryPermission, no gesture: granted
+[file 1] getFileHandle('bento-probe.txt', {create:true})
+[file 1] the FILE's permission, unprompted: granted   ← never picked
+[file 2] the FILE's permission, unprompted: granted
+```
+
+One folder grant survived a reload — still `granted` with no gesture, and
+re-grantable with one click when it does lapse — and covered files inside it
+that were never picked. So a host holding a directory handle can write ANY deck
+in that folder, including one the user opened by double-clicking, which no web
+page can do for itself.
+
+**The shape.** The document stays on `file://`, which the browser treats as a
+unique origin per file — per-document isolation for free, the thing three probes
+failed to construct. A content script is the bridge transport; the extension
+holds the directory handle and performs the write.
+
+That is `tray`, in a browser. `tray/README.md`'s contract —
+`showSaveFilePicker({suggestedName}) → { name, createWritable() }` — is
+explicitly "platform-neutral; only the transport lookup and the native file
+layer are not". `save.ts` needs no host-specific code and the app never learns
+it is hosted.
+
+**`tray/webext/`, not `tray/chrome/`.** Chrome, Edge, Firefox and Safari
+extensions are one format with different manifests, so a browser name would be
+wrong at the second target. Same reasoning as the `tray/android` entry: sharing
+the name makes sharing the bridge contract the default rather than a convention
+someone must remember. Note it is a PARTIAL tray — it supplies the file layer
+and the transport, not the document browser or thumbnails `tray/ios` provides.
+
+**Firefox gets nothing from this.** It implements no File System Access API at
+all, and its extensions cannot write arbitrary files either; that needs native
+messaging with a native helper. Firefox stays download-a-copy. Safari likewise
+has no FSA, and a Safari Web Extension ships inside a native macOS app anyway —
+so Safari's answer is `tray/macos`, not an extension.
+
+**Still unverified, and the next thing to measure:** whether an MV3 service
+worker can use a stored directory handle to `createWritable()` at all, or
+whether the write must happen in an offscreen document or extension page. Keep
+the write behind one function so the answer can move without touching the
+contract.
+
+**Kept from home:** `tray/webext/probe/` (four probes, all reusable) and
+`home/src/deckmeta.ts`, which reads a deck's title without executing it — the
+extension needs exactly that to label what it is about to save. The launcher UI
+and the recents store are superseded by the directory grant.
+## 2026-08-02 — One autosave database per app, migrated once
+
+`kernel/src/autosave.ts` used a single `DB_NAME = 'bento-autosave'` and a single
+`DB_VERSION` for every app. Two problems, and the second is the dangerous one.
+
+Snapshots from different apps piled into one store wherever they share an
+origin — `bento.page`, or any local server. bento/spaces has been writing into
+bento/slides' database since its scaffold landed (`spaces/src/main.ts` calls
+`putRecovery` on a 2.5s debounce).
+
+`DB_VERSION` was shared too, and that breaks in one direction only: a new app
+bumping it to 2 makes every ALREADY-SHIPPED shell of every other app throw
+`VersionError` on open and lose autosave entirely. Shipped shells are frozen
+code — 1.0.11 files are in the world and will go on opening version 1 forever.
+There is no way to reach them.
+
+**The name is `${appId}-autosave`.** `appId` is already `bento-slides` /
+`bento-spaces`, so this reads `bento-slides-autosave` with no doubled prefix
+and — deliberately — **no special case for the app that happened to be
+first**. An earlier draft grandfathered `bento-autosave` for slides to avoid
+orphaning data; carrying the data over is a better answer than a permanent
+exception, and each app now owns its own version line.
+
+**Migration copies, once, and never moves.** Renaming alone would silently drop
+every user's recovery snapshot and their whole version timeline — a visible
+feature emptying itself, which is a bug report, not a migration. It runs only
+into an empty target, so a second pass cannot duplicate the timeline or
+resurrect a snapshot the user deleted. The legacy database is left intact
+because shells already shipped keep writing to it, and the copy of the app the
+user opens next must still work; `pruneOld` ages its contents out on its own.
+
+Everything is copied, not just the running app's rows. Nothing in a snapshot
+records which app wrote it, and it does not need to: `docId` is a uuid, so
+another app's rows can never match a lookup. Filtering would mean guessing.
+
+`appConfig()` is read LAZILY inside `openDb()`. It throws before
+`configureApp()` runs, and a kernel module that explodes at import time
+depending on evaluation order is the trap `app.ts` exists to avoid — its header
+comment named autosave as config-free and is corrected in the same change.
+
+Rig: `scripts/test-autosave.ts`, run for both apps in CI. It fails against the
+old shared-name code (7/8), which is the property that makes it a gate.
+
+## 2026-08-02 — A release seeds from what is published, and builds one app
+
+Second half of the multi-app release work (`working/spaces-design.md` §6.1).
+The first half made a destructive publish impossible; this one makes a
+non-destructive one possible.
+
+`release.mjs` was slides-shaped end to end: `rmSync(site)` then stage slides.
+One release builds ONE app, and `site/` is mirrored with `rsync --delete`, so
+every other app's signed shell, manifest and packs — fetched by shipped files
+at frozen URLs — were simply absent and would be deleted.
+
+**A release now SEEDS `site/` from the published tree and overwrites only what
+it built.** "Restore every untouched app byte-identically" becomes the default
+rather than a step someone remembers. It composes with the publish-time
+deletion gate: this fills the gap, that one refuses if a gap remains.
+
+Verified in both directions against a copy of the live tree: a spaces release
+leaves all 47 published files byte-identical and adds only `releases/spaces/`
+and `spaces/` (`diff -r` reports nothing but "Only in"); a slides release with
+spaces already published rebuilds slides and leaves spaces intact. Both report
+`deletion gate: none would be removed`.
+
+**Without a published tree, a release REFUSES** (`--allow-missing-published`
+for a genuinely first release). Continuing would stage a partial site whose
+publish deletes every other app; the gate would catch it, but failing here says
+what to do about it.
+
+**Site content has exactly one owner.** Landing, gallery, agent guide, skills,
+`/help`, `/q`, 404 and the guestbook are slides-derived — the gallery and 404
+decks literally embed the slides shell — so only a slides release rebuilds
+them. A spaces release must not regenerate them from a shell it did not build.
+`ownsSiteContent` says so, and the rig asserts exactly one app claims it.
+
+**Packs stay slides-only.** `build-i18n.mjs` and `sign-packs.mjs` are
+slides-hardcoded (§6.5) and spaces has no catalog, so a spaces release stages
+NO packs rather than unsigned ones — `publish-site.mjs` refuses unsigned packs,
+correctly.
+
+`sign-release.mjs` gains `--app`; it hardcoded `bento-slides`. This is the
+silent failure of the set: a shipped shell verifies the manifest's `app`
+against its own `configureApp()` id (`kernel/src/update.ts`), so a wrong value
+signs and publishes a channel every file quietly declines — nothing errors,
+updates just stop.
+
+The registry lives in `scripts/apps.mjs` with a rig, `test-release-apps.mjs`,
+because a release signs and the key never reaches CI: the pipeline is not
+CI-testable, but the registry drifting from the tree is. It pins `appId`
+against each app's own `configureApp()` call and the manifest URL against the
+path the release publishes to.
+
+## 2026-08-03 — An encrypted space is never written to disk in the clear
+
+**Decision.** bento/spaces skips the autosave recovery snapshot while a space
+is encrypted, and setting a password clears both the version timeline and the
+recovery snapshot already written.
+
+**The bug.** `main.ts` called `putRecovery(store.doc)` on a 2.5s debounce,
+unconditionally. The snapshot is the document as plain JSON, so an encrypted
+space wrote its full plaintext into IndexedDB every few seconds — defeating the
+password completely, for the one author who has demonstrably asked for secrecy.
+`about.ts` already cleared the version timeline when a password was set, which
+made the gap easy to miss: half of it was handled, and the half that ran
+continuously was not.
+
+**`putRecovery` does not guard this, by design** — it is a kernel primitive and
+the encryption state is app-side. That makes it a CALLER contract, and a caller
+contract with no gate is a bug waiting for the next app. Slides holds the same
+contract in its own autosave layer.
+
+**Measured, on the built shell:** typing into a plaintext space put the marker
+text in the `recovery` store within three seconds (correct — it is the only
+backstop on iOS, where no browser can write back to a file). Setting a password
+removed that row; every later edit wrote nothing; and the saved file was still
+a `bento/enc` envelope with no plaintext anywhere in it.
+
+**Guarded** by two source assertions in `scripts/test-spaces-model.ts`, both
+negative-controlled. Same reasoning as the inert-parse guard above: the
+behaviour needs IndexedDB and a real clock, the mistake is made at the call
+site.
+
+## 2026-08-03 — A space does not phone home when it is opened
+
+**Decision.** bento/spaces renders a remote image `src` as a placeholder naming
+the host, with a "Load this image" button. Only `asset:` and `data:` load
+without asking. Consent is per-url, per-session, in memory, and never enters
+the document.
+
+**Measured.** A space carrying `<img src="https://…/pixel.png">`, opened from
+`file://`, issued the request — observed via `PerformanceObserver`, one
+`resource` entry, before any interaction. That is a tracking pixel: the
+recipient's IP address and the moment they opened your document, delivered to
+whoever authored the file. In a format whose entire premise is that you can
+mail it to someone, it is the wrong default by a wide margin. It also breaks
+PLATFORM §1 — no network required to open.
+
+**Why it costs authors nothing.** The editor never writes a remote src. A
+picked image is downscaled, interned by content hash, and stored as `asset:`.
+Only hand- or agent-authored documents can carry a url, so the only documents
+affected are exactly the ones where a reader should be asked.
+
+**The predicate is an allowlist,** not a blocklist of `http:`. A relative path
+is a real request on a static host; so are `//host/x`, `blob:`, `filesystem:`
+and any scheme this build has not heard of. `isRemote()` lives in `model.ts`
+(pure, testable in node) and returns false only for `asset:` and `data:`.
+
+**Consent is VIEWER state, like locale and reduced motion.** Putting it in the
+file would let the author decide whether the reader phones home, and would
+carry one reader's decision to everyone the file is forwarded to. It is a plain
+`Set` on the editor, it dies with the session, and the click does not commit —
+so undo, the dirty flag and autosave never see it. All four verified.
+
+**The placeholder names the host.** "Load images" with no indication of who is
+being contacted is not consent. It also shows the `alt` text, which is now the
+thing a reader actually reads when an image does not load — so the agent guide
+tells agents to always write one, and to embed bytes rather than link them.
+
+## 2026-08-03 — Untrusted html is parsed INERT; a detached div is not safe
+
+**Decision.** All untrusted html in bento/spaces goes through
+`sanitize.ts inertBody()`, which parses with `DOMParser` into an inert
+document. `document.createElement('div').innerHTML = untrusted` is banned, and
+`scripts/test-spaces-model.ts` refuses it in the source.
+
+**Measured, in a browser, on the real shell over `file://`:**
+
+| construction | `<img src="404" onerror="…">` |
+|---|---|
+| `document.createElement('div').innerHTML = …` | **FIRES** |
+| `new DOMParser().parseFromString(…, 'text/html')` | inert |
+| `<template>.innerHTML = …` | inert |
+| `document.implementation.createHTMLDocument()` | inert |
+
+A detached div reads as safe — nothing was inserted into the page — but the
+elements it creates belong to the LIVE document, so their resources load. The
+handler runs from a node that was never attached to anything.
+
+**Why this was the worst possible instance of it.** The sanitizer has to parse
+hostile markup before it can strip it, so the sanitizer was itself the vector,
+and the payload ran BEFORE the strip. `sanitizeInline` is called at render time
+(`render.ts`), so the trigger was *opening a space someone sent you* — no
+click, no edit. Sanitizing at render rather than at load is otherwise the right
+call (every path into the DOM is covered by one line); it just meant this bug
+sat on the open path.
+
+Four call sites had the shape: `sanitizeInline`, `textOf`, `render.ts`'s
+code-block text extraction, and — found by the guard, not by reading —
+`about.ts`'s markdown export, so "Export as Markdown" ran what it was
+exporting.
+
+**The guard is a source assertion,** like the `.href`-IDL one above it: the
+behaviour needs a DOM and a failing network request, and the mistake is made in
+the source. It caught the fourth site the moment it was written, which is the
+argument for writing it that way.
+
+**Verified after the fix,** on the built shell from `file://`, with the removed
+construction kept in the same page as a control: only the control fired. No
+`[onerror]`, no smuggled `<img>`, no `svg[onload]`, no `javascript:` href
+reached the DOM; the `#p/` link survived, external links kept
+`rel="noopener noreferrer"`, `<p>a</p><p>b</p>` still unwrapped to "a b", and
+markdown export produced `alpha **bold** *it* \`c\` [link](#p/sd-home)`.
+
+**One consequence to remember.** The sanitizer's host now lives in a different
+document, so nodes it inserts must come from `el.ownerDocument`, not the global
+`document`. DOM4 adopts implicitly, so the wrong one would work — which is
+exactly why it is written explicitly and pinned by the rig.
+
+## 2026-08-03 — Release notes, agent guides and tags are PER APP
+
+**Decision.** `scripts/apps.mjs` gained `changelog` and `agents` per app. A
+release reads its own app's changelog (`CHANGELOG.md` for slides,
+`spaces/CHANGELOG.md` for spaces) and publishes its own agent guide at
+`bento.page/<app>/agents.md`. Tags are prefixed for every app but slides.
+
+**The bug this fixes.** `release.mjs` read `join(root, 'CHANGELOG.md')`
+unconditionally, and that file's first line is "All notable changes to
+**bento/slides**". The first spaces release would therefore have SIGNED slides'
+release notes into the spaces manifest — and every shipped spaces file fetches
+that manifest at launch and renders `notes` inline in the About dialog. So the
+failure is not a build error; it is a correct-looking release that tells all of
+one product's users about a different product's changes.
+
+It is unrecoverable in the ordinary way. The notes are inside the signed
+envelope, so fixing them means re-signing — and the updater enforces version
+monotonicity, so the same version cannot be re-signed. The fix would be
+burning a version number.
+
+**Why it was invisible.** Every gate was app-scoped. The registry rig checked
+`dir`, `shell` and `appId` against each app's own source of truth, and each
+check passed for each app in isolation. The wrongness only exists in the PAIR:
+two apps naming one file. That is now a single assertion — the set of
+changelogs has the same size as the set of apps — plus, per app, "your
+changelog has a section for the version being released, and that section has
+bold lead-ins" (a section of pure prose signs EMPTY notes, which is the same
+class of silent failure).
+
+**`--print-notes`.** `node scripts/release.mjs --app <app> --print-notes`
+prints exactly what would be signed and exits before anything is built, wiped
+or signed. A one-way artifact should be readable before it is committed to;
+this makes reading it a one-second step rather than an act of faith. It runs
+ahead of the `site/` wipe, which is why `cmpVer` is a function declaration and
+not a const arrow — the const is in the TDZ at that point in the file.
+
+**Agent guides.** `docs/agents.md` already advertised
+`bento.page/<app>/agents.md` as the convention, but only the site-root
+`/agents.md` was ever written. Each app now publishes its own guide at the
+advertised URL, and slides copies its own to `/agents.md` for compatibility —
+the README and the harness `SKILL.md` point there, and that SKILL.md ships
+inside a zip people upload to claude.ai, so the root URL is effectively frozen.
+One source, two paths.
+
+**Tags.** Slides has 23 tags in the bare `vX.Y.Z` form and is at 1.0.15;
+spaces starts at 0.1.0. An unprefixed spaces tag would sort into the middle of
+slides' history and permanently claim a version slides cannot reuse. Slides
+keeps bare; everything else is `<app>-vX.Y.Z`.
+
+**Reconciled with #234.** bento/dash hit the same bug independently and landed
+a convention-based resolver (`<dir>/CHANGELOG.md`, else the root) while this was
+in flight. Both now go through ONE `changelogPath()` in release.mjs — registry
+field first, convention second, root last — used by the signing path and by
+`--print-notes` alike, so what a release reports and what it reads cannot
+drift. The registry states it explicitly for all three apps, and the rig
+asserts each app RESOLVES to its own file, which is what keeps the root
+fallback unreachable. That matters because the fallback is only harmless while
+version numbers do not overlap: the day a second app reaches 1.0.x, an empty
+manifest would quietly become a wrong one.
+
+## 2026-08-03 — One bento/spaces file is one SPACE, and the reason is a save primitive
+
+Spaces is a tree of pages in ONE `.bento.html`, with links as same-document
+fragments (`#p/<pageId>`) resolved against a map built from the file's own
+`#bento-doc` block. Not one file per page with a folder as the workspace —
+the Obsidian shape — and not cross-file links.
+
+Five shapes were developed and each adversarially attacked. This records why
+the folder shape is **unbuildable on this platform**, rather than merely more
+expensive, because that is the part nobody should have to rediscover.
+
+**The write primitive does not exist.** Without the File System Access API —
+Chrome and Edge only — a save is a *download*. The page lands in the browser's
+download directory, outside the folder its relative links resolve against. So
+on Safari, Firefox and every iOS browser, the FIRST save of any page ejects it
+from its own workspace. No design gets around this; it is not a link problem.
+
+**On iOS a relative link returns the wrong answer, not an error.**
+`tray/ios/EditorViewController.swift` answers every request on a document's
+origin with that document's own bytes, so `href="./other.bento.html"` does not
+404 — it re-serves the space you are already in at a different URL. Silently
+wrong is worse than broken. Filed as a tray-zone request: 404 anything but
+`/index.html`.
+
+**Fragment routing is legal exactly where path routing is illegal.** Measured
+from an origin-null document: `history.pushState(s,'','#p/<id>')` succeeds,
+while `history.pushState(s,'','other.bento.html')` throws `SecurityError`. The
+grammar the one-file shape needs is the one the platform permits.
+
+**The folder shape buys no free OS search here.** `mdimport` on a shipped shell
+returns `kMDItemTextContent = "<<< Text content of 75 characters >>>"` —
+document text lives inside a `<script>` block and Spotlight cannot see it. True
+of slides today too. Cross-file discovery needs an index either way.
+
+**Prose is not the scale ceiling.** 2,000 pages / 26,000 blocks is a 5.2 MB
+file that parses in 3.4 ms. Images are the ceiling, which is a product-shaped
+limit, not a format one.
+
+What the file boundary also becomes, and this is the design rather than a side
+effect: the id scope, the link scope, the sharing boundary, the `docId` scope
+(hence autosave and version history), the undo scope, the encryption scope, and
+the save scope — every save rewrites the whole file.
+
+Accepted costs, unchanged: sharing is per-file so there is no per-page
+permission, and two people editing offline get two files and no merge until the
+CRDT is generic. The pressure valves are first-class — export a page as its own
+space, export a space as a markdown folder, import either.
+
+The library tier — many spaces, searched together — attaches at a named seam
+and is `bento/vault`'s job, which is optional by its own invariants 2 and 3.
+One space needs nothing installed, ever; a library is software you run, on a
+laptop or a 24/7 box or a cluster, the same artifact either way.
+
+## 2026-08-03 — tray/webext ships through the stores; unpacked stays available
+
+Settled with the maintainer. The **app stores are the main distribution
+channel** for `tray/webext` — Chrome Web Store, Edge Add-ons, and the others as
+they come — with the unpacked folder in this repo remaining a supported option
+for people who want it.
+
+Two corrections to earlier reasoning in this thread, both of which had made the
+extension look less viable than it is:
+
+**Developer mode is not required.** It is needed only for "Load unpacked". A
+store-installed extension needs no Developer mode, no unpacked folder and no
+warning banner. An earlier note in this session treated that as an inherent
+cost of the whole approach; it is a cost of one distribution method.
+
+**Store distribution does not conflict with the signed-release model.**
+`docs/RELEASING.md`'s "signed locally, the signed bytes are the served bytes"
+governs the DOCUMENT SHELL and its self-update channel. The extension is not a
+document, carries none, and never touches that path, so a store-distributed
+extension and a locally-signed shell coexist. What a store actually costs is
+review latency and a second release cadence — ordinary, not philosophical.
+
+**What does survive a store listing** is `Allow access to file URLs`: a
+per-extension user toggle, off by default, required for content scripts on
+`file://`. No manifest permission grants it. It is, however, DETECTABLE via
+`chrome.extension.isAllowedFileSchemeAccess()`, so the extension can turn silent
+failure into a guided one-time setup step rather than a mystery. That API's MV3
+behaviour is unverified — measure before building on it.
+
+Consequences already implemented: `permissions` trimmed to `storage` (an unused
+`offscreen` would draw review questions it cannot answer), and content scripts
+narrowed from every `file:///*.html` to `file:///*.bento.html`, which is both
+correct and far easier to justify to a reviewer.
+## 2026-08-02 — No extension system: compact per-app runtimes instead
+
+The recurring proposal is an extension mechanism — sealed, separately signed
+units that bake into a file like language packs do, so a heavy optional feature
+ships on its own clock instead of riding the shell release. The immediate case
+was a PowerPoint exporter carrying a large vendored dependency. The wider case
+was that a mechanism built once would serve `bento/spaces` and `bento/dash` too.
+
+**Declined, for every app.** Bento ships small, self-contained runtimes per app.
+A feature is either core or it is a separate artifact — not a plug-in tier in
+between.
+
+This CONFIRMS rather than supersedes *"The pack carrier is generic; pack POLICY
+is not. This is not a plugin system."* (2026-07-26). That entry stands exactly
+as written: the carrier stays generic and reusable, and the reason to keep it
+that way is engineering hygiene, not a plugin system waiting to be finished.
+
+**The multi-app argument is the strongest evidence against, not for.** Bytes do
+not amortize across apps, they multiply: every app pays the host, the container
+and the per-app i18n for the machinery. Measured against real builds, the
+cheapest extension host costs more than the entire `bento/spaces` shell as it
+stands (10,052 B). Only review effort and one browser matrix amortize, and that
+was never the expensive half. Worse, neither unbuilt app wants it: their designs
+contain no extension-shaped feature, one of them independently ruled out
+shell-block work and forbids carried user code outright, and both solved their
+heaviest import/export payloads with browser primitives (`CompressionStream`,
+`DOMParser`) and no dependency at all. An abstraction with zero confirmed
+consumers, designed against two apps that do not exist yet, is the textbook case
+for not building it.
+
+**The economics invert once you follow the bytes.** An extension bakes into the
+FILE, so the user who exports pays the dependency *and* the machinery, while the
+user who never exports still pays the host. For the exporter that is worse than
+merging the dependency into core unchanged. The break-even against a first-party
+in-shell writer needs fewer than ~13% of users to ever use the feature — and for
+a PowerPoint replacement, PowerPoint interop is the adoption path, not a fringe.
+The same money buys far more as core: a first-party writer prototype targeting
+the same format came in roughly 35x smaller than the vendored library it would
+replace, using the same `CompressionStream` technique.
+
+**Three extension mechanisms already exist, and they are better.** The Claude
+Code plugin/skill channel extends Bento by RECIPE (`plugins/bento-slides/`) at
+zero shell bytes and on its own clock. The native host bridge
+(`tray/ios/Resources/bridge.js`) extends capability at the host, and reaches
+every file ever saved — including ones that predate it. The kernel facade
+pattern (`slides/src/charts.ts`, six lines over `kernel/src/charts.ts`) shares
+implementation by structural typing with no frozen surface at all. Each costs
+zero platform invariants. Reach for these before inventing a fourth.
+
+**What this does NOT decide.** Kernelizing the language-pack channel
+(`packs.ts` parameterised per app) is still wanted — both future apps list it as
+blocking, and it is unrelated to extensions. So are the defects found while
+looking: the offline switch does not gate pack fetches although `docs/security.md`
+says it does; the shell-block registry is single-slot, so a second registrant
+clobbers the first; and a block that fails to parse is skipped on read and then
+removed by the clear pass, which deletes it permanently on the next save. Fix
+those on their own merits.
+
+**What would reopen this.** A confirmed second consumer in a shipped app, a
+feature that genuinely cannot be core (a licence that forbids bundling, or bytes
+that dwarf the shell even after a first-party rewrite), or a demonstrated need
+for third-party authorship. Absent those, the answer to "should this be an
+extension?" is "should this be core, a separate artifact, or a skill?"

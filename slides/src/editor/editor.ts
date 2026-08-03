@@ -11,7 +11,7 @@ import {
   instantiateLayout, isLightBg, layoutElementIds, newDocId, parseDoc, readableInk, syncLinkedChart, uid,
   type ChartElement, type ShapeKind, type Slide, type SlideElement, type TableElement,
 } from '../model'
-import { APP_VERSION, applyUpdate, applyUpdateInPlace, autoCheckEnabled, canUpdateInPlace, checkForUpdates, offlineEnabled, setAutoCheck, setOffline } from '../update'
+import { APP_VERSION, applyUpdate, applyUpdateInPlace, autoCheckEnabled, canUpdateInPlace, checkForUpdates, compareVersions, offlineEnabled, setAutoCheck, setOffline } from '../update'
 import { CHART_PRESETS } from '../charts'
 import { renderSlide, renderThumbnail } from '../render'
 import { SlideCanvas } from './canvas'
@@ -26,8 +26,10 @@ import { borderPoint, boxCenter, lineEndpoints, setLineEndpoints, sideMidpoint }
 import { ICONS } from '../icons'
 import { t, setLocale, locale, localeChoices, LOCALE_CHOICES, applyDirection, isRtl } from '../i18n'
 import { availablePacks, fetchPack, markFileSaved, packCoverage, packsInFile, stageForFile, unstageFromFile } from '../packs'
+import { injectFonts } from '../fonts'
 import { appConfig } from '../../../kernel/src/app.ts'
 import { disconnectOnline, joinFromDoc, mintCollab, mintInvite, onlineTransport, rotateKeys, sharingOn, startSharing, stopSharing } from '../sync/online'
+import { lsGet, lsJson, lsSet } from '../../../kernel/src/storage.ts'
 
 const i18nT = t
 
@@ -355,6 +357,8 @@ export class Editor {
       insertD, insertMenu, moreD, moreMenu, slidesB, formatB, insert, actions, history,
       // order matters: this is the order they appear in the ⋯ menu
       demote: [redoB, commentB, pdfB, shareD, langD, helpB],
+      // filled in once the bar is fully assembled (formatB lands last)
+      authored: new Map(), homeOf: new Map(),
     }
 
     bar.append(logo, this.updatesB, title, this.fileChip, slidesB, insertD, history, insert, actions, moreD)
@@ -375,7 +379,7 @@ export class Editor {
     // hint merely plays — so it keeps nudging until it's used). Hover replays it
     // any time (CSS :hover). When the laps finish fading, just drop the class so
     // hover takes over cleanly (a lingering class would replay on mouse-out).
-    try { if (!localStorage.getItem('bento-slideshow-started')) pill.classList.add('ed-hint-pulse') } catch { /* storage off */ }
+    if (!lsGet('bento-slideshow-started')) pill.classList.add('ed-hint-pulse')
     pill.addEventListener('animationend', (e) => {
       if ((e as AnimationEvent).animationName !== 'ed-runner-fade') return
       pill.classList.remove('ed-hint-pulse')
@@ -416,6 +420,20 @@ export class Editor {
     }
 
     actions.insertBefore(formatB, saveGroup)
+
+    // The authored desktop layout, captured once the bar is fully assembled.
+    // Unfolding REPLAYS this instead of guessing where each button belongs.
+    // Guessing is what the old restore did — everything except demote[0] went
+    // back to `actions` immediately before formatB — and it could not be right:
+    // Comment is authored into the INSERT group, so it changed groups entirely,
+    // and pdf/share/lang/help landed in a row after Save instead of interleaved
+    // with the avatars strip, leaving Save sitting after Help.
+    for (const g of [history, insert, actions]) {
+      this.phoneChrome.authored.set(g, [...g.children] as HTMLElement[])
+    }
+    for (const [g, kids] of this.phoneChrome.authored) {
+      for (const k of kids) this.phoneChrome.homeOf.set(k, g)
+    }
 
     // drive it now and whenever the query flips
     // Held on `this` deliberately: a MediaQueryList that nothing references can
@@ -463,7 +481,7 @@ export class Editor {
 
   private restorePanelWidths() {
     try {
-      const saved = JSON.parse(localStorage.getItem('bento-ed-panels') ?? '{}')
+      const saved = lsJson<Record<string, number>>('bento-ed-panels', {})
       for (const side of ['left', 'right'] as const) {
         const [min, max] = Editor.PANEL_BOUNDS[side]
         if (typeof saved[side] === 'number') this.panelW[side] = Math.min(max, Math.max(min, saved[side]))
@@ -513,7 +531,7 @@ export class Editor {
     handle.appendChild(toggle)
     queueMicrotask(() => this.updatePanelChevrons())
     const commit = () => {
-      localStorage.setItem('bento-ed-panels', JSON.stringify(this.panelW))
+      lsSet('bento-ed-panels', JSON.stringify(this.panelW))
       // thumbnails render at a width derived from the sidebar — refit them
       if (side === 'left') this.rebuildSidebar()
     }
@@ -560,6 +578,10 @@ export class Editor {
     slidesB: HTMLElement; formatB: HTMLElement
     insert: HTMLElement; actions: HTMLElement; history: HTMLElement
     demote: HTMLElement[]
+    /** each group's children in authored desktop order — replayed on unfold */
+    authored: Map<HTMLElement, HTMLElement[]>
+    /** which group each button was authored into */
+    homeOf: Map<HTMLElement, HTMLElement>
   } | null = null
 
   /**
@@ -614,10 +636,19 @@ export class Editor {
       // The save-as rows are a phone-only copy; on a wide screen the split
       // button's caret is back and owns that list again.
       for (const row of p.moreMenu.querySelectorAll('[data-phone-saveas]')) row.remove()
-      // back to their original homes, in their original order
-      for (const b of p.demote) {
-        if (b === p.demote[0]) p.history.appendChild(b)
-        else p.actions.insertBefore(b, p.formatB)
+      // Back to their authored homes, in their authored order.
+      //
+      // Both halves matter. Sending each button to the group it was authored
+      // into is what keeps Comment in the INSERT group instead of migrating it
+      // to actions; replaying the captured order is what stops pdf/share/lang/
+      // help from landing in a row and pushing Save past Help. Re-appending in
+      // order is deliberately not "insert before the sibling I remember" —
+      // that sibling may itself be demoted and not back yet.
+      for (const b of p.demote) p.homeOf.get(b)?.appendChild(b)
+      for (const [group, order] of p.authored) {
+        for (const child of order) {
+          if (child.parentElement === group) group.appendChild(child)
+        }
       }
       p.moreD.classList.remove('open')
       p.insertD.classList.remove('open')
@@ -1017,13 +1048,13 @@ export class Editor {
     nameInput.type = 'text'
     nameInput.placeholder = t('Guest')
     try {
-      nameInput.value = localStorage.getItem('bento-author') ?? ''
+      nameInput.value = lsGet('bento-author') ?? ''
     } catch {
       /* storage unavailable */
     }
     nameInput.addEventListener('change', () => {
       try {
-        localStorage.setItem('bento-author', nameInput.value.trim())
+        lsSet('bento-author', nameInput.value.trim())
       } catch {
         /* storage unavailable */
       }
@@ -1053,7 +1084,7 @@ export class Editor {
       else if (cme.v === 2 && cme.ownerPriv) { myRole = 'owner'; myPub = cme.owner }
       else if (cme.v === 2 && cme.invite) {
         myRole = 'editor'
-        try { myPub = JSON.parse(localStorage.getItem(`bento-member-${this.store.doc.docId}`) ?? 'null')?.pub } catch { /* absent */ }
+        myPub = lsJson<{ pub?: string } | null>(`bento-member-${this.store.doc.docId}`, null)?.pub
       } else if (cme.writerPriv) { myRole = 'editor'; myPub = cme.writerPub }
       if (myRole) {
         const label = div('ed-share-label')
@@ -1063,7 +1094,7 @@ export class Editor {
         const who = document.createElement('span')
         who.className = 'who'
         let myName = t('Guest')
-        try { myName = localStorage.getItem('bento-author') || myName } catch { /* ok */ }
+        myName = lsGet('bento-author') || myName
         who.textContent = `${myName} (${t('you')})`
         const where = document.createElement('span')
         where.className = 'where'
@@ -1503,7 +1534,7 @@ export class Editor {
       t.textContent = i18nT('Apply layout to this slide')
       pick.appendChild(t)
     }
-    const sections: Array<[string, Slide[], boolean]> = [[t('Built-in'), builtinLayouts(), false]]
+    const sections: Array<[string, Slide[], boolean]> = [[t('Built-in'), builtinLayouts(doc.size), false]]
     if (doc.layouts?.length) sections.push([t('This document'), doc.layouts, true])
     for (const [label, layouts, custom] of sections) {
       const h = div('ed-layoutpick-h')
@@ -1885,7 +1916,7 @@ export class Editor {
   present(fromStart = false, fullscreen = true) {
     if (this.presenting) return
     // They've started a slideshow — retire the first-run nudge for good.
-    try { localStorage.setItem('bento-slideshow-started', '1') } catch { /* storage off */ }
+    lsSet('bento-slideshow-started', '1')
     document.querySelector('.ed-hint-pulse')?.classList.remove('ed-hint-pulse')
     this.canvas.commitTextEdit()
     this.presenting = true
@@ -1925,6 +1956,7 @@ export class Editor {
         ev.preventDefault()
         let added: SlideElement[] = []
         this.store.commit(() => { added = insertElements(clip, this.store.doc, this.store.slide) })
+        if (clip.fonts?.length) injectFonts(this.store.doc)
         this.store.select(added.map((e) => e.id))
         this.toast(added.length === 1 ? t('Pasted 1 item') : t('Pasted {n} items', { n: added.length }))
         return
@@ -1934,6 +1966,7 @@ export class Editor {
         const at = this.store.currentIndex + 1
         let made: Slide[] = []
         this.store.commit(() => { made = insertSlides(clip, this.store.doc, at) }, 'slides')
+        if (clip.fonts?.length) injectFonts(this.store.doc)
         this.rebuildSidebar()
         this.store.goTo(at)
         this.toast(made.length === 1 ? t('Pasted 1 slide') : t('Pasted {n} slides', { n: made.length }))
@@ -2228,9 +2261,21 @@ export class Editor {
     if (this.store.dirty && !confirm(t('Open {name}? Unsaved changes in this deck will be lost.', { name: named }))) return true
 
     // The handle is the prize; a plain File still opens, just without write-back.
+    //
+    // ORDER MATTERS: requestPermission() needs a live user gesture, and the drop
+    // is it. Reading the file first (600KB+ of text(), then DOMParser and
+    // JSON.parse) spends the activation, so the request throws SecurityError and
+    // the deck opens read-only — ⌘S then re-runs the save picker, which is the
+    // whole thing this feature exists to avoid. So: handle, permission, THEN read.
     const anyItem = item as unknown as { getAsFileSystemHandle?: () => Promise<any> }
     let handle: any = null
     try { handle = await anyItem.getAsFileSystemHandle?.() } catch { /* not supported — read-only open */ }
+
+    let writable = false
+    if (handle?.requestPermission) {
+      try { writable = await handle.requestPermission({ mode: 'readwrite' }) === 'granted' }
+      catch { /* denied, or activation already spent — opens read-only */ }
+    }
 
     const file: File | null = handle ? await handle.getFile() : (ev.dataTransfer?.files?.[0] ?? null)
     if (!file) return true
@@ -2242,7 +2287,7 @@ export class Editor {
     // generated at runtime, not stored. That file is a perfectly good Bento
     // document; it just has nothing in it yet, so say that rather than call it
     // a foreign file.
-    if (el && !block) { alert(t('{name} has no saved document yet — open it directly to start one.', { name: named })); return true }
+    if (el && !block) { alert(t('{name} is an empty copy of Bento, not a saved deck. Open it on its own to start one.', { name: named })); return true }
     let parsed: unknown
     try { parsed = JSON.parse(block) } catch { alert(t('{name} isn’t a Bento document.', { name: named })); return true }
     if ((parsed as { format?: string })?.format === 'bento/enc') {
@@ -2252,11 +2297,7 @@ export class Editor {
     const next = parseDoc(JSON.stringify(parsed))
     if (!next) { alert(t('{name} isn’t a Bento document.', { name: named })); return true }
 
-    if (handle?.requestPermission) {
-      try {
-        if (await handle.requestPermission({ mode: 'readwrite' }) === 'granted') adoptFileHandle(handle)
-      } catch { /* denied or unsupported — opens read-only, ⌘S still offers Save as */ }
-    }
+    if (writable) adoptFileHandle(handle)
     this.openedAs = named
     this.store.replaceDoc(next)
     this.canvas.render()
@@ -2268,14 +2309,14 @@ export class Editor {
   private noticeIfCannotWriteInPlace() {
     if (moodleConfig) return // saves go to Moodle's server here — this notice is about local file rewriting, not applicable
     if (canWriteInPlace()) return
-    if (localStorage.getItem(SAVE_NOTICE_KEY) === 'seen') return
+    if (lsGet(SAVE_NOTICE_KEY) === 'seen') return
     const bar = div('ed-recover')
     const msg = document.createElement('span')
     msg.textContent = t('This browser can’t rewrite files in place. ⌘S will download an updated copy instead — your work is also kept in this browser and offered back if you reopen.')
     const ok = document.createElement('button')
     ok.className = 'ed-btn ed-btn-primary'
     ok.textContent = t('Got it')
-    ok.addEventListener('click', () => { localStorage.setItem(SAVE_NOTICE_KEY, 'seen'); bar.remove() })
+    ok.addEventListener('click', () => { lsSet(SAVE_NOTICE_KEY, 'seen'); bar.remove() })
     bar.append(msg, ok)
     document.body.appendChild(bar)
   }
@@ -2386,6 +2427,11 @@ export class Editor {
       [`${mod}G · ${mod}⇧G`, t('Group · ungroup')],
       ['C', t('Comment mode')],
       ['?', t('This help')],
+    ])
+    section(colL, t('Canvas'), [
+      [t('Space-drag'), t('Pan the canvas, including past the edges of the slide')],
+      [t('Middle-drag'), t('Pan as well, if your mouse has a middle button')],
+      [`${mod}-${t('scroll')}`, t('Zoom in and out')],
     ])
     section(colR, t('Lines & curves'), [
       [t('Shape ▾'), t('Draw a line, curved line or connector — then drag on the canvas')],
@@ -2713,7 +2759,22 @@ export class Editor {
         const line = div('ed-about-new')
         line.textContent = t('Version {v} is available.', { v: release.version })
         card.appendChild(line)
-        if (release.notes) card.appendChild(releaseNotes(release.notes))
+        // Prefer per-version notes filtered to what THIS file actually skipped:
+        // releases land days apart, so a reader two versions behind should see
+        // both, and a reader one version behind should not see the older one
+        // again. `notes` is the fallback for a manifest that predates the field.
+        const skipped = release.notesFrom
+          ? Object.keys(release.notesFrom)
+              .filter((v) => compareVersions(v, APP_VERSION) > 0)
+              .sort((a, b) => compareVersions(b, a))
+          : []
+        if (skipped.length) {
+          const lines = skipped.flatMap((v) =>
+            (release.notesFrom![v] ?? []).map((h) => (skipped.length > 1 ? `• ${h}  (${v})` : `• ${h}`)))
+          card.appendChild(releaseNotes(lines.join('\n')))
+        } else if (release.notes) {
+          card.appendChild(releaseNotes(release.notes))
+        }
         const actions = div('ed-about-actions')
         const fail = (err: any) => { status.textContent = t('Update failed: {m}', { m: String(err?.message ?? err) }) }
         const done = () => {

@@ -50,6 +50,7 @@ jobs:
           cache-dependency-path: |
             slides/package-lock.json
             spaces/package-lock.json
+            dash/package-lock.json
 
       - name: Install
         working-directory: slides
@@ -60,6 +61,12 @@ jobs:
         # packed.ts is generated from them and is what actually ships. A stale
         # packed.ts would silently ship yesterday's translations.
         run: node scripts/build-i18n.mjs --check
+
+      - name: Language coverage
+        # Core catalogs ship inside every saved file and cannot be corrected
+        # without a release, so they must be complete. Packs are downloadable
+        # and re-publishable on their own, so they get a floor and a report.
+        run: node scripts/test-i18n-coverage.mjs
 
       - name: Language packs build and index cleanly
         # Emits every pack and builds the index payload WITHOUT signing (--dry
@@ -103,6 +110,49 @@ jobs:
       - name: Splice conformance gate (spaces)
         run: node scripts/shell-gate.mjs spaces/dist-single/Bento_Spaces.bento.html
 
+      - name: Spaces i18n packed table is current
+        # The per-locale catalogs are the source of truth; packed.ts is
+        # generated and is what ships inside every saved file. A core catalog
+        # cannot be corrected without a release, so an incomplete one fails the
+        # build rather than shipping a half-translated interface.
+        run: node scripts/build-spaces-i18n.mjs --check
+
+      - name: Spaces model rig
+        # Properties that fail SILENTLY, and that a shipped file cannot be
+        # talked out of once it exists:
+        #   · the load contract — an unreadable document must never be replaced
+        #     by an empty one;
+        #   · format additivity, and id repair derived from the BYTES, so two
+        #     readers of one file agree on every id (links key on them);
+        #   · untrusted html is parsed INERT — a detached div still loads what
+        #     it creates, which made the sanitizer its own vector on the OPEN
+        #     path;
+        #   · opening a document touches no network, so a mailed space cannot
+        #     carry a tracking pixel;
+        #   · an encrypted space is never snapshotted to IndexedDB in the clear;
+        #   · find and replace quote ONE number — what is counted is what
+        #     changes.
+        # The last four are source assertions: the behaviour needs a DOM, a
+        # failing request, IndexedDB and a clock, but every one of those
+        # mistakes is made in the source.
+        run: node scripts/test-spaces-model.ts
+
+      # dash: the data app — same pipeline, same gate.
+      - name: Install (dash)
+        working-directory: dash
+        run: npm ci
+
+      - name: Typecheck (dash)
+        working-directory: dash
+        run: node_modules/.bin/tsc -b
+
+      - name: Build single-file shell (dash)
+        working-directory: dash
+        run: npm run build:single
+
+      - name: Splice conformance gate (dash)
+        run: node scripts/shell-gate.mjs dash/dist-single/Bento_Dash.bento.html
+
       - name: Language pack verification rig
         # Packs come off the network, so the signature + hash-pin chain is the
         # only thing between a hostile channel and the strings in the UI.
@@ -115,6 +165,127 @@ jobs:
         # deck must never carry one, and author content must never reach the
         # file carrying a script tag.
         run: node scripts/test-preview.ts
+
+      - name: WebExtension background rig
+        # The half that WRITES, and previously the untested half. Two properties
+        # it must hold: the target file comes from sender.url (browser-stamped)
+        # and never from the page, and nothing is carried between messages,
+        # because an MV3 service worker is evicted mid-save and state across that
+        # gap fails intermittently on nobody's machine but the user's.
+        run: node scripts/test-webext-background.ts
+
+      - name: WebExtension bridge rig
+        # tray/webext decides, per save, whether to write in place or hand back
+        # to the browser's own picker. Wrong in the permissive direction it
+        # overwrites the open document with no dialog — which it did once. The
+        # decision is pure logic over an options bag, so it is checkable here
+        # rather than by reloading an extension and pressing Cmd-S.
+        run: node scripts/test-webext-bridge.ts
+
+      - name: Save-intent rig
+        # A host polyfilling showSaveFilePicker sees only the options bag, and
+        # must tell "overwrite the open document" from "make a second file" from
+        # that alone. It could not, and a browser extension overwrote a deck.
+        # `id` is the signal; if the three purposes ever collapse to one value
+        # every host silently loses the distinction.
+        run: node scripts/test-savepurpose.ts
+
+      - name: Guarded storage rig
+        # localStorage's absence is hostile: reading the PROPERTY throws, so
+        # `if (localStorage)` is itself the crash and one bare read at module
+        # scope takes the whole file down before it paints. Measured in a
+        # sandboxed iframe. The rig simulates each failure mode and pins the
+        # regression: importing a module that reads storage on load must not
+        # throw when storage does.
+        run: node scripts/test-storage.ts
+
+      - name: App registry rig
+        # scripts/apps.mjs drives what a release builds, stages and signs. A
+        # release SIGNS, and the key never reaches CI, so the pipeline itself
+        # cannot be tested here — but the registry drifting from the tree can,
+        # and a wrong appId is silent: shipped shells verify it against their
+        # own configureApp() id and just stop updating.
+        run: node scripts/test-release-apps.mjs
+
+      - name: Autosave per-app database rig
+        # Every app shared one IndexedDB database AND one DB_VERSION, so spaces
+        # has been writing into slides' store, and a version bump by any new app
+        # would make every SHIPPED shell of every other app throw VersionError
+        # and lose autosave. Renaming without carrying the data over would empty
+        # a visible feature, so the migration is tested in both directions.
+        run: |
+          slides/node_modules/.bin/esbuild scripts/test-autosave.ts --bundle --platform=node --format=esm \
+            --alias:fake-indexeddb/auto=./slides/node_modules/fake-indexeddb/auto/index.js \
+            --outfile="$RUNNER_TEMP/test-autosave.mjs"
+          BENTO_TEST_APP=bento-slides node "$RUNNER_TEMP/test-autosave.mjs"
+          BENTO_TEST_APP=bento-spaces node "$RUNNER_TEMP/test-autosave.mjs"
+
+      - name: Publish deletion-gate rig
+        # A publish assembles site/ for ONE app and mirrors it authoritatively.
+        # Measured: a spaces-shaped site/ deleted 47 live files — the signed
+        # shell, the manifest, all 22 packs — with every other gate green,
+        # because those gates are `if (existsSync(...))` and skip when the
+        # artifact is missing. Shipped files cannot recover from that.
+        run: node scripts/test-publish-gate.mjs
+
+      - name: Model key tables match the format
+        # slides/src/modelkeys.generated.ts is derived from model.ts and drives
+        # validate()'s unknown-key check. A stale copy would report real
+        # properties as unknown, and an agent acting on that deletes working
+        # configuration — so the generated file is committed and pinned here.
+        run: node scripts/build-modelkeys.mjs --check
+
+      - name: Document validation rig
+        # validate() is only useful if it is trusted: the rig proves the starter
+        # deck and a realistic chart stay silent, and that a deliberately broken
+        # deck trips every check.
+        run: |
+          slides/node_modules/.bin/esbuild scripts/test-validate.ts --bundle --platform=node --format=esm --outfile="$RUNNER_TEMP/test-validate.mjs"
+          node "$RUNNER_TEMP/test-validate.mjs"
+
+      - name: bento/dash model rig
+        # The format is permanent — additive forever, no server to migrate a
+        # single file. Two failures are unrecoverable once files exist: dropping
+        # a field this build does not recognise, and letting anything but an
+        # ABSENT block reach the starter document (which then overwrites live
+        # data on the first save). Both are asserted from both sides.
+        run: node scripts/test-dash-model.ts
+
+      - name: bento/dash store + undo rig
+        # Undo is a patch log rather than document snapshots, which buys history
+        # that costs what the EDIT costs — and risks a failure a snapshot cannot
+        # have: an inverse that does not restore what it displaced. Every op is
+        # checked apply → undo → identical, because that failure is silent.
+        run: node scripts/test-dash-store.ts
+
+      - name: bento/dash import rig
+        # Import is where a data tool does its damage, because every mistake is
+        # SILENT: the file opens, the grid fills, the totals compute, and the
+        # numbers are wrong. Two guards matter most and are checked from both
+        # sides — an undecidable date order is REFUSED rather than guessed, and
+        # the decimal convention is decided per COLUMN from the whole column.
+        run: node scripts/test-dash-import.ts
+
+      - name: Built-in layout geometry rig
+        # The built-ins are drawn against 1600x900 while the model default is
+        # 1280x720, so they used to hang 200px off the right edge of a default
+        # deck. Nothing structural could see it — the fix is arithmetic, and so
+        # is the regression.
+        run: node scripts/test-layouts.ts
+
+      - name: Clipboard embedded-font rig
+        run: |
+          slides/node_modules/.bin/esbuild scripts/test-clipboard.ts --bundle --platform=node --format=esm --outfile="$RUNNER_TEMP/test-clipboard.mjs"
+          node "$RUNNER_TEMP/test-clipboard.mjs"
+
+      - name: CRDT property-removal rig
+        # Removing a property travels as a `set` op with `v` ABSENT, and the
+        # receiving replica threw on it: JSON.stringify(undefined) is undefined,
+        # and a debug line sliced it. Live in shipped files. The convergence rig
+        # missed it through 300 seeds because its generator assigns properties
+        # and never removes one — a property-based rig only explores the
+        # mutations it was taught.
+        run: node scripts/test-crdt-delprop.ts
 
       - name: CRDT convergence rig
         # 40 seeds locally; deeper on CI where the seconds are free.

@@ -13,6 +13,7 @@ import { morphKey } from './model'
 import { applyElementFrame, gradientLineCoords, renderSlide } from './render'
 import { paintSpeaker, setSpeakerWindow, speakerIdleBody, speakerWindow } from './screens'
 import { t } from './i18n'
+import { lsGet, lsSet } from '../../kernel/src/storage.ts'
 
 const MORPH_DURATION = 0.65
 const MORPH_EASE = 'power2.inOut'
@@ -827,7 +828,7 @@ export function startPresentation(
   const reduceQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
   const readMotionPref = (): boolean | null => {
     try {
-      const v = localStorage.getItem('bento-reduce-motion')
+      const v = lsGet('bento-reduce-motion')
       return v === 'on' ? true : v === 'off' ? false : null
     } catch { return null }
   }
@@ -884,8 +885,9 @@ export function startPresentation(
       : false,
     // touch is handled by our own swipe logic below (state-aware + ends exit)
     touch: false,
-    // heavy decks: paint only the neighbourhood of the current slide
-    viewDistance: 1,
+    // Reveal uses distance < viewDistance; 2 is the minimum that keeps adjacent
+    // sections mounted so fade/slide/zoom transitions can animate.
+    viewDistance: 2,
     keyboardCondition: null,
     plugins: [],
   })
@@ -977,7 +979,7 @@ export function startPresentation(
 
   const setReduceMotion = (on: boolean, persist = true) => {
     reduceMotion = on
-    if (persist) { try { localStorage.setItem('bento-reduce-motion', on ? 'on' : 'off') } catch { /* storage off */ } }
+    if (persist) lsSet('bento-reduce-motion', on ? 'on' : 'off')
     overlay.classList.toggle('reduce-motion', on)
     if (on) clearLaserTrail()
     // Toast only on an explicit toggle (M / speaker button), not the silent
@@ -1418,7 +1420,12 @@ export function startPresentation(
       from &&
       ((forward && doc.slides[toIdx]?.transition === 'morph') ||
         (!forward && doc.slides[fromIdx]?.transition === 'morph'))
-    if (morphing) { if (!reduceMotion) runMorph(doc, from!, to, fromIdx, toIdx) }
+    if (morphing) {
+      if (!reduceMotion) {
+        runMorph(doc, from!, to, fromIdx, toIdx)
+        runMorphArrivalCountUps(doc.slides[fromIdx], doc.slides[toIdx], to)
+      }
+    }
     else if (!reduceMotion) runEnterFx(doc.slides[toIdx], to)
     if (!reduceMotion) {
       runAmbientFx(doc.slides[toIdx], to)
@@ -1544,6 +1551,36 @@ function fxNodes(slide: Slide, section: HTMLElement): Array<[SlideElement, HTMLE
   return pairs
 }
 
+type EnterKind = NonNullable<NonNullable<SlideElement['fx']>['enter']>
+
+/**
+ * The starting frame, duration and ease an `fx.enter` kind implies.
+ *
+ * Shared by the two places an element can enter — the plain entrance runner and
+ * the morph path, which gives elements with no morph partner an entrance of
+ * their own. Keeping ONE table means a new direction cannot work on ordinary
+ * slides and quietly do nothing on morph arrivals.
+ *
+ * fade-* nudge 16px; slide-* sweep 120px in from an edge (slide-left starts to
+ * the RIGHT and travels leftward). x needs the x transform channel in anim.ts.
+ */
+function enterSpec(kind: EnterKind, enterDur?: number) {
+  const D = 120
+  const from = { opacity: 0, x: 0, y: 0 }
+  if (kind === 'fade-up') from.y = 16
+  else if (kind === 'fade-down') from.y = -16
+  else if (kind === 'slide-left') from.x = D
+  else if (kind === 'slide-right') from.x = -D
+  else if (kind === 'slide-up') from.y = D
+  else if (kind === 'slide-down') from.y = -D
+  const sliding = kind.startsWith('slide-')
+  return {
+    from,
+    duration: enterDur ?? (sliding ? 0.75 : 0.55),
+    ease: sliding ? 'power3.out' : 'power2.out',
+  }
+}
+
 /** Staggered entrance animations + count-ups for the incoming slide. */
 function runEnterFx(slide: Slide, section: HTMLElement) {
   const entering = fxNodes(slide, section)
@@ -1559,33 +1596,46 @@ function runEnterFx(slide: Slide, section: HTMLElement) {
     // node would fight it and freeze the dot off its path
     if (fx.loop?.type === 'motion-path') return
     if (fx.enter) {
-      // directional entrances: fade-* nudge 16px, slide-* sweep 120px from an
-      // edge. x needs the x transform channel (added to anim.ts).
-      const D = 120
-      const from = { opacity: 0, x: 0, y: 0 }
-      if (fx.enter === 'fade-up') from.y = 16
-      else if (fx.enter === 'fade-down') from.y = -16
-      else if (fx.enter === 'slide-left') from.x = D // starts to the right, slides in leftward
-      else if (fx.enter === 'slide-right') from.x = -D
-      else if (fx.enter === 'slide-up') from.y = D
-      else if (fx.enter === 'slide-down') from.y = -D
-      const slide = fx.enter.startsWith('slide-')
+      const spec = enterSpec(fx.enter, fx.enterDur)
       anim.fromTo(
         node,
-        from,
+        spec.from,
         {
           opacity: el.opacity,
           x: 0,
           y: 0,
-          duration: fx.enterDur ?? (slide ? 0.75 : 0.55),
+          duration: spec.duration,
           delay: 0.12 + Math.min(step, 24) * 0.05,
-          ease: slide ? 'power3.out' : 'power2.out',
+          ease: spec.ease,
         },
       )
     }
     if (fx.countUp) runCountUp(node)
   })
   settleGuarantee(entering.map(([el, node]) => [node, el]))
+}
+
+/**
+ * Count-ups on a MORPH arrival, for elements the morph did not carry over.
+ *
+ * Morph and entrance are mutually exclusive branches — an entrance tween on a
+ * morphing element would fight the morph — and `runCountUp` lived only on the
+ * entrance side, so `fx.countUp` on a slide reached by `transition:'morph'`
+ * silently rendered a static number. That is a combination the authoring guide
+ * actively recommends (a headline statistic on a slide that morphs its
+ * furniture in), so it failed quietly and often.
+ *
+ * A count-up element WITH a morph partner is already on screen showing its
+ * number as it flies in; restarting it from zero would be wrong. One with no
+ * partner is new on this slide, has no transform to fight, and is exactly what
+ * the author asked to count.
+ */
+function runMorphArrivalCountUps(from: Slide | undefined, to: Slide, section: HTMLElement) {
+  const carried = new Set((from?.elements ?? []).map((el) => el.morphId || el.id))
+  for (const [el, node] of fxNodes(to, section)) {
+    if (!el.fx!.countUp || el.showOnHover) continue
+    if (!carried.has(el.morphId || el.id)) runCountUp(node)
+  }
 }
 
 /**
@@ -1613,11 +1663,70 @@ function settleGuarantee(pairs: Array<[HTMLElement, SlideElement]>) {
 }
 
 /** Animate every number in the element's text from 0 to its final value. */
+/**
+ * How a number was WRITTEN, so the count-up can put it back the same way.
+ *
+ * The number must settle exactly as the author typed it. Routing through
+ * `Intl.NumberFormat(navigator.language)` is the tempting fix and the wrong
+ * one: slide content is authored, so the same deck would read `1,234.5` for
+ * one viewer and `1.234,5` for another. Locale follows the viewer for CHROME
+ * only (`PLATFORM.md` §3).
+ */
+interface NumberShape {
+  value: number
+  decimals: number
+  group: string   // separator between thousands, '' if the author used none
+  point: string   // decimal separator, '' if the number is an integer
+}
+
+/**
+ * Read an authored number. Separators are genuinely ambiguous, so the rules
+ * are stated rather than guessed:
+ *
+ * - BOTH `.` and `,` present → the LAST one is the decimal point, the other
+ *   groups. `1,234.5` → 1234.5, `1.234,5` → 1234.5.
+ * - Only `,` → grouping if there are several (`1,234,567`), or if a single one
+ *   is followed by exactly three digits (`1,234`). Otherwise a decimal comma
+ *   (`1,23`, `1,2345`).
+ * - Only `.` → a decimal point, always. A deck writing `1.234` means
+ *   one-point-two-three-four; reading it as grouping would break every
+ *   three-decimal number to fix a rarer case.
+ */
+function readNumber(raw: string): NumberShape {
+  const dots = (raw.match(/\./g) ?? []).length
+  const commas = (raw.match(/,/g) ?? []).length
+  let point = ''
+  if (dots && commas) point = raw.lastIndexOf('.') > raw.lastIndexOf(',') ? '.' : ','
+  else if (commas) point = commas > 1 || /,\d{3}$/.test(raw) ? '' : ','
+  else if (dots) point = '.'
+  const group = point === '.' ? (commas ? ',' : '')
+    : point === ',' ? (dots ? '.' : '')
+      : (commas ? ',' : dots ? '.' : '')
+  const cut = point ? raw.lastIndexOf(point) : -1
+  const whole = (cut >= 0 ? raw.slice(0, cut) : raw).replace(/[.,]/g, '')
+  const frac = cut >= 0 ? raw.slice(cut + 1) : ''
+  return { value: Number(frac ? `${whole}.${frac}` : whole), decimals: frac.length, group, point }
+}
+
+/** Put a number back in the author's own convention. */
+function writeNumber(value: number, shape: NumberShape): string {
+  const fixed = value.toFixed(shape.decimals)
+  const dot = fixed.indexOf('.')
+  let whole = dot >= 0 ? fixed.slice(0, dot) : fixed
+  const frac = dot >= 0 ? fixed.slice(dot + 1) : ''
+  if (shape.group) whole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, shape.group)
+  return frac ? whole + shape.point + frac : whole
+}
+
 function runCountUp(node: HTMLElement) {
   const inner = node.querySelector<HTMLElement>('.bento-text-inner') ?? node
   const final = inner.textContent ?? ''
-  const tokens = [...final.matchAll(/\d+(?:[.,]\d+)?/g)]
+  // Separators only count BETWEEN digits, so a sentence ending in a number
+  // ("grew 25.") keeps its full stop instead of having it swallowed and
+  // re-emitted as part of the value.
+  const tokens = [...final.matchAll(/\d+(?:[.,]\d+)*/g)]
   if (!tokens.length) return
+  const shapes = tokens.map((m) => readNumber(m[0]))
   const state = { p: 0 }
   anim.to(state, {
     p: 1,
@@ -1627,13 +1736,11 @@ function runCountUp(node: HTMLElement) {
     onUpdate() {
       let out = ''
       let last = 0
-      for (const m of tokens) {
+      tokens.forEach((m, i) => {
         out += final.slice(last, m.index)
-        const raw = m[0].replace(',', '.')
-        const decimals = raw.includes('.') ? raw.split('.')[1].length : 0
-        out += (parseFloat(raw) * state.p).toFixed(decimals)
+        out += writeNumber(shapes[i].value * state.p, shapes[i])
         last = m.index! + m[0].length
-      }
+      })
       inner.textContent = out + final.slice(last)
     },
   })
@@ -1933,12 +2040,25 @@ function runMorph(
       // motion-path loops own the transform — entrance limited to opacity
       const m = toModel.get(n.dataset.flipId!)
       const owns = m?.fx?.loop?.type === 'motion-path'
+      // An explicit fx.enter WINS over the default rise. This element has no
+      // morph partner — it is new to this slide, so there is no morph tween for
+      // an entrance to fight, and the author named a direction. Elements with a
+      // partner are excluded above and keep morphing; elements with no fx.enter
+      // keep the default, so no existing deck changes unless it asked to.
+      const kind = owns ? undefined : m?.fx?.enter
+      const spec = kind ? enterSpec(kind, m?.fx?.enterDur) : null
+      const step = m?.fx?.order ?? i
       anim.fromTo(n,
-        owns ? { opacity: 0 } : { opacity: 0, y: 14 },
+        spec ? { ...spec.from } : owns ? { opacity: 0 } : { opacity: 0, y: 14 },
         {
-          opacity, ...(owns ? {} : { y: 0 }), duration: 0.45,
-          delay: MORPH_DURATION * 0.4 + (spread * i) / entering.length,
-          ease: 'power2.out',
+          opacity,
+          ...(spec ? { x: 0, y: 0 } : owns ? {} : { y: 0 }),
+          duration: spec?.duration ?? 0.45,
+          // Both stagger from the same base — the morph is 40% done before
+          // anything new arrives, so the two motions read as one beat.
+          delay: MORPH_DURATION * 0.4 +
+            (spec ? Math.min(step, 24) * 0.05 : (spread * i) / entering.length),
+          ease: spec?.ease ?? 'power2.out',
         })
     })
     settleGuarantee(entering.map(([n]) => {

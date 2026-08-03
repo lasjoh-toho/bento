@@ -31,9 +31,25 @@ verify the manifest signature against the public key embedded in every shell.
 ## Cutting a release
 
 0. **Get the CHANGELOG right first — it is not just prose any more.** The
-   first FIVE bold lead-ins of the version's section become the `notes` in the
+   first SIX bold lead-ins of the version's section become the `notes` in the
    SIGNED manifest, which shipped files show inline in the About dialog while
-   the reader decides whether to update. So:
+   the reader decides whether to update.
+
+   **Each app has its own changelog** (`scripts/apps.mjs` → `changelog`):
+   slides reads the root `CHANGELOG.md`, spaces reads `spaces/CHANGELOG.md`.
+   Every app read the root one until 2026-08-03, which would have signed
+   slides' release notes into a spaces manifest and shown them to every spaces
+   user. `scripts/test-release-apps.mjs` now pins the distinctness, and:
+
+   ```sh
+   node scripts/release.mjs --app spaces --print-notes
+   ```
+
+   prints exactly what would be signed and exits, touching nothing. Run it.
+   The notes are the one artifact with no way back — they are inside the signed
+   envelope, and re-signing a version is refused by the monotonicity check.
+
+   So:
    - lead with what the release IS (features), not the last thing merged —
      entries otherwise sit in merge order and a stray fix ends up introducing
      the release;
@@ -44,15 +60,24 @@ verify the manifest signature against the public key embedded in every shell.
      if the bug never shipped, announcing it tells people about breakage they
      never had. The commit history is the record for those.
 
-1. Bump `slides/package.json` version (this becomes `APP_VERSION` in the
-   shell and the manifest version — single source of truth).
+1. Bump **that app's** `package.json` version — `slides/package.json` or
+   `spaces/package.json` (it becomes `APP_VERSION` in the shell and the
+   manifest version — single source of truth). Apps version independently.
 2. Land it and tag. `main` is branch-protected and requires a pull request, so
    the bump CANNOT be committed directly — open a small PR for it, merge, then
-   tag the merge commit:
+   tag the merge commit.
+
+   **Tags are per app.** Slides keeps the bare `vX.Y.Z` form it has used for
+   23 releases; every other app is prefixed:
 
    ```sh
-   git tag vX.Y.Z <merge-sha>
+   git tag vX.Y.Z <merge-sha>          # slides
+   git tag spaces-vX.Y.Z <merge-sha>   # every other app
    ```
+
+   Slides is at 1.0.x and spaces starts at 0.1.0, so an unprefixed spaces tag
+   would sort into the middle of slides' history and claim a version slides can
+   never use again.
 
    **Build from a clean checkout of that tag**, not from whatever the main
    working tree happens to be on. Several sessions may have their own branches
@@ -62,13 +87,50 @@ verify the manifest signature against the public key embedded in every shell.
    ```sh
    git worktree add /tmp/rel vX.Y.Z --detach
    ```
-3. `node scripts/release.mjs` — builds, signs, assembles `./site/`
-   (CNAME, landing page, live demo, download, signed manifest, language packs
-   + their signed index).
-4. Publish `./site/` to the public site repo — one step:
+3. **Push the tag now, before publishing.** The GitHub release is created *for*
+   a tag, so the tag must exist on the remote before step 5 can run — publishing
+   first leaves the site live with no release, which is what happened cutting
+   v1.0.12:
+
+   ```sh
+   git push origin vX.Y.Z
+   ```
+
+   Do NOT use `git push origin main --tags`: it also pushes every local tag,
+   including scratch ones (a `backup/…` tag from a history rewrite escaped this
+   way and had to be deleted from the remote).
+
+4. `node scripts/release.mjs [--app slides|spaces]` — builds, signs, assembles
+   `./site/` (CNAME, landing page, live demo, download, signed manifest,
+   language packs + their signed index). `--app` defaults to `slides`.
+
+   **One release builds one app.** `site/` is mirrored authoritatively, so the
+   script SEEDS it from the published tree first and overwrites only what this
+   build produces — that is what stops a spaces release from deleting slides'
+   signed shell, manifest and 22 language packs, which shipped files fetch by
+   frozen URL and cannot recover.
+
+   It therefore needs the published tree beside this repo (`../bento-site`, or
+   `BENTO_SITE_DIR`) and **refuses without one**. Pull it before releasing, or
+   you will restore a stale copy of every app you are not building. The very
+   first release of a brand-new site is the one exception:
+   `--allow-missing-published`.
+
+   The shared site — landing, gallery, agent guide, skills, `/help`, `/q`, 404,
+   guestbook — is slides-derived and rebuilt only by a slides release. Every
+   other app leaves the published copies untouched.
+5. Publish `./site/` to the public site repo — one step:
 
    ```sh
    node scripts/publish-site.mjs "release vX.Y.Z"
+   ```
+
+   **From a `/tmp` build worktree, set the destination explicitly.** The script
+   resolves `../bento-site` relative to the repo root, so from `/tmp/rel` it
+   looks for `/private/tmp/bento-site` and stops:
+
+   ```sh
+   BENTO_SITE_DIR=~/devel/bento-site node scripts/publish-site.mjs "release vX.Y.Z"
    ```
 
    This mirrors the assembled `site/` tree into `../bento-site` (or
@@ -91,7 +153,20 @@ verify the manifest signature against the public key embedded in every shell.
    live **guestbook daemon** onto the freshly-published shell as a best-effort
    final step (see below) — no separate command needed.
 
-5. **The GitHub release is created for you** by `publish-site.mjs` — it makes
+   > **Publish site-only changes from a tree whose `site/releases/` is current.**
+   > `site/` is local staging, and releases are assembled from a clean checkout
+   > of the tag (step 3) — so an everyday working tree can hold a months-old
+   > manifest while bento.page serves something far newer. Mirroring that would
+   > republish the older signed shell over the newer one and break the update
+   > channel for every deck already in the world.
+   >
+   > `publish-site.mjs` refuses this: it compares the staged manifest version
+   > against the live one and dies if the staged one is older. If you hit that,
+   > you are publishing from the wrong tree — use the release checkout, or
+   > refresh `site/releases/` from the live site first. `--allow-release-downgrade`
+   > exists only for a deliberate rollback.
+
+6. **The GitHub release is created for you** by `publish-site.mjs` — it makes
    the release for the tag, attaches
    `site/releases/slides/Bento_Slides.bento.html`, and takes the notes from
    this version's CHANGELOG section (so the two can't drift). It is idempotent:
@@ -103,17 +178,6 @@ verify the manifest signature against the public key embedded in every shell.
    command to run. This used to be a manual step, and it was silently missed
    for v1.0.10 — the site was live and self-updating while the repo showed no
    release at all. Documentation didn't prevent that, so the check now does.
-6. **Push the tag.** `main` itself is usually already on the remote — merging
-   PRs through `gh` pushes as it goes — so the tag is the only ref outstanding:
-
-   ```sh
-   git push origin vX.Y.Z
-   ```
-
-   Do NOT use `git push origin main --tags`: it also pushes every local tag,
-   including scratch ones (a `backup/…` tag from a history rewrite escaped this
-   way and had to be deleted from the remote).
-
 7. **Verify against the LIVE channel, not the local build.** These are the
    things no local gate can prove, and some are only exercisable once published:
 

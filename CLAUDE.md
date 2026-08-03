@@ -579,10 +579,12 @@ names provisional.
 4. **Never let a literal `</script>` into the bundle** — `save.ts` builds it by
    concatenation; the data block JSON escapes `<`.
 5. Reveal's `.reveal-viewport` paints white; the present overlay CSS overrides it black.
-6. **svg-element CSS must be scoped** (`render.ts scopeCss`) — svg `<style>` applies
+6. **Reveal uses `distance < viewDistance`** — `1` mounts only the current section.
+   Keep it at least `2` so fade, slide, and zoom have adjacent sections to animate.
+7. **svg-element CSS must be scoped** (`render.ts scopeCss`) — svg `<style>` applies
    document-wide, so one diagram's animation/dim rules would leak into every other
    svg on the page (CSS animations with fill modes even beat later static rules).
-7. Tiny text labels make unusable click targets when scaled down — interactive
+8. Tiny text labels make unusable click targets when scaled down — interactive
    controls get padded transparent `link` overlay rects, not links on the text itself.
 
 - **Compressed shell (Phase 1)**: `scripts/postbuild-compress.mjs` (runs in
