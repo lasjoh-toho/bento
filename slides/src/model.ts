@@ -198,6 +198,33 @@ export interface ImageElement extends ElementBase {
   src: string
   fit: 'contain' | 'cover' | 'fill'
   radius: number
+  /**
+   * Optional crop rectangle, in fractions (0..1) of the SOURCE image's own
+   * width/height — not the element box. {x:0,y:0,w:1,h:1} (or omitted) means
+   * uncropped. When set, the cropped region is stretched to exactly fill the
+   * element box (crop wins over `fit`, which is ignored while a crop is set —
+   * re-enable it by clearing the crop). Authored by dragging handles in the
+   * editor's crop mode (double-click an image, or the "Crop…" button in its
+   * properties panel); agents can set it directly as plain fractions.
+   */
+  crop?: { x: number; y: number; w: number; h: number }
+  /**
+   * Optional cutout/erase mask — a grayscale PNG (white=visible,
+   * black=erased) at the same pixel dimensions as the current CROPPED view,
+   * dual-encoded (RGB *and* alpha both carry the same visibility value) so
+   * it renders identically whether a browser's default `mask-image` mode is
+   * luminance or alpha — no `mask-mode` needed. Applied at render using the
+   * SAME size/position transform as `crop`, so it stays aligned to whatever
+   * portion of the source is currently shown; changing `crop` after a mask
+   * exists misaligns it (the editor clears the mask automatically when that
+   * happens). Authored with the "Freistellen…" tools (magic wand, eraser,
+   * box/ellipse) in the properties panel. "Make permanent" there bakes the
+   * mask into `src` as one flattened image and clears this field — do that
+   * once no further mask edits are needed, to stop storing the mask as a
+   * second same-size asset. "asset:<key>" or a data: URI, same convention
+   * as `src`.
+   */
+  mask?: string
 }
 
 export interface SvgElement extends ElementBase {
@@ -347,6 +374,18 @@ export interface Slide {
   hover?: { type: 'focus-group' | 'reveal'; dim?: number; default?: string }
   /** review comment threads (editor-only; see Comment) */
   comments?: Comment[]
+  /**
+   * Allow the on-screen pen/stylus annotation toggle in Present mode on
+   * this slide — off by default (undefined = not allowed), an explicit
+   * per-slide opt-in rather than a global switch, since not every slide
+   * wants to invite stray marks (e.g. a quiz). Strokes drawn during Present
+   * are session-only "chalk" — never written to the document, cleared the
+   * moment Present mode ends or the deck is reloaded. See present.ts.
+   */
+  annotate?: boolean
+  /** When set, wins over `background` (kept as the solid fallback) — same
+   *  convention as ShapeElement.fillGradient. */
+  backgroundGradient?: GradientFill
 }
 
 export interface BentoDoc {

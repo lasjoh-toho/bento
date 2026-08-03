@@ -95,6 +95,8 @@ the string `</script>` can never appear and terminate the block.
 | `stateOf?` | `string` | no | Marks this slide a hidden *state* variant of the slide with this id (see [Interactive states](#interactive-states)). |
 | `hover?` | `{ type, dim?, default? }` | no | Present-mode hover behaviour: `type: 'focus-group'` (dim elements outside the hovered group) or `'reveal'` (`showOnHover` set swap; `default` names the resting set). |
 | `comments?` | `Comment[]` | no | Review threads. Editor-only — never rendered in present/print, but saved in the file. |
+| `annotate?` | `boolean` | no | Allows the on-screen pen/stylus toggle in Present mode on this slide (off unless `true`). Drawn strokes are session-only — never saved to the document. |
+| `backgroundGradient?` | `GradientFill` | no | Wins over `background` when set (same convention as `ShapeElement.fillGradient`). |
 
 ### `Comment`
 
@@ -164,6 +166,15 @@ plus `fill`, `stroke`, `strokeWidth`, `radius` (rect corner). Options:
 `type: "image"` — `src` (a `data:` URI or `"asset:<key>"`), `fit`
 (`contain|cover|fill`), `radius`. Embed images as `data:` URIs in `doc.assets`
 and reference them to keep the file self-contained.
+
+Optional `crop: { x, y, w, h }` — a rectangle in fractions (0..1) of the
+**source image's own** width/height (not the element box). When set, the
+cropped region is stretched to exactly fill the element box and `fit` is
+ignored (clear `crop` to fall back to `fit` again). `{x:0,y:0,w:1,h:1}` is
+equivalent to no crop. Authored by dragging handles in the editor's crop
+dialog (properties panel → Crop → "Crop image…"); agents can set it directly
+as plain fractions, e.g. `{"x":0.1,"y":0,"w":0.8,"h":1}` to trim 10% off each
+side horizontally.
 
 ### `svg`
 

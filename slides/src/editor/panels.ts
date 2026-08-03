@@ -5,7 +5,9 @@
 // into a single undo checkpoint.
 
 import type { Store } from '../store'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type LineEnding, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import type { SlideCanvas } from './canvas'
+import { bakeImagePermanent } from './imagemask'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type GradientFill, type ImageElement, type LineEnding, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { isMacOS } from '../screens'
 import { CHART_PRESETS } from '../charts'
@@ -105,15 +107,67 @@ const fillStyles = (): Array<[string, string]> =>
 export class PropsPanel {
   private burst = false
 
+  /** Which image element currently shows the Cancel/Apply crop controls in
+   *  this panel (the interactive geometry itself — drag to pan, slider to
+   *  zoom — lives on the canvas now; see canvas.ts's startCrop/commitCrop/
+   *  cancelCrop and imagecrop.ts). Purely a "what does this panel render"
+   *  flag; not doc state. */
+  private cropElId: string | null = null
+  /** Same idea as cropElId, for the "Freistellen…" (cutout/erase) mode. */
+  private maskElId: string | null = null
+  private maskTool: 'wand' | 'eraser' | 'box' | 'ellipse' = 'eraser'
+  private maskBrushSize = 40
+  private maskTolerance = 24
+  /** "Farben" section scope selector — which slide(s) the next color pick
+   *  applies to. 'next' is one-shot: applied to whichever slide the user
+   *  switches to next, then reset to 'slide'. */
+  private colorScope: 'slide' | 'all' | 'next' = 'slide'
+  private pendingColor: { color?: string; background?: string; backgroundGradient?: GradientFill | null } | null = null
+
   constructor(
     private host: HTMLElement,
     private store: Store,
+    private canvas: SlideCanvas,
   ) {
     // Selection/slide switches always rebuild — the user acted outside the
     // panel, so whatever input was focused is obsolete. Doc mutations respect
     // a focused input (skip + mark stale) and catch up when focus leaves.
-    store.on('selection', () => this.rebuild(true))
-    store.on('current', () => this.rebuild(true))
+    store.on('selection', () => {
+      // Acting on something else while crop mode was open abandons it —
+      // mirrors clicking away from any other in-progress on-canvas editor.
+      if (this.cropElId && !this.store.selection.includes(this.cropElId)) {
+        this.canvas.cancelCrop()
+        this.cropElId = null
+      }
+      if (this.maskElId && !this.store.selection.includes(this.maskElId)) {
+        this.canvas.cancelMask()
+        this.maskElId = null
+      }
+      this.rebuild(true)
+    })
+    store.on('current', () => {
+      // Sticky, not one-shot: stays active — reapplying to whichever slide
+      // is now current — for as long as the scope stays 'next', so picking
+      // through several slides in a row all pick up the same colors. Switch
+      // the scope away from 'next' (see the Farben section) to stop.
+      if (this.pendingColor && this.colorScope === 'next') {
+        const p = this.pendingColor
+        this.store.commit(() => {
+          const s = this.store.slide
+          if (p.color !== undefined) {
+            for (const el of s.elements) {
+              if (el.type === 'text') { el.color = p.color!; delete el.colorGradient }
+            }
+          }
+          if (p.background !== undefined) s.background = p.background
+          if (p.backgroundGradient !== undefined) {
+            if (p.backgroundGradient) s.backgroundGradient = p.backgroundGradient
+            else delete s.backgroundGradient
+          }
+        })
+      }
+      this.rebuild(true)
+    })
     store.on('doc', () => this.rebuild())
     this.host.addEventListener('focusout', () => {
       setTimeout(() => {
@@ -162,6 +216,7 @@ export class PropsPanel {
     this.stale = false
     this.burst = false
     this.host.innerHTML = ''
+    this.buildLayersSection()
     const els = this.store.selectedElements
     if (els.length === 0) this.buildSlidePanel()
     else if (els.length === 1) this.buildElementPanel(els[0])
@@ -254,6 +309,19 @@ export class PropsPanel {
       const hint = document.createElement('p')
       hint.className = 'ed-hint'
       hint.innerHTML = t('<b>Morph</b> animates elements that appear on both this slide and the previous one (copy a slide, then move things around).')
+      this.host.appendChild(hint)
+    }
+    this.row(t('Stift im Präsentationsmodus'), this.select(
+      ['aus', 'an'], slide.annotate ? 'an' : 'aus',
+      (v) => this.edit(() => {
+        if (v === 'an') this.store.slide.annotate = true
+        else delete this.store.slide.annotate
+      }, true),
+    ))
+    if (slide.annotate) {
+      const hint = document.createElement('p')
+      hint.className = 'ed-hint'
+      hint.textContent = t('Zeigt im Präsentationsmodus einen Stift-Umschalter — zum Anschreiben auf einem Touch-/Stylus-Display. Striche werden nie gespeichert.')
       this.host.appendChild(hint)
     }
 
@@ -386,6 +454,115 @@ export class PropsPanel {
     })
     this.host.appendChild(saveLy)
 
+    this.section(t('Farben'))
+    const scopeOptions: Array<[string, string]> = [
+      ['slide', t('diese Folie')],
+      ['all', t('alle Folien')],
+      ['next', t('auch auf nächste gewählte Folie anwenden')],
+    ]
+    this.row(t('Anwenden auf'), this.labeledSelect(scopeOptions, this.colorScope, (v) => {
+      this.colorScope = v as typeof this.colorScope
+      if (this.colorScope === 'next') {
+        // Carries over the CURRENT slide's existing look as the starting
+        // point — so choosing this doesn't require re-picking a color that
+        // was already set before switching scope; picking a new one from
+        // here still refines it further (see applyToSlides below).
+        const s = this.store.slide
+        this.pendingColor = {
+          color: s.elements.find((e): e is TextElement => e.type === 'text')?.color,
+          background: s.background,
+          backgroundGradient: s.backgroundGradient ?? null,
+        }
+      } else {
+        this.pendingColor = null // leaving 'next' stops it
+      }
+      this.rebuild(true)
+    }))
+    if (this.colorScope === 'next' && this.pendingColor) {
+      const pendingHint = document.createElement('p')
+      pendingHint.className = 'ed-hint'
+      pendingHint.textContent = t('Aktiv: wird auf jede Folie angewendet, die du jetzt auswählst — so lange, bis du "Anwenden auf" wieder änderst.')
+      this.host.appendChild(pendingHint)
+    }
+
+    const applyToSlides = (fn: (s: Slide) => void, patch: NonNullable<typeof this.pendingColor>) => {
+      if (this.colorScope === 'next') {
+        this.pendingColor = { ...this.pendingColor, ...patch }
+        this.rebuild(true)
+        return
+      }
+      const slides = this.colorScope === 'all' ? this.store.doc.slides : [this.store.slide]
+      this.store.commit(() => { for (const s of slides) fn(s) })
+    }
+    const applyTextColor = (color: string) =>
+      applyToSlides((s) => {
+        for (const el of s.elements) if (el.type === 'text') { el.color = color; delete el.colorGradient }
+      }, { color })
+    const applyBackground = (patch: { background?: string; backgroundGradient?: GradientFill | null }) =>
+      applyToSlides((s) => {
+        if (patch.background !== undefined) s.background = patch.background
+        if (patch.backgroundGradient !== undefined) {
+          if (patch.backgroundGradient) s.backgroundGradient = patch.backgroundGradient
+          else delete s.backgroundGradient
+        }
+      }, patch)
+
+    const firstTextColor = slide.elements.find((e): e is TextElement => e.type === 'text')?.color ?? '#000000'
+    this.row(t('Schriftfarbe für alle Texte'), this.colorHex(firstTextColor, (v, fin) => { if (fin) applyTextColor(v) }))
+
+    const bgGrad = slide.backgroundGradient
+    this.row(t('Hintergrund-Stil'), this.labeledSelect(fillStyles(), bgGrad ? 'gradient' : 'solid', (v) => {
+      if (v === 'gradient') {
+        const base = parseColor(slide.background)
+        applyBackground({
+          backgroundGradient: {
+            angle: 180,
+            stops: [
+              { at: 0, color: combineColor(base.hex, Math.max(base.a, 1)) },
+              { at: 1, color: combineColor(base.hex, 0) },
+            ],
+          },
+        })
+      } else {
+        applyBackground({ backgroundGradient: null })
+      }
+    }))
+    if (!bgGrad) {
+      this.row(t('Hintergrund'), this.colorHex(slide.background, (v, fin) => { if (fin) applyBackground({ background: v }) }))
+    } else {
+      this.row(t('Grad. Winkel'), this.number(bgGrad.angle, 1, (v, fin) => {
+        if (!fin) return
+        applyBackground({ backgroundGradient: { ...bgGrad, angle: v } })
+      }))
+      bgGrad.stops.forEach((stop, i) => {
+        this.row(i === 0 ? t('Farbe 1') : t('Farbe 2'), this.colorHex(stop.color, (v, fin) => {
+          if (!fin) return
+          const stops = bgGrad.stops.map((s, j) => (j === i ? { ...s, color: v } : s))
+          applyBackground({ backgroundGradient: { ...bgGrad, stops } })
+        }))
+      })
+    }
+    const colorHint = document.createElement('p')
+    colorHint.className = 'ed-hint'
+    colorHint.textContent = t('Schriftfarbe wirkt nur auf Textelemente (nicht Formen/Bilder); ein bestehender Farbverlauf im Text wird dabei entfernt.')
+    this.host.appendChild(colorHint)
+
+    this.section(t('Folie exportieren/importieren'))
+    const exportBtn = document.createElement('button')
+    exportBtn.className = 'ed-btn ed-btn-block'
+    exportBtn.textContent = t('Diese Folie exportieren…')
+    exportBtn.addEventListener('click', () => this.exportCurrentSlide())
+    this.host.appendChild(exportBtn)
+    const importBtn = document.createElement('button')
+    importBtn.className = 'ed-btn ed-btn-block'
+    importBtn.textContent = t('Folie(n) importieren…')
+    importBtn.addEventListener('click', () => this.importSlidesFromFile())
+    this.host.appendChild(importBtn)
+    const exportHint = document.createElement('p')
+    exportHint.className = 'ed-hint'
+    exportHint.textContent = t('Export erzeugt eine eigenständige bento/slides-Datei mit genau dieser Folie (nur die von ihr genutzten Bilder/Assets, nicht das ganze Deck) — lässt sich später wieder importieren oder im Konverter-Tool mit anderen Decks verbinden. Import fügt die Folie(n) direkt nach der aktuellen ein.')
+    this.host.appendChild(exportHint)
+
     this.section(t('Speaker notes'))
     const notes = document.createElement('textarea')
     notes.className = 'ed-notes'
@@ -405,6 +582,212 @@ export class PropsPanel {
     this.opsRow(els)
     this.section(t('Arrange'))
     this.arrangeRows(els)
+  }
+
+  /**
+   * Always-visible per-slide overview — every element in the current slide,
+   * front-most first (mirrors the actual stacking order: `slide.elements`
+   * is back-to-front, so this list is that array reversed). Click a row to
+   * select it; drag rows to restack (this IS `slide.elements`' order, so a
+   * drop writes straight into it). Rendered at the top of every rebuild
+   * regardless of what's selected — deliberately not folded into
+   * buildSlidePanel/buildElementPanel below, so it doesn't disappear the
+   * moment something gets selected.
+   */
+  /** Collects every `asset:<key>` reference found anywhere inside a value
+   *  (a slide, in practice) — used so a single-slide export only carries the
+   *  assets that slide actually uses, not the whole deck's. */
+  private static collectAssetRefs(node: unknown, out: Set<string>) {
+    if (typeof node === 'string') {
+      const m = /^asset:(.+)$/.exec(node)
+      if (m) out.add(m[1])
+      return
+    }
+    if (Array.isArray(node)) { for (const v of node) PropsPanel.collectAssetRefs(v, out); return }
+    if (node && typeof node === 'object') { for (const k in node as Record<string, unknown>) PropsPanel.collectAssetRefs((node as Record<string, unknown>)[k], out) }
+  }
+
+  /** Deep-remaps every `asset:<key>` string reference found inside a value
+   *  through keyMap — used when importing/merging so an incoming slide's
+   *  refs follow wherever its asset actually landed (renamed or not, on a
+   *  collision with something already in doc.assets). */
+  private static remapAssetRefs(node: unknown, keyMap: Record<string, string>): unknown {
+    if (typeof node === 'string') {
+      const m = /^asset:(.+)$/.exec(node)
+      return m && keyMap[m[1]] ? 'asset:' + keyMap[m[1]] : node
+    }
+    if (Array.isArray(node)) return node.map((v) => PropsPanel.remapAssetRefs(v, keyMap))
+    if (node && typeof node === 'object') {
+      const out: Record<string, unknown> = {}
+      for (const k in node as Record<string, unknown>) out[k] = PropsPanel.remapAssetRefs((node as Record<string, unknown>)[k], keyMap)
+      return out
+    }
+    return node
+  }
+
+  /** Downloads the current slide as a standalone bento/slides file — a
+   *  complete, tiny deck of exactly one slide, carrying only the assets it
+   *  uses (not the rest of the doc's). Valid input for "Folie(n)
+   *  importieren…" below, and for the pptx-to-bento converter tool's own
+   *  "drop a bento.json, connect with ✚" flow — the two are deliberately the
+   *  same file shape. */
+  private exportCurrentSlide() {
+    const slide = this.store.slide
+    const refs = new Set<string>()
+    PropsPanel.collectAssetRefs(slide, refs)
+    const assets: Record<string, string> = {}
+    for (const key of refs) {
+      const val = this.store.doc.assets?.[key]
+      if (val !== undefined) assets[key] = val
+    }
+    const exportDoc: Record<string, unknown> = {
+      format: 'bento/slides',
+      version: 1,
+      docId: uid('doc'),
+      title: `${this.store.doc.title} — ${slide.id}`,
+      size: { ...this.store.doc.size },
+      theme: { ...this.store.doc.theme },
+      slides: [JSON.parse(JSON.stringify(slide))],
+      modified: new Date().toISOString(),
+    }
+    if (Object.keys(assets).length) exportDoc.assets = assets
+    const blob = new Blob([JSON.stringify(exportDoc, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `slide-${slide.id}.bento.json`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 4000)
+  }
+
+  /** Opens a file picker for a bento/slides JSON (a single exported slide,
+   *  or a whole deck) and inserts ALL of its slides right after the current
+   *  one — renaming any slide id or asset key that would otherwise collide
+   *  with something already in this doc, and following the same references
+   *  through wherever they landed (mirrors the converter tool's mergeDocs). */
+  private importSlidesFromFile() {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json,application/json'
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      try {
+        const text = await file.text()
+        const parsed = JSON.parse(text)
+        if (parsed?.format !== 'bento/slides' || !Array.isArray(parsed.slides) || !parsed.slides.length) {
+          throw new Error(t('Keine gültige bento/slides-Datei (Feld "format" fehlt oder falsch, oder keine Folien enthalten).'))
+        }
+        this.store.commit(() => {
+          const doc = this.store.doc
+          doc.assets = doc.assets || {}
+          const keyMap: Record<string, string> = {}
+          for (const [key, val] of Object.entries((parsed.assets ?? {}) as Record<string, string>)) {
+            let newKey = key
+            if (Object.prototype.hasOwnProperty.call(doc.assets, newKey) && doc.assets[newKey] !== val) {
+              let i = 1
+              while (Object.prototype.hasOwnProperty.call(doc.assets, key + '_' + i)) i++
+              newKey = key + '_' + i
+            }
+            doc.assets[newKey] = val
+            if (newKey !== key) keyMap[key] = newKey
+          }
+          const usedIds = new Set(doc.slides.map((s) => s.id))
+          const incoming = JSON.parse(JSON.stringify(parsed.slides)) as Slide[]
+          const idMap: Record<string, string> = {}
+          for (const s of incoming) {
+            let newId = s.id
+            let i = 1
+            while (usedIds.has(newId)) newId = s.id + '_' + i++
+            usedIds.add(newId)
+            idMap[s.id] = newId
+          }
+          for (const s of incoming) {
+            s.id = idMap[s.id] || s.id
+            if (s.stateOf && idMap[s.stateOf]) s.stateOf = idMap[s.stateOf]
+          }
+          const remapped = incoming.map((s) => PropsPanel.remapAssetRefs(s, keyMap) as Slide)
+          doc.slides.splice(this.store.currentIndex + 1, 0, ...remapped)
+        })
+      } catch (e) {
+        alert(t('Import fehlgeschlagen: ') + ((e as Error).message || String(e)))
+      }
+    })
+    input.click()
+  }
+
+  private buildLayersSection() {
+    const elements = this.store.slide.elements
+    if (!elements.length) return
+    this.section(t('Ebenen'))
+    const list = document.createElement('div')
+    list.className = 'ed-layers'
+    for (let i = elements.length - 1; i >= 0; i--) {
+      const el = elements[i]
+      const row = document.createElement('div')
+      row.className = 'ed-layer-row' + (this.store.selection.includes(el.id) ? ' active' : '')
+      row.draggable = true
+      const icon = document.createElement('span')
+      icon.className = 'ed-layer-icon'
+      icon.innerHTML = this.layerIcon(el)
+      const label = document.createElement('span')
+      label.className = 'ed-layer-label'
+      label.textContent = this.layerLabel(el)
+      row.append(icon, label)
+      row.addEventListener('click', () => this.store.select([el.id]))
+      row.addEventListener('dragstart', (e) => {
+        e.dataTransfer?.setData('text/plain', el.id)
+        row.classList.add('dragging')
+      })
+      row.addEventListener('dragend', () => row.classList.remove('dragging'))
+      row.addEventListener('dragover', (e) => e.preventDefault())
+      row.addEventListener('drop', (e) => {
+        e.preventDefault()
+        const draggedId = e.dataTransfer?.getData('text/plain')
+        if (!draggedId || draggedId === el.id) return
+        const rect = row.getBoundingClientRect()
+        const above = e.clientY - rect.top < rect.height / 2
+        this.moveLayer(draggedId, el.id, above)
+      })
+      list.appendChild(row)
+    }
+    this.host.appendChild(list)
+  }
+
+  private layerIcon(el: SlideElement): string {
+    const key = ({ text: 'text', shape: 'shapes', image: 'image', svg: 'code', chart: 'chart', table: 'table', media: 'media' } as const)[el.type]
+    return (key && (ICONS as Record<string, string>)[key]) || ''
+  }
+
+  private layerLabel(el: SlideElement): string {
+    if (el.type === 'text') {
+      const plain = el.html.replace(/<[^>]+>/g, '').trim()
+      return plain || t('(leerer Text)')
+    }
+    if (el.type === 'shape') return t('Form') + (el.shape ? ` (${el.shape})` : '')
+    if (el.type === 'image') return t('Bild')
+    if (el.type === 'svg') return t('Diagramm')
+    if (el.type === 'chart') return t('Chart')
+    if (el.type === 'table') return t('Tabelle')
+    if (el.type === 'media') return el.kind === 'audio' ? t('Audio') : t('Video')
+    return ''
+  }
+
+  /** Move `draggedId` to sit just above (`above=true`) or below `targetId` in
+   *  stacking order — "above" here means visually above in this front-first
+   *  list, i.e. AFTER targetId in the underlying (back-to-front) array. */
+  private moveLayer(draggedId: string, targetId: string, above: boolean) {
+    this.store.commit(() => {
+      const arr = this.store.slide.elements
+      const fromIdx = arr.findIndex((e) => e.id === draggedId)
+      if (fromIdx < 0) return
+      const [moved] = arr.splice(fromIdx, 1)
+      const targetIdx = arr.findIndex((e) => e.id === targetId)
+      if (targetIdx < 0) { arr.splice(fromIdx, 0, moved); return }
+      arr.splice(above ? targetIdx + 1 : targetIdx, 0, moved)
+    })
   }
 
   private buildElementPanel(el: SlideElement) {
@@ -1592,12 +1975,174 @@ export class PropsPanel {
   }
 
   private buildImageProps(el: SlideElement) {
+    const img = el as ImageElement
     this.section(t('Fit & corners'))
-    this.row('Fit', this.select(['contain', 'cover', 'fill'], (el as any).fit, (v) =>
-      this.mutate(el.id, (e) => { (e as any).fit = v }, true)))
-    this.row('Corner radius', this.number((el as any).radius, 1, (v, fin) =>
-      this.mutate(el.id, (e) => { (e as any).radius = Math.max(v, 0) }, fin)))
+    this.row('Fit', this.select(['contain', 'cover', 'fill'], img.fit, (v) =>
+      this.mutate(el.id, (e) => { (e as ImageElement).fit = v as ImageElement['fit'] }, true)))
+    if (img.crop) {
+      const note = document.createElement('p')
+      note.className = 'ed-hint'
+      note.textContent = t('Fit is ignored while a crop is set — reset the crop to use it again.')
+      this.host.appendChild(note)
+    }
+    this.row('Corner radius', this.number(img.radius, 1, (v, fin) =>
+      this.mutate(el.id, (e) => { (e as ImageElement).radius = Math.max(v, 0) }, fin)))
+
+    this.section(t('Crop'))
+    if (this.cropElId === el.id) {
+      const hint = document.createElement('p')
+      hint.className = 'ed-hint'
+      hint.textContent = t('Drag the photo on the slide to reposition it, use the slider to zoom.')
+      this.host.appendChild(hint)
+      const actions = document.createElement('div')
+      actions.className = 'ed-crop-actions'
+      actions.innerHTML =
+        `<button class="ed-crop-cancel ed-btn">${t('Cancel')}</button>` +
+        `<button class="ed-crop-apply ed-btn ed-btn-primary">${t('Apply crop')}</button>`
+      this.host.appendChild(actions)
+      actions.querySelector('.ed-crop-cancel')!.addEventListener('click', () => {
+        this.canvas.cancelCrop()
+        this.cropElId = null
+        this.rebuild(true)
+      })
+      actions.querySelector('.ed-crop-apply')!.addEventListener('click', () => {
+        this.canvas.commitCrop()
+        this.cropElId = null
+        // commitCrop() writes to the doc, which already triggers a rebuild via
+        // the 'doc' listener — but only if something actually changed. Force
+        // one regardless so the panel reliably drops back to the button.
+        this.rebuild(true)
+      })
+    } else {
+      const cropBtn = document.createElement('button')
+      cropBtn.className = 'ed-btn ed-btn-block'
+      cropBtn.textContent = img.crop ? t('Edit crop…') : t('Crop image…')
+      cropBtn.addEventListener('click', () => {
+        this.cropElId = el.id
+        this.canvas.startCrop(el.id)
+        this.rebuild(true)
+      })
+      this.host.appendChild(cropBtn)
+      if (img.crop) {
+        const reset = document.createElement('button')
+        reset.className = 'ed-btn ed-btn-block'
+        reset.textContent = t('Reset crop')
+        reset.addEventListener('click', () =>
+          this.mutate(el.id, (e) => { delete (e as ImageElement).crop }, true))
+        this.host.appendChild(reset)
+      }
+    }
+
+    this.section(t('Freistellen'))
+    if (this.maskElId === el.id) {
+      const hint = document.createElement('p')
+      hint.className = 'ed-hint'
+      hint.textContent = t('Zauberstab: Klick auf einen Bereich wählt ihn per Farbähnlichkeit aus. Radiergummi: klicken und ziehen. Box/Ellipse: aufziehen.')
+      this.host.appendChild(hint)
+
+      const tools: Array<{ id: 'wand' | 'eraser' | 'box' | 'ellipse'; label: string }> = [
+        { id: 'wand', label: t('Zauberstab') },
+        { id: 'eraser', label: t('Radiergummi') },
+        { id: 'box', label: t('Box') },
+        { id: 'ellipse', label: t('Ellipse') },
+      ]
+      const toolRow = document.createElement('div')
+      toolRow.className = 'ed-grid2'
+      for (const tool of tools) {
+        const btn = document.createElement('button')
+        btn.className = 'ed-btn' + (this.maskTool === tool.id ? ' ed-btn-primary' : '')
+        btn.textContent = tool.label
+        btn.addEventListener('click', () => {
+          this.maskTool = tool.id
+          this.canvas.setMaskTool(tool.id)
+          this.rebuild(true)
+        })
+        toolRow.appendChild(btn)
+      }
+      this.host.appendChild(toolRow)
+
+      if (this.maskTool === 'eraser') {
+        this.row(t('Größe'), this.number(this.maskBrushSize, 5, (v) => {
+          this.maskBrushSize = Math.max(4, v)
+          this.canvas.setMaskBrushSize(this.maskBrushSize)
+        }))
+      }
+      if (this.maskTool === 'wand') {
+        this.row(t('Toleranz'), this.number(this.maskTolerance, 5, (v) => {
+          this.maskTolerance = Math.max(0, Math.min(100, v))
+          this.canvas.setMaskTolerance(this.maskTolerance)
+        }))
+      }
+
+      const undoBtn = document.createElement('button')
+      undoBtn.className = 'ed-btn ed-btn-block'
+      undoBtn.textContent = t('Rückgängig')
+      undoBtn.disabled = !this.canvas.maskCanUndo
+      undoBtn.addEventListener('click', () => this.canvas.undoMask())
+      this.host.appendChild(undoBtn)
+
+      const actions = document.createElement('div')
+      actions.className = 'ed-crop-actions'
+      actions.innerHTML =
+        `<button class="ed-mask-cancel ed-btn">${t('Cancel')}</button>` +
+        `<button class="ed-mask-apply ed-btn ed-btn-primary">${t('Übernehmen')}</button>`
+      this.host.appendChild(actions)
+      actions.querySelector('.ed-mask-cancel')!.addEventListener('click', () => {
+        this.canvas.cancelMask()
+        this.maskElId = null
+        this.rebuild(true)
+      })
+      actions.querySelector('.ed-mask-apply')!.addEventListener('click', () => {
+        this.canvas.commitMask()
+        this.maskElId = null
+        this.rebuild(true)
+      })
+    } else {
+      const maskBtn = document.createElement('button')
+      maskBtn.className = 'ed-btn ed-btn-block'
+      maskBtn.textContent = img.mask ? t('Freistellen bearbeiten…') : t('Freistellen…')
+      maskBtn.addEventListener('click', () => {
+        this.maskElId = el.id
+        this.maskTool = 'eraser'
+        this.canvas.setMaskTool('eraser')
+        this.canvas.setMaskBrushSize(this.maskBrushSize)
+        this.canvas.setMaskTolerance(this.maskTolerance)
+        this.canvas.setMaskOnChange(() => this.rebuild(true))
+        this.canvas.startMask(el.id).then(() => this.rebuild(true))
+        this.rebuild(true)
+      })
+      this.host.appendChild(maskBtn)
+      if (img.mask) {
+        const reset = document.createElement('button')
+        reset.className = 'ed-btn ed-btn-block'
+        reset.textContent = t('Freistellung entfernen')
+        reset.addEventListener('click', () =>
+          this.mutate(el.id, (e) => { delete (e as ImageElement).mask }, true))
+        this.host.appendChild(reset)
+      }
+    }
+
+    if ((img.crop || img.mask) && this.cropElId !== el.id && this.maskElId !== el.id) {
+      const hint = document.createElement('p')
+      hint.className = 'ed-hint'
+      hint.textContent = img.mask
+        ? t('Backt Zuschnitt und Freistellung in ein einzelnes, meist kleineres Bild — danach nicht mehr separat änderbar.')
+        : t('Backt den Zuschnitt in ein einzelnes, kleineres Bild — danach nicht mehr separat änderbar.')
+      this.host.appendChild(hint)
+      const bakeBtn = document.createElement('button')
+      bakeBtn.className = 'ed-btn ed-btn-block'
+      bakeBtn.textContent = img.mask
+        ? t('Zuschnitt & Freistellung dauerhaft machen (spart Speicher)')
+        : t('Zuschnitt dauerhaft machen (spart Speicher)')
+      bakeBtn.addEventListener('click', async () => {
+        bakeBtn.disabled = true
+        bakeBtn.textContent = t('Wird verarbeitet…')
+        await bakeImagePermanent(this.store, el.id)
+      })
+      this.host.appendChild(bakeBtn)
+    }
   }
+
 
   private buildMediaProps(el: MediaElement) {
     this.section(t('Source & playback'))
@@ -1928,6 +2473,34 @@ export class PropsPanel {
       if (!Number.isNaN(v)) onEdit(v, true)
     })
     return input
+  }
+
+  /** Native swatch (opens the browser's own color picker) plus a plain text
+   *  field for typing/pasting a hex code (or any CSS color) directly — the
+   *  plain `color()` picker below only offers the swatch. */
+  private colorHex(value: string, onEdit: (v: string, final: boolean) => void): HTMLElement {
+    const wrap = document.createElement('div')
+    wrap.className = 'ed-colorhex'
+    const hex = /^#[0-9a-fA-F]{6}$/.test(value) ? value : parseColor(value).hex
+    const swatch = document.createElement('input')
+    swatch.type = 'color'
+    swatch.value = hex
+    const text = document.createElement('input')
+    text.type = 'text'
+    text.className = 'ed-colorhex-text'
+    text.value = value
+    text.spellcheck = false
+    text.placeholder = '#rrggbb'
+    swatch.addEventListener('input', () => { text.value = swatch.value; onEdit(swatch.value, false) })
+    swatch.addEventListener('change', () => { text.value = swatch.value; onEdit(swatch.value, true) })
+    text.addEventListener('change', () => {
+      const v = text.value.trim()
+      if (!v) return
+      onEdit(v, true)
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) swatch.value = v
+    })
+    wrap.append(swatch, text)
+    return wrap
   }
 
   private color(value: string, onEdit: (v: string, final: boolean) => void): HTMLElement {

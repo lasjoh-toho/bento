@@ -18,6 +18,7 @@ import { SlideCanvas } from './canvas'
 import { PropsPanel } from './panels'
 import { startPresentation } from '../present'
 import { adoptFileHandle, canWriteInPlace, currentFileName, fileBase, hasFileHandle, isEncryptionActive, openedFileName, saveFile, serializeAuto, serializeFile, setEncryptionPassword, writeUpdatedFile, writeUpdatedFileAs } from '../save'
+import { moodleConfig, saveToMoodle } from './moodle'
 import { addVersion, clearRecovery, clearVersions, docContentKey, getRecovery, listVersions, pruneOld, putRecovery, type Snapshot } from '../autosave'
 import { insertElements, insertSlides, parseClip, serializeElements, serializeSlides } from './clipboard'
 import { openSpeakerWindow, speakerIdleBody } from '../screens'
@@ -64,6 +65,17 @@ export class Editor {
   /** Name of a deck opened by DROP when no writable handle came with it. */
   private openedAs?: string
   private thumbTimer = 0
+  /** Last JSON snapshot used to render each slide's thumbnail, keyed by
+   *  slide id — lets scheduleThumbs() skip slides that didn't actually
+   *  change instead of re-rendering all N of them on every single edit
+   *  (that "re-render everything" cost is what made bulk edits like
+   *  applying a color scheme to one slide feel disproportionately slow:
+   *  editing slide 3 was still repainting every other slide's thumbnail
+   *  too). Cleared whenever theme/size — which every thumbnail depends on
+   *  but aren't part of any one slide's own JSON — change.
+   */
+  private thumbCache = new Map<string, string>()
+  private thumbSharedKey = ''
   private presenting = false
   private updatesB!: HTMLElement
   private avatarsBox!: HTMLElement
@@ -276,7 +288,7 @@ export class Editor {
     this.updatesB = btn(ICONS.sync, '', () => this.openAbout(true), t('Check for updates'))
     this.updatesB.style.display = 'none'
     setTimeout(async () => {
-      if (!autoCheckEnabled() || offlineEnabled()) return
+      if (!autoCheckEnabled() || offlineEnabled() || moodleConfig) return
       const r = await checkForUpdates()
       this.lastAutoCheck = r
       if (r.status === 'update') {
@@ -292,9 +304,11 @@ export class Editor {
     }, 1500)
     const undoB = btn(ICONS.undo, '', () => this.store.undo(), t('Undo (⌘Z)'))
     const redoB = btn(ICONS.redo, '', () => this.store.redo(), t('Redo (⇧⌘Z)'))
-    const saveB = btn(ICONS.save, t('Save'), () => this.save(false), canWriteInPlace()
-      ? t('Save — rewrite this file in place (⌘S)')
-      : t('Save — download an updated copy (⌘S). This browser can’t rewrite the open file.'))
+    const saveB = btn(ICONS.save, t('Save'), () => this.save(false), moodleConfig
+      ? t('Save — writes back into this Moodle activity (⌘S)')
+      : canWriteInPlace()
+        ? t('Save — rewrite this file in place (⌘S)')
+        : t('Save — download an updated copy (⌘S). This browser can’t rewrite the open file.'))
     saveB.appendChild(this.dirtyDot) // the amber unsaved-changes dot lives ON Save
     const pdfB = btn(ICONS.pdf, '', () => this.exportPdf(), t('Export PDF (print)'))
     const helpB = btn('<b class="ed-help-q">?</b>', '', () => this.openHelp(), t('Shortcuts & tips (?)'))
@@ -427,7 +441,7 @@ export class Editor {
     this.canvas = new SlideCanvas(canvasWrap, this.store)
     this.canvas.onCommentModeChange = (on) => commentB.classList.toggle('ed-btn-armed', on)
     this.canvas.onSlideNav = (dir) => this.store.goToLinear(dir)
-    this.panel = new PropsPanel(this.props, this.store)
+    this.panel = new PropsPanel(this.props, this.store, this.canvas)
 
     if (this.store.doc.collab?.role === 'reader') this.enterReaderMode()
   }
@@ -1619,11 +1633,25 @@ export class Editor {
       const thumbs = this.sidebar.querySelectorAll<HTMLElement>('.ed-thumb')
       if (thumbs.length !== this.store.doc.slides.length) return this.rebuildSidebar()
       const base = Math.max(96, this.panelW.left - 52)
+      // theme/size affect every thumbnail's render but live outside any one
+      // slide's own JSON — if either changed, nothing in the per-slide cache
+      // below can be trusted, so wipe it and let this pass repaint everything.
+      const sharedKey = JSON.stringify(this.store.doc.theme) + '|' + this.store.doc.size.width + 'x' + this.store.doc.size.height
+      if (sharedKey !== this.thumbSharedKey) {
+        this.thumbSharedKey = sharedKey
+        this.thumbCache.clear()
+      }
+      const seen = new Set<string>()
       thumbs.forEach((item) => {
         const slide = this.store.doc.slides[Number(item.dataset.index)]
         if (!slide) return
-        const w = slide.stateOf ? Math.round(base * 0.84) : base
-        item.querySelector('.bento-thumb-surface')?.replaceWith(renderThumbnail(slide, this.store.doc, w))
+        seen.add(slide.id)
+        const snapshot = JSON.stringify(slide)
+        if (this.thumbCache.get(slide.id) !== snapshot) {
+          this.thumbCache.set(slide.id, snapshot)
+          const w = slide.stateOf ? Math.round(base * 0.84) : base
+          item.querySelector('.bento-thumb-surface')?.replaceWith(renderThumbnail(slide, this.store.doc, w))
+        }
         // comment badge tracks doc-level changes too (comments emit 'doc')
         const open = slide.comments?.some((c) => !c.resolved)
         const badge = item.querySelector('.ed-thumb-cmt')
@@ -1635,6 +1663,8 @@ export class Editor {
           badge.remove()
         }
       })
+      // Drop cache entries for slides that no longer exist (deleted since).
+      for (const id of this.thumbCache.keys()) if (!seen.has(id)) this.thumbCache.delete(id)
     }, 150)
   }
 
@@ -2236,6 +2266,7 @@ export class Editor {
   }
 
   private noticeIfCannotWriteInPlace() {
+    if (moodleConfig) return // saves go to Moodle's server here — this notice is about local file rewriting, not applicable
     if (canWriteInPlace()) return
     if (localStorage.getItem(SAVE_NOTICE_KEY) === 'seen') return
     const bar = div('ed-recover')
@@ -2420,6 +2451,22 @@ export class Editor {
     // shared docs persist their CRDT state so the saved copy can rejoin
     // as a true fork later (offline edits merge both ways)
     this.session?.stampInto(this.store.doc)
+
+    if (moodleConfig) {
+      // No local file handle to rewrite here — the "file" is a database
+      // row, reached over mod_bento's own web service. See moodle.ts.
+      try {
+        await saveToMoodle(this.store.doc)
+        this.store.setDirty(false)
+        markFileSaved()
+        this.toast(t('In Moodle gespeichert'))
+      } catch (err) {
+        console.error(err)
+        this.toast(t('Save failed — see console'))
+      }
+      return
+    }
+
     try {
       const result = await saveFile(this.store.doc, forcePicker)
       if (result === 'cancelled') return
@@ -2629,15 +2676,19 @@ export class Editor {
     box.appendChild(promo)
 
     const status = div('ed-about-status')
-    status.textContent =
-      this.lastAutoCheck?.status === 'current'
+    status.textContent = moodleConfig
+      ? t('This presentation is managed by your Moodle site — updates to the app itself are handled there, not here.')
+      : this.lastAutoCheck?.status === 'current'
         ? t("Checked automatically at launch — you're on the latest version (v{v}).", { v: APP_VERSION })
         : this.lastAutoCheck?.status === 'error'
           ? t("Launch check couldn't reach the release server ({m}). Check manually below.", { m: this.lastAutoCheck.message })
           : t('This file carries its own app — it works offline, forever, as is.')
 
+    let checkBRef: HTMLButtonElement | undefined
+    if (!moodleConfig) {
     const row = div('ed-about-row')
     const checkB = document.createElement('button')
+    checkBRef = checkB
     checkB.className = 'ed-btn'
     checkB.textContent = t('Check for updates')
     checkB.addEventListener('click', async () => {
@@ -2746,7 +2797,9 @@ export class Editor {
       }
     })
     row.appendChild(checkB)
-    box.append(row, status)
+    box.appendChild(row)
+    }
+    box.appendChild(status)
 
     const autoRow = document.createElement('label')
     autoRow.className = 'ed-about-auto'
@@ -2755,7 +2808,7 @@ export class Editor {
     autoCb.checked = autoCheckEnabled()
     autoCb.addEventListener('change', () => setAutoCheck(autoCb.checked))
     autoRow.append(autoCb, document.createTextNode(' ' + t('Check for updates automatically at launch')))
-    box.appendChild(autoRow)
+    if (!moodleConfig) box.appendChild(autoRow)
 
     // the hard no-network switch: blocks update checks AND online
     // collaboration for this browser. Same-machine tab sync is not
@@ -2834,7 +2887,7 @@ export class Editor {
     })
     document.addEventListener('keydown', onKey, true)
     document.body.appendChild(overlay)
-    if (runCheck || this.updateFound) checkB.click()
+    if (!moodleConfig && (runCheck || this.updateFound)) checkBRef?.click()
   }
 
   toast(message: string) {
