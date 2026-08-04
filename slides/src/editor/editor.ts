@@ -66,6 +66,17 @@ export class Editor {
   /** Name of a deck opened by DROP when no writable handle came with it. */
   private openedAs?: string
   private thumbTimer = 0
+  /** Last JSON snapshot used to render each slide's thumbnail, keyed by
+   *  slide id — lets scheduleThumbs() skip slides that didn't actually
+   *  change instead of re-rendering all N of them on every single edit
+   *  (that "re-render everything" cost is what made bulk edits like
+   *  applying a color scheme to one slide feel disproportionately slow:
+   *  editing slide 3 was still repainting every other slide's thumbnail
+   *  too). Cleared whenever theme/size — which every thumbnail depends on
+   *  but aren't part of any one slide's own JSON — change.
+   */
+  private thumbCache = new Map<string, string>()
+  private thumbSharedKey = ''
   private presenting = false
   private updatesB!: HTMLElement
   private avatarsBox!: HTMLElement
@@ -1650,11 +1661,25 @@ export class Editor {
       const thumbs = this.sidebar.querySelectorAll<HTMLElement>('.ed-thumb')
       if (thumbs.length !== this.store.doc.slides.length) return this.rebuildSidebar()
       const base = Math.max(96, this.panelW.left - 52)
+      // theme/size affect every thumbnail's render but live outside any one
+      // slide's own JSON — if either changed, nothing in the per-slide cache
+      // below can be trusted, so wipe it and let this pass repaint everything.
+      const sharedKey = JSON.stringify(this.store.doc.theme) + '|' + this.store.doc.size.width + 'x' + this.store.doc.size.height
+      if (sharedKey !== this.thumbSharedKey) {
+        this.thumbSharedKey = sharedKey
+        this.thumbCache.clear()
+      }
+      const seen = new Set<string>()
       thumbs.forEach((item) => {
         const slide = this.store.doc.slides[Number(item.dataset.index)]
         if (!slide) return
-        const w = slide.stateOf ? Math.round(base * 0.84) : base
-        item.querySelector('.bento-thumb-surface')?.replaceWith(renderThumbnail(slide, this.store.doc, w))
+        seen.add(slide.id)
+        const snapshot = JSON.stringify(slide)
+        if (this.thumbCache.get(slide.id) !== snapshot) {
+          this.thumbCache.set(slide.id, snapshot)
+          const w = slide.stateOf ? Math.round(base * 0.84) : base
+          item.querySelector('.bento-thumb-surface')?.replaceWith(renderThumbnail(slide, this.store.doc, w))
+        }
         // comment badge tracks doc-level changes too (comments emit 'doc')
         const open = slide.comments?.some((c) => !c.resolved)
         const badge = item.querySelector('.ed-thumb-cmt')
@@ -1666,6 +1691,8 @@ export class Editor {
           badge.remove()
         }
       })
+      // Drop cache entries for slides that no longer exist (deleted since).
+      for (const id of this.thumbCache.keys()) if (!seen.has(id)) this.thumbCache.delete(id)
     }, 150)
   }
 

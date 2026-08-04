@@ -77,9 +77,17 @@ export class Store {
 
   // --- history ------------------------------------------------------------
 
-  /** Snapshot current doc state onto the undo stack. Call BEFORE a mutation. */
+  /** Snapshot current doc state onto the undo stack. Call BEFORE a mutation.
+   *  Excludes `assets` — nothing in the app ever deletes an entry from it
+   *  (only ever grows via internAsset's dedup-by-hash), so undo/redo never
+   *  needs to restore a removed one; the current assets carry over as-is on
+   *  restore(). Skipping them here is what keeps checkpoint() fast on decks
+   *  with embedded images — JSON.stringify-ing megabytes of base64 data URIs
+   *  on literally every single edit was the real cost, not anything about
+   *  a particular feature. */
   checkpoint() {
-    this.undoStack.push(JSON.stringify(this.doc))
+    const { assets: _assets, ...rest } = this.doc
+    this.undoStack.push(JSON.stringify(rest))
     if (this.undoStack.length > MAX_UNDO) this.undoStack.shift()
     this.redoStack.length = 0
   }
@@ -106,8 +114,9 @@ export class Store {
   private restore(from: string[], to: string[]) {
     const snapshot = from.pop()
     if (!snapshot) return
-    to.push(JSON.stringify(this.doc))
-    this.doc = JSON.parse(snapshot)
+    const { assets: _assets, ...rest } = this.doc
+    to.push(JSON.stringify(rest))
+    this.doc = { ...JSON.parse(snapshot), assets: this.doc.assets }
     this.currentIndex = Math.min(this.currentIndex, this.doc.slides.length - 1)
     this.selection = this.selection.filter((id) => this.element(id))
     this.setDirty(true)
