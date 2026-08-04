@@ -1926,19 +1926,18 @@ export class Editor {
       this.canvas.render()
     }, {
       fullscreen,
-      onSaveTerms: async (slideIndex, terms) => {
+      onSaveTerms: (slideIndex, terms) => {
+        // Same as any other edit in the app: this stages the change into
+        // the real document (undo checkpoint, dirty flag) — it does NOT
+        // itself write the file. That happens whenever the user does a
+        // normal save afterward (the main Save button, autosave, etc.),
+        // exactly like every other kind of change already works. This
+        // button's whole job is just "stop being ephemeral session state,
+        // become part of the document" — not "write to disk right now".
         this.store.commit(() => {
           const target = this.store.doc.slides[slideIndex]
           if (target) target.dragTerms = terms
         })
-        // A store commit alone only makes this part of the in-memory
-        // document (undoable, marked dirty) — closing and reopening the
-        // FILE would still load whatever was last written to disk, which
-        // doesn't include it yet. The whole point of this being a distinct
-        // "save" action (vs. ink, which never persists at all) is that it
-        // survives that; call the real file save too, the same one the
-        // main editor's own Save button triggers.
-        await this.save(false)
       },
     })
   }

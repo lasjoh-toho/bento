@@ -392,10 +392,13 @@ export interface Slide {
    * deliberately session-only and never saved). These start as unsaved,
    * session-local state too (typed/placed/dragged live during Present,
    * gated behind the same `annotate` toggle) — but an explicit "save"
-   * action in that toolbar writes the current arrangement here, through the
-   * normal Store.commit() path (undo, dirty-flag, the works). Reopening the
-   * deck without ever saving resets to whatever was last saved here (or
-   * empty, if nothing ever was).
+   * action in that toolbar commits the current arrangement here, through
+   * the normal Store.commit() path (undo, dirty-flag, the works), same as
+   * any other edit in the app. It does NOT itself write the file — that
+   * still happens whenever the user does a normal save afterward, exactly
+   * like every other kind of change. Reopening the deck without ever using
+   * this action (or without a normal save afterward) resets to whatever
+   * was last actually saved to the file (or empty, if nothing ever was).
    *
    * Deliberately minimal for now (an annotation tool, not a quiz tool yet) —
    * but shaped so a later "correct drop zone" feature could add an optional

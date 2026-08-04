@@ -26,7 +26,7 @@ export function startPresentation(
   doc: BentoDoc,
   startIndex: number,
   onExit: (lastIndex: number) => void,
-  opts: { fullscreen?: boolean; onSaveTerms?: (slideIndex: number, terms: DragTerm[]) => void | Promise<void> } = {},
+  opts: { fullscreen?: boolean; onSaveTerms?: (slideIndex: number, terms: DragTerm[]) => void } = {},
 ): PresentSession {
   const overlay = document.createElement('div')
   overlay.className = 'bento-present-overlay'
@@ -926,7 +926,7 @@ export function startPresentation(
   const inkSaveTermsBtn = document.createElement('button')
   inkSaveTermsBtn.className = 'bento-ink-save-terms'
   inkSaveTermsBtn.innerHTML = INK_ICON_SAVE_TERMS
-  inkSaveTermsBtn.title = t('Begriffe dauerhaft speichern — sonst gilt nur für diese Sitzung und setzt sich beim erneuten Öffnen auf den zuletzt gespeicherten Stand zurück')
+  inkSaveTermsBtn.title = t('Begriffe ins Dokument übernehmen (wie jede andere Änderung — zum tatsächlichen Sichern der Datei danach den normalen Speichern-Knopf im Editor benutzen). Sonst gilt es nur für diese Sitzung und setzt sich beim erneuten Öffnen auf den zuletzt übernommenen Stand zurück.')
   inkSaveTermsBtn.setAttribute('aria-label', t('Begriffe speichern'))
   inkSaveTermsBtn.addEventListener('click', () => {
     opts.onSaveTerms?.(inkCurrentIdx, getTermsForSlide(inkCurrentIdx))
