@@ -426,20 +426,23 @@ export function startPresentation(
   const INK_ICON_TRASH = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>'
   const inkBySlide = new Map<number, InkMark[]>()
   // ——— drag-and-drop term labels (Slide.dragTerms) ———
-  // Distinct from ink marks above in one key way: these ARE meant to be
-  // saved eventually, just not automatically. Session-local edits here
-  // start from whatever's already persisted (or empty) and stay purely
-  // in-memory — same as ink — until the toolbar's explicit save action
-  // commits them through onSaveTerms (see startPresentation's opts),
-  // which is the only path that goes through the real Store (undo,
-  // dirty-flag, the works). Reopening without saving reverts to
-  // whatever was last actually saved, exactly like ink reverts to blank.
-  const termsBySlide = new Map<number, DragTerm[]>()
-  const getTermsForSlide = (idx: number): DragTerm[] => {
-    if (!termsBySlide.has(idx)) {
-      termsBySlide.set(idx, JSON.parse(JSON.stringify(doc.slides[idx]?.dragTerms ?? [])))
-    }
-    return termsBySlide.get(idx)!
+  // Unlike ink marks above, these are edited IN PLACE on the real doc object
+  // (the same one the Store holds — startPresentation() gets it by
+  // reference) rather than a separate session-local copy. That's what makes
+  // them survive Escape + restarting the presentation within the same
+  // editor session even without an explicit save: the array IS the
+  // document's own data the whole time, not a draft waiting to be copied
+  // in. What the explicit save action (below) actually does is mark that
+  // mutation as a real, undo/dirty-tracked change — see onSaveTerms in
+  // startPresentation's opts — so it's included the next time the file
+  // itself gets saved/downloaded. Only an actual FILE reload (not just
+  // exiting/restarting Present) can lose an edit that was never saved that
+  // way — because that reload doesn't reuse this same in-memory object.
+  const slideTerms = (idx: number): DragTerm[] => {
+    const slide = doc.slides[idx]
+    if (!slide) return []
+    if (!slide.dragTerms) slide.dragTerms = []
+    return slide.dragTerms
   }
   let inkEnabled = false
   let inkColor = INK_COLORS[0]
@@ -515,7 +518,7 @@ export function startPresentation(
 
   // ——— drag-and-drop term chips (Slide.dragTerms) ———
   const findTermAt = (p: InkPoint): { term: DragTerm; index: number } | null => {
-    const terms = getTermsForSlide(inkCurrentIdx)
+    const terms = slideTerms(inkCurrentIdx)
     for (let i = terms.length - 1; i >= 0; i--) {
       const chip = termContainer?.querySelector<HTMLElement>(`[data-term-id="${terms[i].id}"]`)
       if (!chip) continue
@@ -528,11 +531,11 @@ export function startPresentation(
     return null
   }
   const deleteTerm = (index: number) => {
-    getTermsForSlide(inkCurrentIdx).splice(index, 1)
+    slideTerms(inkCurrentIdx).splice(index, 1)
     redrawTerms()
   }
   const startDragTerm = (index: number, downP: InkPoint) => {
-    const term = getTermsForSlide(inkCurrentIdx)[index]
+    const term = slideTerms(inkCurrentIdx)[index]
     if (!term) return
     const start = { x: term.x, y: term.y }
     const move = (ev: PointerEvent) => {
@@ -552,7 +555,7 @@ export function startPresentation(
   const redrawTerms = () => {
     if (!termContainer) return
     termContainer.innerHTML = ''
-    for (const term of getTermsForSlide(inkCurrentIdx)) {
+    for (const term of slideTerms(inkCurrentIdx)) {
       const chip = document.createElement('div')
       chip.className = 'bento-term-chip'
       chip.dataset.termId = term.id
@@ -576,7 +579,7 @@ export function startPresentation(
     const x = Number(ta.dataset.x)
     const y = Number(ta.dataset.y)
     ta.remove()
-    const terms = getTermsForSlide(inkCurrentIdx)
+    const terms = slideTerms(inkCurrentIdx)
     if (editingIndex !== null) {
       if (!text) terms.splice(editingIndex, 1) // cleared out — delete rather than leave an empty chip
       else terms[editingIndex].text = text
@@ -726,7 +729,7 @@ export function startPresentation(
     inkToolbar.classList.toggle('visible', on)
   }
   const toggleInk = () => setInkEnabled(!inkEnabled)
-  const clearInkForCurrent = () => { inkBySlide.delete(inkCurrentIdx); termsBySlide.set(inkCurrentIdx, []); redrawInk(); redrawTerms() }
+  const clearInkForCurrent = () => { inkBySlide.delete(inkCurrentIdx); slideTerms(inkCurrentIdx).length = 0; redrawInk(); redrawTerms() }
 
   // ——— text placement marker (Text tool) ———
   // Drawing tools would otherwise leave a stroke wherever you tap — there'd
@@ -926,10 +929,10 @@ export function startPresentation(
   const inkSaveTermsBtn = document.createElement('button')
   inkSaveTermsBtn.className = 'bento-ink-save-terms'
   inkSaveTermsBtn.innerHTML = INK_ICON_SAVE_TERMS
-  inkSaveTermsBtn.title = t('Begriffe ins Dokument übernehmen (wie jede andere Änderung — zum tatsächlichen Sichern der Datei danach den normalen Speichern-Knopf im Editor benutzen). Sonst gilt es nur für diese Sitzung und setzt sich beim erneuten Öffnen auf den zuletzt übernommenen Stand zurück.')
+  inkSaveTermsBtn.title = t('Begriffe als echte Änderung markieren, damit sie beim nächsten Speichern/Herunterladen der Datei mitgenommen werden. Auch ohne diesen Klick bleiben sie erhalten, solange die Datei in diesem Tab geöffnet bleibt (auch über Beenden/Neustart der Präsentation hinweg) — nur ein komplettes Neuladen der Datei würde ungespeicherte Begriffe verlieren.')
   inkSaveTermsBtn.setAttribute('aria-label', t('Begriffe speichern'))
   inkSaveTermsBtn.addEventListener('click', () => {
-    opts.onSaveTerms?.(inkCurrentIdx, getTermsForSlide(inkCurrentIdx))
+    opts.onSaveTerms?.(inkCurrentIdx, slideTerms(inkCurrentIdx))
     inkSaveTermsBtn.classList.add('bento-ink-save-terms-done')
     setTimeout(() => inkSaveTermsBtn.classList.remove('bento-ink-save-terms-done'), 900)
   })

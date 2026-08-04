@@ -1926,18 +1926,20 @@ export class Editor {
       this.canvas.render()
     }, {
       fullscreen,
-      onSaveTerms: (slideIndex, terms) => {
-        // Same as any other edit in the app: this stages the change into
-        // the real document (undo checkpoint, dirty flag) — it does NOT
-        // itself write the file. That happens whenever the user does a
-        // normal save afterward (the main Save button, autosave, etc.),
-        // exactly like every other kind of change already works. This
-        // button's whole job is just "stop being ephemeral session state,
-        // become part of the document" — not "write to disk right now".
-        this.store.commit(() => {
-          const target = this.store.doc.slides[slideIndex]
-          if (target) target.dragTerms = terms
-        })
+      onSaveTerms: () => {
+        // present.ts already mutated store.doc.slides[slideIndex].dragTerms
+        // directly (that's what makes it survive Escape + restarting the
+        // presentation without needing this at all) — this button's job is
+        // just to mark that as a real, dirty/undo-tracked change, exactly
+        // like every other edit, so it's included the next time the file
+        // itself gets saved. touch() (not commit()) is the right primitive
+        // here specifically because the mutation already happened; there's
+        // no separate "before" state left to checkpoint against.
+        this.store.touch()
+        // In Moodle, saving IS just a background request — no download
+        // dialog to interrupt the presentation with — so do it right away
+        // rather than waiting for a separate save step later.
+        if (moodleConfig) void saveToMoodle(this.store.doc)
       },
     })
   }
