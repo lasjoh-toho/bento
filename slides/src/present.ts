@@ -407,12 +407,20 @@ export function startPresentation(
    *  stroke or term chip to delete it outright instead of just erasing
    *  pixels), Hand drags an existing term chip to reposition it, Text
    *  places/corrects a term chip for the keyboard to write into. */
-  type InkTool = 'pen' | 'eraser' | 'hand' | 'text'
+  /** One tool active at a time — Pen draws, Eraser erases (double-click a
+   *  stroke or term chip to delete it outright instead of just erasing
+   *  pixels), Hand drags an existing term to reposition it, Label places/
+   *  corrects a chip-style term (bubble background, in the current color),
+   *  Text places/corrects a plain-style term (just colored text, no
+   *  background). Both write to the same Slide.dragTerms — only the
+   *  `style` on the resulting term differs. */
+  type InkTool = 'pen' | 'eraser' | 'hand' | 'text' | 'label'
   const INK_COLORS = ['#ef4444', '#111111', '#2563eb', '#22c55e', '#facc15', '#ffffff']
   const INK_SIZES = [4, 10, 20, 36]
   const INK_ICON_PEN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>'
   const INK_ICON_ERASER = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H8l-6-6a2 2 0 0 1 0-2.8l8-8a2 2 0 0 1 2.8 0l7 7a2 2 0 0 1 0 2.8L13 20"/><path d="M6 13l6 6"/></svg>'
   const INK_ICON_HAND = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v7"/><path d="M10 10.5V6a2 2 0 0 0-4 0v10"/><path d="M6 14l-1.5-1.5a2 2 0 0 0-3 2.6L6 21h9a2 2 0 0 0 2-2v-2a4 4 0 0 0 2-3.5V11a2 2 0 0 0-4 0"/></svg>'
+  const INK_ICON_LABEL = '<svg viewBox="0 0 24 24" width="18" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="8"/><line x1="7" y1="12" x2="17" y2="12" stroke-linecap="round"/></svg>'
   const INK_ICON_SAVE_TERMS = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>'
   const INK_ICON_TRASH = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>'
   // ——— freehand pen/eraser strokes (Slide.inkStrokes) ———
@@ -533,10 +541,20 @@ export function startPresentation(
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
   }
-  /** Style used for the NEXT term placed — toggled via the "Aa"/chip button
-   *  in the toolbar (see below). Existing terms keep whatever style they
-   *  were created with regardless of this. */
-  let termStyle = 'plain' as 'chip' | 'plain'
+  /** Picks black or white text for readability against an arbitrary chosen
+   *  chip background color — relative luminance (per WCAG), not just a
+   *  fixed light/dark split, so it holds up across the whole palette.
+   *  Plain 6-digit hex only (term colors always come from INK_COLORS). */
+  const contrastTextColor = (hex: string): string => {
+    const m = /^#([0-9a-f]{6})$/i.exec(hex)
+    if (!m) return '#14161c'
+    const r = parseInt(m[1].slice(0, 2), 16) / 255
+    const g = parseInt(m[1].slice(2, 4), 16) / 255
+    const b = parseInt(m[1].slice(4, 6), 16) / 255
+    const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+    const luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    return luminance > 0.55 ? '#14161c' : '#ffffff'
+  }
   const redrawTerms = () => {
     if (!termContainer) return
     termContainer.innerHTML = ''
@@ -548,7 +566,13 @@ export function startPresentation(
       chip.textContent = term.text
       chip.style.left = `${term.x * 100}%`
       chip.style.top = `${term.y * 100}%`
-      if (style === 'plain') chip.style.color = term.color ?? inkColor
+      if (style === 'plain') {
+        chip.style.color = term.color ?? inkColor
+      } else {
+        const bg = term.color ?? inkColor
+        chip.style.background = bg
+        chip.style.color = contrastTextColor(bg)
+      }
       termContainer.appendChild(chip)
     }
   }
@@ -571,7 +595,7 @@ export function startPresentation(
       if (!text) terms.splice(editingIndex, 1) // cleared out — delete rather than leave an empty chip
       else terms[editingIndex].text = text
     } else if (text) {
-      terms.push({ id: uid('term'), text, x, y, style: termStyle, color: inkColor })
+      terms.push({ id: uid('term'), text, x, y, style: inkTool === 'label' ? 'chip' : 'plain', color: inkColor })
     }
     redrawTerms()
   }
@@ -646,7 +670,7 @@ export function startPresentation(
       if (!inkEnabled) return
       ev.preventDefault()
       const p = toFrac(ev)
-      if (inkTool === 'text') {
+      if (inkTool === 'text' || inkTool === 'label') {
         const hit = findTermAt(p)
         if (hit) { placeTermInput({ x: hit.term.x, y: hit.term.y }, hit.term.text, hit.index); return }
         placeTermInput(p, '', null)
@@ -731,6 +755,7 @@ export function startPresentation(
     inkPenBtn.classList.toggle('active', inkTool === 'pen')
     inkEraseBtn.classList.toggle('active', inkTool === 'eraser')
     inkHandBtn.classList.toggle('active', inkTool === 'hand')
+    inkLabelBtn.classList.toggle('active', inkTool === 'label')
     inkTextBtn.classList.toggle('active', inkTool === 'text')
   }
   const inkPenBtn = document.createElement('button')
@@ -771,23 +796,20 @@ export function startPresentation(
   const inkDivider2 = document.createElement('div')
   inkDivider2.className = 'bento-ink-divider'
   inkToolbar.appendChild(inkDivider2)
+  const inkLabelBtn = document.createElement('button')
+  inkLabelBtn.className = 'bento-ink-labelbtn'
+  inkLabelBtn.innerHTML = INK_ICON_LABEL
+  inkLabelBtn.title = t('Label platzieren/korrigieren: Tippen/Klicken setzt ein Label (Hintergrund in der gewählten Farbe) oder öffnet ein bestehendes zur Korrektur — ziehen mit der Hand, speichern mit dem Disketten-Symbol')
+  inkLabelBtn.setAttribute('aria-label', t('Label'))
+  inkLabelBtn.addEventListener('click', () => setInkTool(inkTool === 'label' ? 'pen' : 'label'))
+  inkToolbar.appendChild(inkLabelBtn)
   const inkTextBtn = document.createElement('button')
   inkTextBtn.className = 'bento-ink-textbtn'
   inkTextBtn.textContent = 'T'
-  inkTextBtn.title = t('Begriff platzieren/korrigieren: Tippen/Klicken setzt einen Begriff oder öffnet einen bestehenden zur Korrektur — ziehen mit der Hand, speichern mit dem Disketten-Symbol')
-  inkTextBtn.setAttribute('aria-label', t('Textmarke'))
+  inkTextBtn.title = t('Text platzieren/korrigieren: Tippen/Klicken setzt einfarbigen Text ohne Hintergrund oder öffnet einen bestehenden zur Korrektur — ziehen mit der Hand, speichern mit dem Disketten-Symbol')
+  inkTextBtn.setAttribute('aria-label', t('Text'))
   inkTextBtn.addEventListener('click', () => setInkTool(inkTool === 'text' ? 'pen' : 'text'))
   inkToolbar.appendChild(inkTextBtn)
-  const inkTermStyleBtn = document.createElement('button')
-  inkTermStyleBtn.className = 'bento-ink-term-style'
-  inkTermStyleBtn.textContent = termStyle === 'chip' ? '◯' : 'Aa'
-  inkTermStyleBtn.title = t('Darstellung neuer Begriffe umschalten: mit Hintergrund (Blase) oder nur farbiger Text — bereits gesetzte Begriffe behalten ihren eigenen Stil')
-  inkTermStyleBtn.setAttribute('aria-label', t('Begriffsstil'))
-  inkTermStyleBtn.addEventListener('click', () => {
-    termStyle = termStyle === 'chip' ? 'plain' : 'chip'
-    inkTermStyleBtn.textContent = termStyle === 'chip' ? '◯' : 'Aa'
-  })
-  inkToolbar.appendChild(inkTermStyleBtn)
   const inkHandBtn = document.createElement('button')
   inkHandBtn.className = 'bento-ink-hand'
   inkHandBtn.innerHTML = INK_ICON_HAND

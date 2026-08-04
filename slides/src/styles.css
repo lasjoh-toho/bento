@@ -1712,7 +1712,7 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
 }
 .bento-ink-size span { display: block; border-radius: 999px; background: #fff; }
 .bento-ink-size.active { border-color: var(--bento-accent, #ED8266); background: rgb(255 255 255 / 0.18); }
-.bento-ink-erase, .bento-ink-clear, .bento-ink-textbtn, .bento-ink-pen, .bento-ink-hand, .bento-ink-term-style, .bento-ink-save-terms {
+.bento-ink-erase, .bento-ink-clear, .bento-ink-textbtn, .bento-ink-pen, .bento-ink-hand, .bento-ink-labelbtn, .bento-ink-save-terms {
   width: 30px;
   height: 30px;
   flex: none;
@@ -1726,8 +1726,8 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   place-items: center;
   cursor: pointer;
 }
-.bento-ink-erase.active, .bento-ink-textbtn.active, .bento-ink-pen.active, .bento-ink-hand.active { background: var(--bento-accent, #ED8266); color: #14161c; border-color: transparent; }
-.bento-ink-erase:hover, .bento-ink-clear:hover, .bento-ink-textbtn:hover, .bento-ink-pen:hover, .bento-ink-hand:hover, .bento-ink-term-style:hover, .bento-ink-save-terms:hover { background: rgb(255 255 255 / 0.18); }
+.bento-ink-erase.active, .bento-ink-textbtn.active, .bento-ink-pen.active, .bento-ink-hand.active, .bento-ink-labelbtn.active { background: var(--bento-accent, #ED8266); color: #14161c; border-color: transparent; }
+.bento-ink-erase:hover, .bento-ink-clear:hover, .bento-ink-textbtn:hover, .bento-ink-pen:hover, .bento-ink-hand:hover, .bento-ink-labelbtn:hover, .bento-ink-save-terms:hover { background: rgb(255 255 255 / 0.18); }
 
 /* the explicit "persist current term arrangement" action — momentary
    confirmation flash rather than a toggle state (see present.ts) */
