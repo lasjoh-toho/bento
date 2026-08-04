@@ -1926,11 +1926,19 @@ export class Editor {
       this.canvas.render()
     }, {
       fullscreen,
-      onSaveTerms: (slideIndex, terms) => {
+      onSaveTerms: async (slideIndex, terms) => {
         this.store.commit(() => {
           const target = this.store.doc.slides[slideIndex]
           if (target) target.dragTerms = terms
         })
+        // A store commit alone only makes this part of the in-memory
+        // document (undoable, marked dirty) — closing and reopening the
+        // FILE would still load whatever was last written to disk, which
+        // doesn't include it yet. The whole point of this being a distinct
+        // "save" action (vs. ink, which never persists at all) is that it
+        // survives that; call the real file save too, the same one the
+        // main editor's own Save button triggers.
+        await this.save(false)
       },
     })
   }

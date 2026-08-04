@@ -26,7 +26,7 @@ export function startPresentation(
   doc: BentoDoc,
   startIndex: number,
   onExit: (lastIndex: number) => void,
-  opts: { fullscreen?: boolean; onSaveTerms?: (slideIndex: number, terms: DragTerm[]) => void } = {},
+  opts: { fullscreen?: boolean; onSaveTerms?: (slideIndex: number, terms: DragTerm[]) => void | Promise<void> } = {},
 ): PresentSession {
   const overlay = document.createElement('div')
   overlay.className = 'bento-present-overlay'
