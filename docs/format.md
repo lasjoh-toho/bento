@@ -165,6 +165,15 @@ plus `fill`, `stroke`, `strokeWidth`, `radius` (rect corner). Options:
 (`contain|cover|fill`), `radius`. Embed images as `data:` URIs in `doc.assets`
 and reference them to keep the file self-contained.
 
+Optional `crop: { x, y, w, h }` — a rectangle in fractions (0..1) of the
+**source image's own** width/height (not the element box). When set, the
+cropped region is stretched to exactly fill the element box and `fit` is
+ignored (clear `crop` to fall back to `fit` again). `{x:0,y:0,w:1,h:1}` is
+equivalent to no crop. Authored by dragging handles in the editor's crop
+dialog (properties panel → Crop → "Crop image…"); agents can set it directly
+as plain fractions, e.g. `{"x":0.1,"y":0,"w":0.8,"h":1}` to trim 10% off each
+side horizontally.
+
 ### `svg`
 
 `type: "svg"` — `asset?` (key into `doc.assets` holding raw SVG markup;

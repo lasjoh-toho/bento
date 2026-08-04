@@ -5,7 +5,9 @@
 // into a single undo checkpoint.
 
 import type { Store } from '../store'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type LineEnding, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import type { SlideCanvas } from './canvas'
+import { bakeImagePermanent } from './imagemask'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type ImageElement, type LineEnding, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement } from '../measure'
 import { isMacOS } from '../screens'
@@ -107,9 +109,22 @@ const fillStyles = (): Array<[string, string]> =>
 export class PropsPanel {
   private burst = false
 
+  /** Which image element currently shows the Cancel/Apply crop controls in
+   *  this panel (the interactive geometry itself — drag to pan, slider to
+   *  zoom — lives on the canvas now; see canvas.ts's startCrop/commitCrop/
+   *  cancelCrop and imagecrop.ts). Purely a "what does this panel render"
+   *  flag; not doc state. */
+  private cropElId: string | null = null
+  /** Same idea as cropElId, for the "Freistellen…" (cutout/erase) mode. */
+  private maskElId: string | null = null
+  private maskTool: 'wand' | 'eraser' | 'box' | 'ellipse' = 'eraser'
+  private maskBrushSize = 40
+  private maskTolerance = 24
+
   constructor(
     private host: HTMLElement,
     private store: Store,
+    private canvas: SlideCanvas,
   ) {
     // Selection/slide switches always rebuild — the user acted outside the
     // panel, so whatever input was focused is obsolete. Doc mutations respect
@@ -1622,11 +1637,172 @@ export class PropsPanel {
   }
 
   private buildImageProps(el: SlideElement) {
+    const img = el as ImageElement
     this.section(t('Fit & corners'))
-    this.row('Fit', this.select(['contain', 'cover', 'fill'], (el as any).fit, (v) =>
-      this.mutate(el.id, (e) => { (e as any).fit = v }, true)))
-    this.row('Corner radius', this.number((el as any).radius, 1, (v, fin) =>
-      this.mutate(el.id, (e) => { (e as any).radius = Math.max(v, 0) }, fin)))
+    this.row('Fit', this.select(['contain', 'cover', 'fill'], img.fit, (v) =>
+      this.mutate(el.id, (e) => { (e as ImageElement).fit = v as ImageElement['fit'] }, true)))
+    if (img.crop) {
+      const note = document.createElement('p')
+      note.className = 'ed-hint'
+      note.textContent = t('Fit is ignored while a crop is set — reset the crop to use it again.')
+      this.host.appendChild(note)
+    }
+    this.row('Corner radius', this.number(img.radius, 1, (v, fin) =>
+      this.mutate(el.id, (e) => { (e as ImageElement).radius = Math.max(v, 0) }, fin)))
+
+    this.section(t('Crop'))
+    if (this.cropElId === el.id) {
+      const hint = document.createElement('p')
+      hint.className = 'ed-hint'
+      hint.textContent = t('Drag the photo on the slide to reposition it, use the slider to zoom.')
+      this.host.appendChild(hint)
+      const actions = document.createElement('div')
+      actions.className = 'ed-crop-actions'
+      actions.innerHTML =
+        `<button class="ed-crop-cancel ed-btn">${t('Cancel')}</button>` +
+        `<button class="ed-crop-apply ed-btn ed-btn-primary">${t('Apply crop')}</button>`
+      this.host.appendChild(actions)
+      actions.querySelector('.ed-crop-cancel')!.addEventListener('click', () => {
+        this.canvas.cancelCrop()
+        this.cropElId = null
+        this.rebuild(true)
+      })
+      actions.querySelector('.ed-crop-apply')!.addEventListener('click', () => {
+        this.canvas.commitCrop()
+        this.cropElId = null
+        // commitCrop() writes to the doc, which already triggers a rebuild via
+        // the 'doc' listener — but only if something actually changed. Force
+        // one regardless so the panel reliably drops back to the button.
+        this.rebuild(true)
+      })
+    } else {
+      const cropBtn = document.createElement('button')
+      cropBtn.className = 'ed-btn ed-btn-block'
+      cropBtn.textContent = img.crop ? t('Edit crop…') : t('Crop image…')
+      cropBtn.addEventListener('click', () => {
+        this.cropElId = el.id
+        this.canvas.startCrop(el.id)
+        this.rebuild(true)
+      })
+      this.host.appendChild(cropBtn)
+      if (img.crop) {
+        const reset = document.createElement('button')
+        reset.className = 'ed-btn ed-btn-block'
+        reset.textContent = t('Reset crop')
+        reset.addEventListener('click', () =>
+          this.mutate(el.id, (e) => { delete (e as ImageElement).crop }, true))
+        this.host.appendChild(reset)
+      }
+    }
+
+    this.section(t('Freistellen'))
+    if (this.maskElId === el.id) {
+      const hint = document.createElement('p')
+      hint.className = 'ed-hint'
+      hint.textContent = t('Zauberstab: Klick auf einen Bereich wählt ihn per Farbähnlichkeit aus. Radiergummi: klicken und ziehen. Box/Ellipse: aufziehen.')
+      this.host.appendChild(hint)
+
+      const tools: Array<{ id: 'wand' | 'eraser' | 'box' | 'ellipse'; label: string }> = [
+        { id: 'wand', label: t('Zauberstab') },
+        { id: 'eraser', label: t('Radiergummi') },
+        { id: 'box', label: t('Box') },
+        { id: 'ellipse', label: t('Ellipse') },
+      ]
+      const toolRow = document.createElement('div')
+      toolRow.className = 'ed-grid2'
+      for (const tool of tools) {
+        const btn = document.createElement('button')
+        btn.className = 'ed-btn' + (this.maskTool === tool.id ? ' ed-btn-primary' : '')
+        btn.textContent = tool.label
+        btn.addEventListener('click', () => {
+          this.maskTool = tool.id
+          this.canvas.setMaskTool(tool.id)
+          this.rebuild(true)
+        })
+        toolRow.appendChild(btn)
+      }
+      this.host.appendChild(toolRow)
+
+      if (this.maskTool === 'eraser') {
+        this.row(t('Größe'), this.number(this.maskBrushSize, 5, (v) => {
+          this.maskBrushSize = Math.max(4, v)
+          this.canvas.setMaskBrushSize(this.maskBrushSize)
+        }))
+      }
+      if (this.maskTool === 'wand') {
+        this.row(t('Toleranz'), this.number(this.maskTolerance, 5, (v) => {
+          this.maskTolerance = Math.max(0, Math.min(100, v))
+          this.canvas.setMaskTolerance(this.maskTolerance)
+        }))
+      }
+
+      const undoBtn = document.createElement('button')
+      undoBtn.className = 'ed-btn ed-btn-block'
+      undoBtn.textContent = t('Rückgängig')
+      undoBtn.disabled = !this.canvas.maskCanUndo
+      undoBtn.addEventListener('click', () => this.canvas.undoMask())
+      this.host.appendChild(undoBtn)
+
+      const actions = document.createElement('div')
+      actions.className = 'ed-crop-actions'
+      actions.innerHTML =
+        `<button class="ed-mask-cancel ed-btn">${t('Cancel')}</button>` +
+        `<button class="ed-mask-apply ed-btn ed-btn-primary">${t('Übernehmen')}</button>`
+      this.host.appendChild(actions)
+      actions.querySelector('.ed-mask-cancel')!.addEventListener('click', () => {
+        this.canvas.cancelMask()
+        this.maskElId = null
+        this.rebuild(true)
+      })
+      actions.querySelector('.ed-mask-apply')!.addEventListener('click', () => {
+        this.canvas.commitMask()
+        this.maskElId = null
+        this.rebuild(true)
+      })
+    } else {
+      const maskBtn = document.createElement('button')
+      maskBtn.className = 'ed-btn ed-btn-block'
+      maskBtn.textContent = img.mask ? t('Freistellen bearbeiten…') : t('Freistellen…')
+      maskBtn.addEventListener('click', () => {
+        this.maskElId = el.id
+        this.maskTool = 'eraser'
+        this.canvas.setMaskTool('eraser')
+        this.canvas.setMaskBrushSize(this.maskBrushSize)
+        this.canvas.setMaskTolerance(this.maskTolerance)
+        this.canvas.setMaskOnChange(() => this.rebuild(true))
+        this.canvas.startMask(el.id).then(() => this.rebuild(true))
+        this.rebuild(true)
+      })
+      this.host.appendChild(maskBtn)
+      if (img.mask) {
+        const reset = document.createElement('button')
+        reset.className = 'ed-btn ed-btn-block'
+        reset.textContent = t('Freistellung entfernen')
+        reset.addEventListener('click', () =>
+          this.mutate(el.id, (e) => { delete (e as ImageElement).mask }, true))
+        this.host.appendChild(reset)
+      }
+    }
+
+    if ((img.crop || img.mask) && this.cropElId !== el.id && this.maskElId !== el.id) {
+      const hint = document.createElement('p')
+      hint.className = 'ed-hint'
+      hint.textContent = img.mask
+        ? t('Backt Zuschnitt und Freistellung in ein einzelnes, meist kleineres Bild — danach nicht mehr separat änderbar.')
+        : t('Backt den Zuschnitt in ein einzelnes, kleineres Bild — danach nicht mehr separat änderbar.')
+      this.host.appendChild(hint)
+      const bakeBtn = document.createElement('button')
+      bakeBtn.className = 'ed-btn ed-btn-block'
+      bakeBtn.textContent = img.mask
+        ? t('Zuschnitt & Freistellung dauerhaft machen (spart Speicher)')
+        : t('Zuschnitt dauerhaft machen (spart Speicher)')
+      bakeBtn.addEventListener('click', async () => {
+        bakeBtn.disabled = true
+        bakeBtn.textContent = t('Wird verarbeitet…')
+        await bakeImagePermanent(this.store, el.id)
+      })
+      this.host.appendChild(bakeBtn)
+    }
   }
 
   private buildMediaProps(el: MediaElement) {

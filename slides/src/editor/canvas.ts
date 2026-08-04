@@ -14,6 +14,8 @@ import { autoformatAtCaret, clearAutoformat, markdownToHtml, undoAutoformat } fr
 import { PathEditor } from './patheditor'
 import { LineEditor, isLineLike, setLineEndpoints, setPathAnchors } from './lineedit'
 import { BezierEditor, isCurve } from './beziereditor'
+import { ImageCropEditor } from './imagecrop'
+import { ImageMaskEditor } from './imagemask'
 import { simplifyPoints } from './patheditor'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -50,6 +52,8 @@ export class SlideCanvas {
   private pathEditor!: PathEditor
   private lineEditor!: LineEditor
   private bezierEditor!: BezierEditor
+  private imageCropEditor!: ImageCropEditor
+  private imageMaskEditor!: ImageMaskEditor
   private drawOverlay: HTMLElement | null = null
   private comments!: CommentsUI
 
@@ -225,6 +229,10 @@ export class SlideCanvas {
     this.lineEditor.setScaleGetter(() => this.scale)
     this.bezierEditor = new BezierEditor(this.scaleHost, store)
     this.bezierEditor.setScaleGetter(() => this.scale)
+    this.imageCropEditor = new ImageCropEditor(this.scaleHost, store)
+    this.imageCropEditor.setScaleGetter(() => this.scale)
+    this.imageMaskEditor = new ImageMaskEditor(this.scaleHost, store)
+    this.imageMaskEditor.setScaleGetter(() => this.scale)
     document.addEventListener('bento:edit-path', ((ev: CustomEvent) => {
       this.startPathEdit(ev.detail.id)
     }) as EventListener)
@@ -574,6 +582,80 @@ export class SlideCanvas {
     }
   }
 
+  // --- image crop mode ---------------------------------------------------
+  // Triggered from the properties panel's "Crop image…"/Cancel/Apply crop
+  // controls (see panels.ts) — the interactive geometry itself (drag to pan,
+  // slider to zoom) lives on the canvas; see imagecrop.ts.
+
+  isCropping(elId: string) {
+    return this.imageCropEditor.active && this.imageCropEditor.elementId === elId
+  }
+
+  startCrop(elId: string) {
+    this.commitTextEdit()
+    this.imageCropEditor.start(elId)
+    this.syncTargets()
+  }
+
+  commitCrop() {
+    this.imageCropEditor.commit()
+    this.syncTargets()
+  }
+
+  cancelCrop() {
+    this.imageCropEditor.cancel()
+    this.syncTargets()
+  }
+
+  // --- image cutout / erase mode ------------------------------------------
+  // Triggered from the properties panel's "Freistellen…" tools (magic wand,
+  // eraser, box, ellipse) and Cancel/Apply — see panels.ts. The interactive
+  // canvas painting lives here; see imagemask.ts.
+
+  isMasking(elId: string) {
+    return this.imageMaskEditor.active && this.imageMaskEditor.elementId === elId
+  }
+
+  get maskCanUndo() {
+    return this.imageMaskEditor.canUndo
+  }
+
+  setMaskOnChange(fn: () => void) {
+    this.imageMaskEditor.setOnChange(fn)
+  }
+
+  setMaskTool(tool: Parameters<ImageMaskEditor['setTool']>[0]) {
+    this.imageMaskEditor.setTool(tool)
+  }
+
+  setMaskBrushSize(px: number) {
+    this.imageMaskEditor.setBrushSize(px)
+  }
+
+  setMaskTolerance(pct: number) {
+    this.imageMaskEditor.setTolerance(pct)
+  }
+
+  undoMask() {
+    this.imageMaskEditor.undo()
+  }
+
+  async startMask(elId: string) {
+    this.commitTextEdit()
+    await this.imageMaskEditor.start(elId)
+    this.syncTargets()
+  }
+
+  commitMask() {
+    this.imageMaskEditor.commit()
+    this.syncTargets()
+  }
+
+  cancelMask() {
+    this.imageMaskEditor.cancel()
+    this.syncTargets()
+  }
+
   render() {
     // Don't repaint out from under an in-progress inline edit. A remote collab
     // op landing must NOT tear down the text/cell node you're typing in — that
@@ -583,6 +665,8 @@ export class SlideCanvas {
     if (this.editing) { this.pendingRender = true; return }
     this.pendingRender = false
     if (this.pathEditor?.active) this.pathEditor.cancel() // doc changed under us
+    if (this.imageCropEditor?.active) { this.imageCropEditor.cancel(); this.syncTargets() } // ditto
+    if (this.imageMaskEditor?.active) { this.imageMaskEditor.cancel(); this.syncTargets() } // ditto
     const slide = this.store.slide
     const next = renderSlide(slide, this.store.doc)
     // hover-reveal slides: preview one set at a time; hidden sets are
@@ -715,7 +799,13 @@ export class SlideCanvas {
     if (curve) { this.bezierEditor.attach(one!.id); this.lineEditor.detach() }
     else if (lineLike) { this.lineEditor.attach(one!.id); this.bezierEditor.detach() }
     else { this.lineEditor.detach(); this.bezierEditor.detach() }
-    const handled = curve || lineLike
+    // Cropping (ImageCropEditor) is entered/exited explicitly from the
+    // properties panel (startCrop/commitCrop/cancelCrop), not inferred from
+    // element type like line/curve above — it just also needs Moveable's
+    // box hidden for that element while active.
+    const cropping = !!one && this.imageCropEditor.active && this.imageCropEditor.elementId === one.id
+    const masking = !!one && this.imageMaskEditor.active && this.imageMaskEditor.elementId === one.id
+    const handled = curve || lineLike || cropping || masking
     const targets = this.editing || this.pathEditor?.active || handled ? [] : this.selectedNodes()
     // snap against slide bounds/center and every non-selected element
     const others = this.surface

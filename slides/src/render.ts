@@ -568,11 +568,47 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
       node.innerHTML = renderTableHtml(el, doc)
       break
     case 'image': {
-      const img = document.createElement('img')
-      img.src = resolveAsset(doc, el.src)
-      img.draggable = false
-      img.style.cssText = `width:100%;height:100%;object-fit:${el.fit};border-radius:${el.radius}px;display:block`
-      node.appendChild(img)
+      const c = el.crop
+      let visualRoot: HTMLElement
+      if (c && c.w > 0 && c.h > 0) {
+        // Crop wins over `fit`: the cropped fraction of the SOURCE image is
+        // stretched to exactly fill the box. Done with plain position/size
+        // math on a real <img> (not a CSS background-image) so alt text,
+        // right-click "save image", drag-out, and print all keep working.
+        const wrap = document.createElement('div')
+        wrap.style.cssText = `width:100%;height:100%;overflow:hidden;border-radius:${el.radius}px;position:relative`
+        const img = document.createElement('img')
+        img.src = resolveAsset(doc, el.src)
+        img.draggable = false
+        const w = (100 / c.w).toFixed(4)
+        const h = (100 / c.h).toFixed(4)
+        const left = (-(c.x / c.w) * 100).toFixed(4)
+        const top = (-(c.y / c.h) * 100).toFixed(4)
+        img.style.cssText = `position:absolute;left:${left}%;top:${top}%;width:${w}%;height:${h}%;max-width:none;display:block`
+        wrap.appendChild(img)
+        node.appendChild(wrap)
+        visualRoot = wrap
+      } else {
+        const img = document.createElement('img')
+        img.src = resolveAsset(doc, el.src)
+        img.draggable = false
+        img.style.cssText = `width:100%;height:100%;object-fit:${el.fit};border-radius:${el.radius}px;display:block`
+        node.appendChild(img)
+        visualRoot = img
+      }
+      if (el.mask) {
+        // Aligned to the SAME size/position transform crop already uses, so
+        // it stays correct against whatever portion of the source is shown.
+        // Dual-encoded (see model.ts doc comment) — no mask-mode needed.
+        const maskUrl = resolveAsset(doc, el.mask)
+        const mw = c && c.w > 0 ? (100 / c.w).toFixed(4) : '100'
+        const mh = c && c.h > 0 ? (100 / c.h).toFixed(4) : '100'
+        const mleft = c && c.w > 0 ? (-(c.x / c.w) * 100).toFixed(4) : '0'
+        const mtop = c && c.h > 0 ? (-(c.y / c.h) * 100).toFixed(4) : '0'
+        const maskCss = `url('${maskUrl}') ${mleft}% ${mtop}%/${mw}% ${mh}% no-repeat`
+        visualRoot.style.setProperty('-webkit-mask', maskCss)
+        visualRoot.style.setProperty('mask', maskCss)
+      }
       break
     }
     case 'media': {
