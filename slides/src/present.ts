@@ -28,6 +28,7 @@ export function startPresentation(
   onExit: (lastIndex: number) => void,
   opts: { fullscreen?: boolean; onSaveTerms?: (slideIndex: number, terms: DragTerm[]) => void } = {},
 ): PresentSession {
+  console.log('[bento/term] startPresentation() build marker: 2026-08-04-dragterm-v3 (doc-direct model)')
   const overlay = document.createElement('div')
   overlay.className = 'bento-present-overlay'
   overlay.style.setProperty('--bento-accent', doc.theme.accent)
@@ -553,6 +554,7 @@ export function startPresentation(
     window.addEventListener('pointerup', up)
   }
   const redrawTerms = () => {
+    console.log('[bento/term] redrawTerms() slide', inkCurrentIdx, '— termContainer exists:', !!termContainer, '| terms in doc:', slideTerms(inkCurrentIdx).length)
     if (!termContainer) return
     termContainer.innerHTML = ''
     for (const term of slideTerms(inkCurrentIdx)) {
@@ -586,6 +588,7 @@ export function startPresentation(
     } else if (text) {
       terms.push({ id: uid('term'), text, x, y })
     }
+    console.log('[bento/term] commitTermInput() slide', inkCurrentIdx, '— now', terms.length, 'term(s):', terms.map((t) => t.text))
     redrawTerms()
   }
   const placeTermInput = (p: InkPoint, initialText: string, editingIndex: number | null) => {
@@ -650,6 +653,7 @@ export function startPresentation(
   const buildInk = () => {
     if (inkBuilt) return
     inkBuilt = true
+    console.log('[bento/term] buildInk() running — fresh present-mode session, slide', inkCurrentIdx)
     inkCanvas = document.createElement('canvas')
     inkCanvas.className = 'bento-ink-canvas'
     overlay.insertBefore(inkCanvas, blackout)
@@ -932,7 +936,9 @@ export function startPresentation(
   inkSaveTermsBtn.title = t('Begriffe als echte Änderung markieren, damit sie beim nächsten Speichern/Herunterladen der Datei mitgenommen werden. Auch ohne diesen Klick bleiben sie erhalten, solange die Datei in diesem Tab geöffnet bleibt (auch über Beenden/Neustart der Präsentation hinweg) — nur ein komplettes Neuladen der Datei würde ungespeicherte Begriffe verlieren.')
   inkSaveTermsBtn.setAttribute('aria-label', t('Begriffe speichern'))
   inkSaveTermsBtn.addEventListener('click', () => {
-    opts.onSaveTerms?.(inkCurrentIdx, slideTerms(inkCurrentIdx))
+    const terms = slideTerms(inkCurrentIdx)
+    console.log('[bento/term] save clicked — slide', inkCurrentIdx, '|', terms.length, 'term(s):', terms.map((t) => t.text), '| onSaveTerms provided:', !!opts.onSaveTerms)
+    opts.onSaveTerms?.(inkCurrentIdx, terms)
     inkSaveTermsBtn.classList.add('bento-ink-save-terms-done')
     setTimeout(() => inkSaveTermsBtn.classList.remove('bento-ink-save-terms-done'), 900)
   })
