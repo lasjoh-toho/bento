@@ -28,7 +28,6 @@ export function startPresentation(
   onExit: (lastIndex: number) => void,
   opts: { fullscreen?: boolean; onSaveTerms?: (slideIndex: number, terms: DragTerm[]) => void } = {},
 ): PresentSession {
-  console.log('[bento/term] startPresentation() build marker: 2026-08-04-dragterm-v3 (doc-direct model)')
   const overlay = document.createElement('div')
   overlay.className = 'bento-present-overlay'
   overlay.style.setProperty('--bento-accent', doc.theme.accent)
@@ -400,29 +399,24 @@ export function startPresentation(
   // A full-viewport canvas above the slide, gated by `slide.annotate` (an
   // explicit per-slide opt-in — see model.ts — so decks choose which slides
   // invite marks from a classroom touch/stylus display; a quiz slide, say,
-  // stays off). Marks live only as fractions of the viewport (resize-
-  // independent — width/size included, not just position) keyed by doc-slide
-  // INDEX (same scheme slidechanged already resolves to below) — nothing
-  // here is ever written to the document; it's gone the moment Present mode
-  // ends, same spirit as the laser pointer above. Two kinds: freehand line
-  // strokes (pointer/stylus) and text (keyboard — see startInkText below;
-  // deliberately no separate "text tool" button, typing just works whenever
-  // the pen toggle is on).
+  // stays off). Freehand pen/eraser strokes here are session-only (never
+  // written to the document; gone the moment Present mode ends, same
+  // spirit as the laser pointer above) — the "T" tool is different: it
+  // places/edits DragTerm chips (see the drag-and-drop term section further
+  // down), which live directly on the slide and CAN be explicitly saved.
   type InkPoint = { x: number; y: number }
   type InkLine = { kind: 'line'; points: InkPoint[]; color: string; width: number; erase: boolean }
-  type InkText = { kind: 'text'; x: number; y: number; text: string; color: string; size: number }
-  type InkMark = InkLine | InkText
+  type InkMark = InkLine
   /** One tool active at a time — Pen draws, Eraser erases (double-click a
-   *  text mark to delete it outright instead of just erasing pixels), Hand
-   *  drags an existing text mark to reposition it, Text places/corrects a
-   *  text mark for the keyboard to write into (see startInkText). */
-  type InkTool = 'pen' | 'eraser' | 'hand' | 'text' | 'term'
+   *  term chip to delete it outright instead of just erasing pixels), Hand
+   *  drags an existing term chip to reposition it, Text places/corrects a
+   *  term chip for the keyboard to write into. */
+  type InkTool = 'pen' | 'eraser' | 'hand' | 'text'
   const INK_COLORS = ['#ef4444', '#111111', '#2563eb', '#22c55e', '#facc15', '#ffffff']
   const INK_SIZES = [4, 10, 20, 36]
   const INK_ICON_PEN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>'
   const INK_ICON_ERASER = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H8l-6-6a2 2 0 0 1 0-2.8l8-8a2 2 0 0 1 2.8 0l7 7a2 2 0 0 1 0 2.8L13 20"/><path d="M6 13l6 6"/></svg>'
   const INK_ICON_HAND = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v7"/><path d="M10 10.5V6a2 2 0 0 0-4 0v10"/><path d="M6 14l-1.5-1.5a2 2 0 0 0-3 2.6L6 21h9a2 2 0 0 0 2-2v-2a4 4 0 0 0 2-3.5V11a2 2 0 0 0-4 0"/></svg>'
-  const INK_ICON_TAG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.59 2.59 20 10a2 2 0 0 1 0 2.83l-6.17 6.17a2 2 0 0 1-2.83 0L3 11V4a2 2 0 0 1 2-2h7.59a2 2 0 0 1 1.41.59z"/><circle cx="7.5" cy="7.5" r="1.5" fill="currentColor" stroke="none"/></svg>'
   const INK_ICON_SAVE_TERMS = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>'
   const INK_ICON_TRASH = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>'
   const inkBySlide = new Map<number, InkMark[]>()
@@ -455,67 +449,10 @@ export function startPresentation(
   let termContainer: HTMLDivElement | null = null
   let inkCtx: CanvasRenderingContext2D | null = null
   let inkBuilt = false
-  /** Where typed text will land — updated by pointer hover/tap and, with the
-   *  Text tool active, ALSO the thing a tap sets instead of drawing (see
-   *  updateInkTextMarker). Kept even after switching tools, so typing right
-   *  after placing a mark still lands there. */
-  let inkTextAnchor: InkPoint | null = null
-  let inkTextInput: HTMLTextAreaElement | null = null
-  let inkTextPos: InkPoint = { x: 0.5, y: 0.5 }
-  /** Index into the CURRENT slide's mark array being edited (Text tool,
-   *  tapping an existing mark to correct it) — null while composing a
-   *  brand-new mark instead of editing one already placed. */
-  let inkEditingIndex: number | null = null
-  /** For the eraser's "double-click a text mark deletes it outright"
-   *  behaviour — native dblclick already debounces the timing, this just
-   *  needs the same hit-test text marks use everywhere else here. */
-  const findTextMarkAt = (p: InkPoint): { mark: InkText; index: number } | null => {
-    if (!inkCtx || !inkCanvas) return null
-    const marks = inkBySlide.get(inkCurrentIdx) ?? []
-    const w = inkCanvas.width
-    const h = inkCanvas.height
-    for (let i = marks.length - 1; i >= 0; i--) {
-      const m = marks[i]
-      if (m.kind !== 'text') continue
-      const fontPx = Math.max(1, m.size * h)
-      inkCtx.font = `600 ${fontPx}px system-ui, -apple-system, sans-serif`
-      const tw = inkCtx.measureText(m.text).width
-      const th = fontPx * 1.25
-      const x0 = m.x * w
-      const y0 = m.y * h
-      const px = p.x * w
-      const py = p.y * h
-      if (px >= x0 && px <= x0 + tw && py >= y0 && py <= y0 + th) return { mark: m, index: i }
-    }
-    return null
-  }
-  const deleteInkMark = (index: number) => {
-    const marks = inkBySlide.get(inkCurrentIdx)
-    if (!marks) return
-    marks.splice(index, 1)
-    if (inkEditingIndex === index) { cancelInkText(); inkEditingIndex = null }
-    redrawInk()
-  }
-  const startDragTextMark = (index: number, downP: InkPoint) => {
-    const marks = inkBySlide.get(inkCurrentIdx)
-    const mark = marks?.[index]
-    if (!mark || mark.kind !== 'text') return
-    const start = { x: mark.x, y: mark.y }
-    const move = (ev: PointerEvent) => {
-      if (!inkCanvas) return
-      const r = inkCanvas.getBoundingClientRect()
-      const p = { x: (ev.clientX - r.left) / r.width, y: (ev.clientY - r.top) / r.height }
-      mark.x = start.x + (p.x - downP.x)
-      mark.y = start.y + (p.y - downP.y)
-      redrawInk()
-    }
-    const up = () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-  }
+  /** Last known pointer position (fraction of the overlay) — used only to
+   *  place a term when typing starts via the keyboard shortcut (see the
+   *  keydown handler further down) rather than tapping the canvas first. */
+  let lastPointerFrac: InkPoint = { x: 0.5, y: 0.5 }
 
   // ——— drag-and-drop term chips (Slide.dragTerms) ———
   const findTermAt = (p: InkPoint): { term: DragTerm; index: number } | null => {
@@ -554,7 +491,6 @@ export function startPresentation(
     window.addEventListener('pointerup', up)
   }
   const redrawTerms = () => {
-    console.log('[bento/term] redrawTerms() slide', inkCurrentIdx, '— termContainer exists:', !!termContainer, '| terms in doc:', slideTerms(inkCurrentIdx).length)
     if (!termContainer) return
     termContainer.innerHTML = ''
     for (const term of slideTerms(inkCurrentIdx)) {
@@ -588,7 +524,6 @@ export function startPresentation(
     } else if (text) {
       terms.push({ id: uid('term'), text, x, y })
     }
-    console.log('[bento/term] commitTermInput() slide', inkCurrentIdx, '— now', terms.length, 'term(s):', terms.map((t) => t.text))
     redrawTerms()
   }
   const placeTermInput = (p: InkPoint, initialText: string, editingIndex: number | null) => {
@@ -622,14 +557,6 @@ export function startPresentation(
     const w = inkCanvas.width
     const h = inkCanvas.height
     for (const m of inkBySlide.get(inkCurrentIdx) ?? []) {
-      if (m.kind === 'text') {
-        inkCtx.globalCompositeOperation = 'source-over'
-        inkCtx.fillStyle = m.color
-        inkCtx.font = `600 ${Math.max(1, m.size * h)}px system-ui, -apple-system, sans-serif`
-        inkCtx.textBaseline = 'top'
-        inkCtx.fillText(m.text, m.x * w, m.y * h)
-        continue
-      }
       if (m.points.length < 1) continue
       inkCtx.globalCompositeOperation = m.erase ? 'destination-out' : 'source-over'
       inkCtx.strokeStyle = m.color
@@ -653,7 +580,6 @@ export function startPresentation(
   const buildInk = () => {
     if (inkBuilt) return
     inkBuilt = true
-    console.log('[bento/term] buildInk() running — fresh present-mode session, slide', inkCurrentIdx)
     inkCanvas = document.createElement('canvas')
     inkCanvas.className = 'bento-ink-canvas'
     overlay.insertBefore(inkCanvas, blackout)
@@ -671,29 +597,20 @@ export function startPresentation(
       if (!inkEnabled) return
       ev.preventDefault()
       const p = toFrac(ev)
-      if (inkTool === 'term') {
+      if (inkTool === 'text') {
         const hit = findTermAt(p)
         if (hit) { placeTermInput({ x: hit.term.x, y: hit.term.y }, hit.term.text, hit.index); return }
         placeTermInput(p, '', null)
         return
       }
-      if (inkTool === 'text') {
-        inkTextAnchor = p
-        const hit = findTextMarkAt(p)
-        if (hit) { openInkTextForEdit(hit.mark, hit.index); return }
-        updateInkTextMarker()
-        return
-      }
       if (inkTool === 'hand') {
         const termHit = findTermAt(p)
-        if (termHit) { startDragTerm(termHit.index, p); return }
-        const hit = findTextMarkAt(p)
-        if (hit) startDragTextMark(hit.index, p)
+        if (termHit) startDragTerm(termHit.index, p)
         return
       }
       // pen or eraser — both draw a stroke; eraser's stroke just erases
-      // instead of adding colour (double-click a text mark or term chip
-      // removes it outright instead — see the dblclick listener below).
+      // instead of adding colour (double-click a term chip removes it
+      // outright instead — see the dblclick listener below).
       inkCanvas!.setPointerCapture(ev.pointerId)
       inkStroke = { kind: 'line', points: [p], color: inkColor, width: inkWidth / (inkCanvas!.height || 1), erase: inkTool === 'eraser' }
       const arr = inkBySlide.get(inkCurrentIdx) ?? []
@@ -705,14 +622,11 @@ export function startPresentation(
       if (!inkEnabled || inkTool !== 'eraser') return
       const p = toFrac(ev)
       const termHit = findTermAt(p)
-      if (termHit) { ev.preventDefault(); deleteTerm(termHit.index); return }
-      const hit = findTextMarkAt(p)
-      if (hit) { ev.preventDefault(); deleteInkMark(hit.index) }
+      if (termHit) { ev.preventDefault(); deleteTerm(termHit.index) }
     })
     inkCanvas.addEventListener('pointermove', (ev) => {
       const p = toFrac(ev)
-      inkTextAnchor = p
-      if (inkTool === 'text') { updateInkTextMarker(); return }
+      lastPointerFrac = p
       if (!inkEnabled || !inkStroke) return
       inkStroke.points.push(p)
       redrawInk()
@@ -725,7 +639,7 @@ export function startPresentation(
   const setInkEnabled = (on: boolean) => {
     if (inkEnabled === on) return
     if (on) buildInk()
-    else { cancelInkText(); setInkTool('pen') }
+    else { cancelTermInput(); setInkTool('pen') }
     inkEnabled = on
     inkStroke = null
     overlay.classList.toggle('ink-enabled', on)
@@ -742,102 +656,9 @@ export function startPresentation(
   // `inkTextAnchor` instead (see the pointerdown handler above) — or, if the
   // tap lands on an EXISTING text mark, reopens it for correction instead of
   // starting a new one. Typing itself always works regardless of which tool
-  // is active, and always lands at the last-set anchor.
-  const inkTextMarker = document.createElement('div')
-  inkTextMarker.className = 'bento-ink-textmarker'
-  inkTextMarker.hidden = true
-  overlay.appendChild(inkTextMarker)
-  const updateInkTextMarker = () => {
-    if (inkTool !== 'text' || !inkTextAnchor || inkTextInput) { inkTextMarker.hidden = true; return }
-    inkTextMarker.hidden = false
-    inkTextMarker.style.left = `${inkTextAnchor.x * 100}%`
-    inkTextMarker.style.top = `${inkTextAnchor.y * 100}%`
-  }
   const setInkTool = (tool: InkTool) => {
     inkTool = tool
     syncInkToolMode()
-    updateInkTextMarker()
-  }
-
-  // ——— keyboard text: works with any tool active, no need to switch to Text
-  // first UNLESS you want to place/move the anchor without also drawing (see
-  // the Text tool above) or correct something already placed. A single-
-  // line-growing textarea appears at the marked (or last hovered/tapped)
-  // position, floating above the ink canvas, sized to match the current
-  // brush size like everything else here; Enter (without Shift) or blur
-  // commits it, Escape discards it. See onKeydown below for where the first
-  // keystroke opens it.
-  const measureInkTextWidth = (text: string, fontPx: number) => {
-    if (!inkCtx) return text.length * fontPx * 0.6
-    inkCtx.font = `600 ${fontPx}px system-ui, -apple-system, sans-serif`
-    return inkCtx.measureText(text || ' ').width
-  }
-  const sizeInkTextInput = (ta: HTMLTextAreaElement, fontPx: number) => {
-    ta.style.width = `${Math.max(fontPx * 0.9, measureInkTextWidth(ta.value, fontPx) + fontPx * 0.5)}px`
-  }
-  const cancelInkText = () => { inkTextInput?.remove(); inkTextInput = null; inkEditingIndex = null; updateInkTextMarker() }
-  const commitInkText = () => {
-    const ta = inkTextInput
-    if (!ta) return
-    inkTextInput = null
-    ta.remove()
-    const text = ta.value.trim()
-    const editingIndex = inkEditingIndex
-    inkEditingIndex = null
-    updateInkTextMarker()
-    if (!inkCanvas) return
-    const marks = inkBySlide.get(inkCurrentIdx) ?? []
-    if (editingIndex !== null && marks[editingIndex]?.kind === 'text') {
-      if (!text) marks.splice(editingIndex, 1) // cleared it out — delete rather than leave an empty mark
-      else (marks[editingIndex] as InkText).text = text
-      inkBySlide.set(inkCurrentIdx, marks)
-      redrawInk()
-      return
-    }
-    if (!text) return
-    const mark: InkText = { kind: 'text', x: inkTextPos.x, y: inkTextPos.y, text, color: inkColor, size: (inkWidth * 4.5) / inkCanvas.height }
-    marks.push(mark)
-    inkBySlide.set(inkCurrentIdx, marks)
-    redrawInk()
-  }
-  const buildInkTextInput = (fontPx: number, initialText: string, color: string) => {
-    updateInkTextMarker() // hides the placement marker — the textarea itself now marks the spot
-    const ta = document.createElement('textarea')
-    ta.className = 'bento-ink-textinput'
-    ta.rows = 1
-    ta.spellcheck = false
-    ta.style.left = `${inkTextPos.x * 100}%`
-    ta.style.top = `${inkTextPos.y * 100}%`
-    ta.style.color = color
-    ta.style.fontSize = `${Math.max(1, fontPx)}px`
-    ta.value = initialText
-    sizeInkTextInput(ta, fontPx)
-    ta.addEventListener('input', () => sizeInkTextInput(ta, fontPx))
-    ta.addEventListener('keydown', (ev) => {
-      ev.stopPropagation() // this textarea handles its own keys; don't let the capture-phase onKeydown see them
-      if (ev.key === 'Escape') { ev.preventDefault(); cancelInkText(); return }
-      if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commitInkText() }
-    })
-    ta.addEventListener('blur', commitInkText)
-    overlay.appendChild(ta)
-    inkTextInput = ta
-    ta.focus()
-    ta.setSelectionRange(ta.value.length, ta.value.length)
-  }
-  const startInkText = (firstChar: string) => {
-    if (inkTextInput || !inkEnabled) return
-    buildInk()
-    inkTextPos = inkTextAnchor ?? { x: 0.5, y: 0.5 }
-    inkEditingIndex = null
-    buildInkTextInput(Math.max(1, inkWidth * 4.5), firstChar, inkColor)
-  }
-  /** Text tool tapped an existing mark — reopen it pre-filled, editing that
-   *  SAME mark in place (see commitInkText) rather than adding a new one. */
-  const openInkTextForEdit = (mark: InkText, index: number) => {
-    if (inkTextInput || !inkEnabled || !inkCanvas) return
-    inkTextPos = { x: mark.x, y: mark.y }
-    inkEditingIndex = index
-    buildInkTextInput(Math.max(1, mark.size * inkCanvas.height), mark.text, mark.color)
   }
 
   // On-screen toggle + toolbar — built eagerly (cheap: plain DOM, no canvas
@@ -862,7 +683,6 @@ export function startPresentation(
     inkEraseBtn.classList.toggle('active', inkTool === 'eraser')
     inkHandBtn.classList.toggle('active', inkTool === 'hand')
     inkTextBtn.classList.toggle('active', inkTool === 'text')
-    inkTermBtn.classList.toggle('active', inkTool === 'term')
   }
   const inkPenBtn = document.createElement('button')
   inkPenBtn.className = 'bento-ink-pen'
@@ -905,31 +725,24 @@ export function startPresentation(
   const inkTextBtn = document.createElement('button')
   inkTextBtn.className = 'bento-ink-textbtn'
   inkTextBtn.textContent = 'T'
-  inkTextBtn.title = t('Textmarke setzen/korrigieren: Tippen/Klicken platziert die Textmarke oder öffnet eine bestehende zur Korrektur, statt zu zeichnen')
+  inkTextBtn.title = t('Begriff platzieren/korrigieren: Tippen/Klicken setzt einen Begriff oder öffnet einen bestehenden zur Korrektur — ziehen mit der Hand, speichern mit dem Disketten-Symbol')
   inkTextBtn.setAttribute('aria-label', t('Textmarke'))
   inkTextBtn.addEventListener('click', () => setInkTool(inkTool === 'text' ? 'pen' : 'text'))
   inkToolbar.appendChild(inkTextBtn)
   const inkHandBtn = document.createElement('button')
   inkHandBtn.className = 'bento-ink-hand'
   inkHandBtn.innerHTML = INK_ICON_HAND
-  inkHandBtn.title = t('Hand: Textmarken oder Begriffe an eine andere Stelle ziehen')
+  inkHandBtn.title = t('Hand: Begriffe an eine andere Stelle ziehen')
   inkHandBtn.setAttribute('aria-label', t('Hand'))
   inkHandBtn.addEventListener('click', () => setInkTool(inkTool === 'hand' ? 'pen' : 'hand'))
   inkToolbar.appendChild(inkHandBtn)
   const inkEraseBtn = document.createElement('button')
   inkEraseBtn.className = 'bento-ink-erase'
   inkEraseBtn.innerHTML = INK_ICON_ERASER
-  inkEraseBtn.title = t('Radierer (Doppelklick auf eine Textmarke oder einen Begriff löscht sie ganz)')
+  inkEraseBtn.title = t('Radierer (Doppelklick auf einen Begriff löscht ihn ganz)')
   inkEraseBtn.setAttribute('aria-label', t('Radierer'))
   inkEraseBtn.addEventListener('click', () => setInkTool(inkTool === 'eraser' ? 'pen' : 'eraser'))
   inkToolbar.appendChild(inkEraseBtn)
-  const inkTermBtn = document.createElement('button')
-  inkTermBtn.className = 'bento-ink-term'
-  inkTermBtn.innerHTML = INK_ICON_TAG
-  inkTermBtn.title = t('Begriff platzieren/korrigieren — zieh ihn danach mit der Hand auf die richtige Stelle')
-  inkTermBtn.setAttribute('aria-label', t('Begriff'))
-  inkTermBtn.addEventListener('click', () => setInkTool(inkTool === 'term' ? 'pen' : 'term'))
-  inkToolbar.appendChild(inkTermBtn)
   const inkSaveTermsBtn = document.createElement('button')
   inkSaveTermsBtn.className = 'bento-ink-save-terms'
   inkSaveTermsBtn.innerHTML = INK_ICON_SAVE_TERMS
@@ -937,7 +750,6 @@ export function startPresentation(
   inkSaveTermsBtn.setAttribute('aria-label', t('Begriffe speichern'))
   inkSaveTermsBtn.addEventListener('click', () => {
     const terms = slideTerms(inkCurrentIdx)
-    console.log('[bento/term] save clicked — slide', inkCurrentIdx, '|', terms.length, 'term(s):', terms.map((t) => t.text), '| onSaveTerms provided:', !!opts.onSaveTerms)
     opts.onSaveTerms?.(inkCurrentIdx, terms)
     inkSaveTermsBtn.classList.add('bento-ink-save-terms-done')
     setTimeout(() => inkSaveTermsBtn.classList.remove('bento-ink-save-terms-done'), 900)
@@ -958,10 +770,7 @@ export function startPresentation(
    *  visible strokes to that slide's own set. */
   const updateInkForSlide = (idx: number) => {
     inkCurrentIdx = idx
-    inkTextAnchor = null
-    cancelInkText()
     cancelTermInput()
-    updateInkTextMarker()
     const allowed = !!doc.slides[idx]?.annotate
     inkToggleBtn.hidden = !allowed
     if (!allowed && inkEnabled) setInkEnabled(false)
@@ -1427,10 +1236,10 @@ export function startPresentation(
   // host-embedded frame) — present mode has no fields, so arrows are always
   // navigation. Handled here exclusively (stopPropagation avoids double-steps).
   const onKeydown = (ev: KeyboardEvent) => {
-    // The floating ink-text input has its own keydown handler (Escape
+    // The floating term input has its own keydown handler (Escape
     // cancels, Enter commits) — this capture-phase listener would otherwise
     // see Escape FIRST and exit the whole show instead. Let it alone entirely.
-    if (inkTextInput && document.activeElement === inkTextInput) return
+    if (termInput && document.activeElement === termInput) return
     if (ev.key === 'Escape') {
       if (deck.isOverview()) return // let Reveal close its overview first
       ev.preventDefault()
@@ -1468,14 +1277,14 @@ export function startPresentation(
       if (!ev.repeat) toggleInk()
       return
     }
-    // Typing while the pen is on writes text directly — no separate "text
-    // tool" button. A single printable character (letters, digits, space,
-    // punctuation) opens the floating text input at the last pointer
-    // position; see startInkText. Modifier combos (⌘C, etc.) pass through.
-    if (inkEnabled && !inkTextInput && ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+    // Typing while the pen is on places a term directly at the last pointer
+    // position — no need to switch to the T tool first. Modifier combos
+    // (⌘C, etc.) pass through untouched.
+    if (inkEnabled && !termInput && ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
       ev.preventDefault()
       ev.stopPropagation()
-      startInkText(ev.key)
+      buildInk()
+      placeTermInput(lastPointerFrac, ev.key, null)
       return
     }
     const key = ev.key || ({ 32: ' ', 37: 'ArrowLeft', 39: 'ArrowRight', 33: 'PageUp', 34: 'PageDown' } as Record<number, string>)[ev.keyCode]

@@ -1696,8 +1696,8 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   place-items: center;
   cursor: pointer;
 }
-.bento-ink-erase.active, .bento-ink-textbtn.active, .bento-ink-pen.active, .bento-ink-hand.active, .bento-ink-term.active { background: var(--bento-accent, #ED8266); color: #14161c; border-color: transparent; }
-.bento-ink-erase:hover, .bento-ink-clear:hover, .bento-ink-textbtn:hover, .bento-ink-pen:hover, .bento-ink-hand:hover, .bento-ink-term:hover, .bento-ink-save-terms:hover { background: rgb(255 255 255 / 0.18); }
+.bento-ink-erase.active, .bento-ink-textbtn.active, .bento-ink-pen.active, .bento-ink-hand.active { background: var(--bento-accent, #ED8266); color: #14161c; border-color: transparent; }
+.bento-ink-erase:hover, .bento-ink-clear:hover, .bento-ink-textbtn:hover, .bento-ink-pen:hover, .bento-ink-hand:hover, .bento-ink-save-terms:hover { background: rgb(255 255 255 / 0.18); }
 
 /* the explicit "persist current term arrangement" action — momentary
    confirmation flash rather than a toggle state (see present.ts) */
@@ -1744,41 +1744,6 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   background: rgb(255 255 255 / 0.96);
   color: #14161c;
   font: 700 16px system-ui, -apple-system, sans-serif;
-  line-height: 1.15;
-  resize: none;
-  overflow: hidden;
-  outline: none;
-}
-
-/* pulsing crosshair shown while "T" (text-marker) mode is on, at inkTextAnchor */
-.bento-ink-textmarker {
-  position: absolute;
-  z-index: 66;
-  width: 22px;
-  height: 22px;
-  margin: -11px 0 0 -11px;
-  border: 2px solid #fff;
-  border-radius: 999px;
-  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.5);
-  pointer-events: none;
-  animation: bento-ink-marker-pulse 1.1s ease-in-out infinite;
-}
-@keyframes bento-ink-marker-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.55; transform: scale(0.8); }
-}
-
-/* floating single-line-growing text input for keyboard ink annotations */
-.bento-ink-textinput {
-  position: absolute;
-  z-index: 66;
-  min-width: 40px;
-  max-width: 60vw;
-  padding: 2px 4px;
-  border: 1px dashed rgb(255 255 255 / 0.6);
-  border-radius: 4px;
-  background: rgb(20 22 28 / 0.35);
-  font: 600 32px system-ui, -apple-system, sans-serif;
   line-height: 1.15;
   resize: none;
   overflow: hidden;
