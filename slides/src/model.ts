@@ -347,6 +347,9 @@ export interface Slide {
   hover?: { type: 'focus-group' | 'reveal'; dim?: number; default?: string }
   /** review comment threads (editor-only; see Comment) */
   comments?: Comment[]
+  /** When set, wins over `background` (kept as the solid fallback) — same
+   *  convention as ShapeElement.fillGradient. */
+  backgroundGradient?: GradientFill
 }
 
 export interface BentoDoc {

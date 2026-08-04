@@ -687,7 +687,7 @@ export function renderSlide(slide: Slide, doc: BentoDoc, opts: RenderOpts = {}):
   surface.dataset.slideId = slide.id
   surface.style.width = `${doc.size.width}px`
   surface.style.height = `${doc.size.height}px`
-  surface.style.background = slide.background
+  surface.style.background = slide.backgroundGradient ? cssLinearGradient(slide.backgroundGradient) : slide.background
   const fields = opts.fields ?? fieldContext(doc, slide)
   for (const el of slide.elements) surface.appendChild(renderElement(el, doc, { ...opts, fields }))
   return surface

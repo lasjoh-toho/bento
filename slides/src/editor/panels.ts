@@ -5,7 +5,7 @@
 // into a single undo checkpoint.
 
 import type { Store } from '../store'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type LineEnding, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type GradientFill, type LineEnding, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement } from '../measure'
 import { isMacOS } from '../screens'
@@ -106,6 +106,12 @@ const fillStyles = (): Array<[string, string]> =>
 
 export class PropsPanel {
   private burst = false
+
+  /** "Farben" section scope selector — which slide(s) the next color pick
+   *  applies to. 'next' is one-shot: applied to whichever slide the user
+   *  switches to next, then reset to 'slide'. */
+  private colorScope: 'slide' | 'all' | 'next' = 'slide'
+  private pendingColor: { color?: string; background?: string; backgroundGradient?: GradientFill | null } | null = null
 
   constructor(
     private host: HTMLElement,
@@ -387,6 +393,99 @@ export class PropsPanel {
       }, true)
     })
     this.host.appendChild(saveLy)
+
+    this.section(t('Farben'))
+    const scopeOptions: Array<[string, string]> = [
+      ['slide', t('diese Folie')],
+      ['all', t('alle Folien')],
+      ['next', t('auch auf nächste gewählte Folie anwenden')],
+    ]
+    this.row(t('Anwenden auf'), this.labeledSelect(scopeOptions, this.colorScope, (v) => {
+      this.colorScope = v as typeof this.colorScope
+      if (this.colorScope === 'next') {
+        // Carries over the CURRENT slide's existing look as the starting
+        // point — so choosing this doesn't require re-picking a color that
+        // was already set before switching scope; picking a new one from
+        // here still refines it further (see applyToSlides below).
+        const s = this.store.slide
+        this.pendingColor = {
+          color: s.elements.find((e): e is TextElement => e.type === 'text')?.color,
+          background: s.background,
+          backgroundGradient: s.backgroundGradient ?? null,
+        }
+      } else {
+        this.pendingColor = null // leaving 'next' stops it
+      }
+      this.rebuild(true)
+    }))
+    if (this.colorScope === 'next' && this.pendingColor) {
+      const pendingHint = document.createElement('p')
+      pendingHint.className = 'ed-hint'
+      pendingHint.textContent = t('Aktiv: wird auf jede Folie angewendet, die du jetzt auswählst — so lange, bis du "Anwenden auf" wieder änderst.')
+      this.host.appendChild(pendingHint)
+    }
+
+    const applyToSlides = (fn: (s: Slide) => void, patch: NonNullable<typeof this.pendingColor>) => {
+      if (this.colorScope === 'next') {
+        this.pendingColor = { ...this.pendingColor, ...patch }
+        this.rebuild(true)
+        return
+      }
+      const slides = this.colorScope === 'all' ? this.store.doc.slides : [this.store.slide]
+      this.store.commit(() => { for (const s of slides) fn(s) })
+    }
+    const applyTextColor = (color: string) =>
+      applyToSlides((s) => {
+        for (const el of s.elements) if (el.type === 'text') { el.color = color; delete el.colorGradient }
+      }, { color })
+    const applyBackground = (patch: { background?: string; backgroundGradient?: GradientFill | null }) =>
+      applyToSlides((s) => {
+        if (patch.background !== undefined) s.background = patch.background
+        if (patch.backgroundGradient !== undefined) {
+          if (patch.backgroundGradient) s.backgroundGradient = patch.backgroundGradient
+          else delete s.backgroundGradient
+        }
+      }, patch)
+
+    const firstTextColor = slide.elements.find((e): e is TextElement => e.type === 'text')?.color ?? '#000000'
+    this.row(t('Schriftfarbe für alle Texte'), this.colorHex(firstTextColor, (v, fin) => { if (fin) applyTextColor(v) }))
+
+    const bgGrad = slide.backgroundGradient
+    this.row(t('Hintergrund-Stil'), this.labeledSelect(fillStyles(), bgGrad ? 'gradient' : 'solid', (v) => {
+      if (v === 'gradient') {
+        const base = parseColor(slide.background)
+        applyBackground({
+          backgroundGradient: {
+            angle: 180,
+            stops: [
+              { at: 0, color: combineColor(base.hex, Math.max(base.a, 1)) },
+              { at: 1, color: combineColor(base.hex, 0) },
+            ],
+          },
+        })
+      } else {
+        applyBackground({ backgroundGradient: null })
+      }
+    }))
+    if (!bgGrad) {
+      this.row(t('Hintergrund'), this.colorHex(slide.background, (v, fin) => { if (fin) applyBackground({ background: v }) }))
+    } else {
+      this.row(t('Grad. Winkel'), this.number(bgGrad.angle, 1, (v, fin) => {
+        if (!fin) return
+        applyBackground({ backgroundGradient: { ...bgGrad, angle: v } })
+      }))
+      bgGrad.stops.forEach((stop, i) => {
+        this.row(i === 0 ? t('Farbe 1') : t('Farbe 2'), this.colorHex(stop.color, (v, fin) => {
+          if (!fin) return
+          const stops = bgGrad.stops.map((s, j) => (j === i ? { ...s, color: v } : s))
+          applyBackground({ backgroundGradient: { ...bgGrad, stops } })
+        }))
+      })
+    }
+    const colorHint = document.createElement('p')
+    colorHint.className = 'ed-hint'
+    colorHint.textContent = t('Schriftfarbe wirkt nur auf Textelemente (nicht Formen/Bilder); ein bestehender Farbverlauf im Text wird dabei entfernt.')
+    this.host.appendChild(colorHint)
 
     this.section(t('Speaker notes'))
     const notes = document.createElement('textarea')
@@ -1958,6 +2057,34 @@ export class PropsPanel {
       if (!Number.isNaN(v)) onEdit(v, true)
     })
     return input
+  }
+
+  /** Native swatch (opens the browser's own color picker) plus a plain text
+   *  field for typing/pasting a hex code (or any CSS color) directly — the
+   *  plain `color()` picker below only offers the swatch. */
+  private colorHex(value: string, onEdit: (v: string, final: boolean) => void): HTMLElement {
+    const wrap = document.createElement('div')
+    wrap.className = 'ed-colorhex'
+    const hex = /^#[0-9a-fA-F]{6}$/.test(value) ? value : parseColor(value).hex
+    const swatch = document.createElement('input')
+    swatch.type = 'color'
+    swatch.value = hex
+    const text = document.createElement('input')
+    text.type = 'text'
+    text.className = 'ed-colorhex-text'
+    text.value = value
+    text.spellcheck = false
+    text.placeholder = '#rrggbb'
+    swatch.addEventListener('input', () => { text.value = swatch.value; onEdit(swatch.value, false) })
+    swatch.addEventListener('change', () => { text.value = swatch.value; onEdit(swatch.value, true) })
+    text.addEventListener('change', () => {
+      const v = text.value.trim()
+      if (!v) return
+      onEdit(v, true)
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) swatch.value = v
+    })
+    wrap.append(swatch, text)
+    return wrap
   }
 
   private color(value: string, onEdit: (v: string, final: boolean) => void): HTMLElement {
