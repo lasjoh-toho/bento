@@ -655,6 +655,7 @@ export function startPresentation(
     termContainer = document.createElement('div')
     termContainer.className = 'bento-term-layer'
     overlay.insertBefore(termContainer, blackout)
+    redrawTerms() // termContainer only now exists — nothing rendered it yet, unlike ink (resizeInkCanvas above already redrew that)
     const toFrac = (ev: MouseEvent) => {
       const r = inkCanvas!.getBoundingClientRect()
       return { x: (ev.clientX - r.left) / r.width, y: (ev.clientY - r.top) / r.height }
