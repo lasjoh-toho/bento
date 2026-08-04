@@ -1924,7 +1924,15 @@ export class Editor {
       this.presenting = false
       this.store.goTo(last)
       this.canvas.render()
-    }, { fullscreen })
+    }, {
+      fullscreen,
+      onSaveTerms: (slideIndex, terms) => {
+        this.store.commit(() => {
+          const target = this.store.doc.slides[slideIndex]
+          if (target) target.dragTerms = terms
+        })
+      },
+    })
   }
 
   // --- paste: external objects + cross-deck elements/slides ---------------------

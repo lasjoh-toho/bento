@@ -8,8 +8,8 @@ import Reveal from 'reveal.js'
 import 'reveal.js/dist/reveal.css'
 import { anim, resetXform } from './anim'
 import { chartSnapshotSvg, mountChart } from './charts'
-import type { BentoDoc, GradientFill, ShapeElement, Slide, SlideElement } from './model'
-import { morphKey } from './model'
+import type { BentoDoc, DragTerm, GradientFill, ShapeElement, Slide, SlideElement } from './model'
+import { morphKey, uid } from './model'
 import { applyElementFrame, gradientLineCoords, renderSlide } from './render'
 import { paintSpeaker, setSpeakerWindow, speakerIdleBody, speakerWindow } from './screens'
 import { t } from './i18n'
@@ -26,7 +26,7 @@ export function startPresentation(
   doc: BentoDoc,
   startIndex: number,
   onExit: (lastIndex: number) => void,
-  opts: { fullscreen?: boolean } = {},
+  opts: { fullscreen?: boolean; onSaveTerms?: (slideIndex: number, terms: DragTerm[]) => void } = {},
 ): PresentSession {
   const overlay = document.createElement('div')
   overlay.className = 'bento-present-overlay'
@@ -415,14 +415,32 @@ export function startPresentation(
    *  text mark to delete it outright instead of just erasing pixels), Hand
    *  drags an existing text mark to reposition it, Text places/corrects a
    *  text mark for the keyboard to write into (see startInkText). */
-  type InkTool = 'pen' | 'eraser' | 'hand' | 'text'
+  type InkTool = 'pen' | 'eraser' | 'hand' | 'text' | 'term'
   const INK_COLORS = ['#ef4444', '#111111', '#2563eb', '#22c55e', '#facc15', '#ffffff']
   const INK_SIZES = [4, 10, 20, 36]
   const INK_ICON_PEN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>'
   const INK_ICON_ERASER = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H8l-6-6a2 2 0 0 1 0-2.8l8-8a2 2 0 0 1 2.8 0l7 7a2 2 0 0 1 0 2.8L13 20"/><path d="M6 13l6 6"/></svg>'
   const INK_ICON_HAND = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v7"/><path d="M10 10.5V6a2 2 0 0 0-4 0v10"/><path d="M6 14l-1.5-1.5a2 2 0 0 0-3 2.6L6 21h9a2 2 0 0 0 2-2v-2a4 4 0 0 0 2-3.5V11a2 2 0 0 0-4 0"/></svg>'
+  const INK_ICON_TAG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.59 2.59 20 10a2 2 0 0 1 0 2.83l-6.17 6.17a2 2 0 0 1-2.83 0L3 11V4a2 2 0 0 1 2-2h7.59a2 2 0 0 1 1.41.59z"/><circle cx="7.5" cy="7.5" r="1.5" fill="currentColor" stroke="none"/></svg>'
+  const INK_ICON_SAVE_TERMS = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>'
   const INK_ICON_TRASH = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>'
   const inkBySlide = new Map<number, InkMark[]>()
+  // ——— drag-and-drop term labels (Slide.dragTerms) ———
+  // Distinct from ink marks above in one key way: these ARE meant to be
+  // saved eventually, just not automatically. Session-local edits here
+  // start from whatever's already persisted (or empty) and stay purely
+  // in-memory — same as ink — until the toolbar's explicit save action
+  // commits them through onSaveTerms (see startPresentation's opts),
+  // which is the only path that goes through the real Store (undo,
+  // dirty-flag, the works). Reopening without saving reverts to
+  // whatever was last actually saved, exactly like ink reverts to blank.
+  const termsBySlide = new Map<number, DragTerm[]>()
+  const getTermsForSlide = (idx: number): DragTerm[] => {
+    if (!termsBySlide.has(idx)) {
+      termsBySlide.set(idx, JSON.parse(JSON.stringify(doc.slides[idx]?.dragTerms ?? [])))
+    }
+    return termsBySlide.get(idx)!
+  }
   let inkEnabled = false
   let inkColor = INK_COLORS[0]
   let inkWidth = INK_SIZES[1]
@@ -430,6 +448,7 @@ export function startPresentation(
   let inkCurrentIdx = 0
   let inkStroke: InkLine | null = null
   let inkCanvas: HTMLCanvasElement | null = null
+  let termContainer: HTMLDivElement | null = null
   let inkCtx: CanvasRenderingContext2D | null = null
   let inkBuilt = false
   /** Where typed text will land — updated by pointer hover/tap and, with the
@@ -494,6 +513,102 @@ export function startPresentation(
     window.addEventListener('pointerup', up)
   }
 
+  // ——— drag-and-drop term chips (Slide.dragTerms) ———
+  const findTermAt = (p: InkPoint): { term: DragTerm; index: number } | null => {
+    const terms = getTermsForSlide(inkCurrentIdx)
+    for (let i = terms.length - 1; i >= 0; i--) {
+      const chip = termContainer?.querySelector<HTMLElement>(`[data-term-id="${terms[i].id}"]`)
+      if (!chip) continue
+      const box = chip.getBoundingClientRect()
+      const host = overlay.getBoundingClientRect()
+      const px = host.left + p.x * host.width
+      const py = host.top + p.y * host.height
+      if (px >= box.left && px <= box.right && py >= box.top && py <= box.bottom) return { term: terms[i], index: i }
+    }
+    return null
+  }
+  const deleteTerm = (index: number) => {
+    getTermsForSlide(inkCurrentIdx).splice(index, 1)
+    redrawTerms()
+  }
+  const startDragTerm = (index: number, downP: InkPoint) => {
+    const term = getTermsForSlide(inkCurrentIdx)[index]
+    if (!term) return
+    const start = { x: term.x, y: term.y }
+    const move = (ev: PointerEvent) => {
+      const r = overlay.getBoundingClientRect()
+      const p = { x: (ev.clientX - r.left) / r.width, y: (ev.clientY - r.top) / r.height }
+      term.x = start.x + (p.x - downP.x)
+      term.y = start.y + (p.y - downP.y)
+      redrawTerms()
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  const redrawTerms = () => {
+    if (!termContainer) return
+    termContainer.innerHTML = ''
+    for (const term of getTermsForSlide(inkCurrentIdx)) {
+      const chip = document.createElement('div')
+      chip.className = 'bento-term-chip'
+      chip.dataset.termId = term.id
+      chip.textContent = term.text
+      chip.style.left = `${term.x * 100}%`
+      chip.style.top = `${term.y * 100}%`
+      termContainer.appendChild(chip)
+    }
+  }
+
+  let termInput: HTMLTextAreaElement | null = null
+  let termEditingIndex: number | null = null
+  const cancelTermInput = () => { termInput?.remove(); termInput = null; termEditingIndex = null }
+  const commitTermInput = () => {
+    const ta = termInput
+    if (!ta) return
+    termInput = null
+    const text = ta.value.trim()
+    const editingIndex = termEditingIndex
+    termEditingIndex = null
+    const x = Number(ta.dataset.x)
+    const y = Number(ta.dataset.y)
+    ta.remove()
+    const terms = getTermsForSlide(inkCurrentIdx)
+    if (editingIndex !== null) {
+      if (!text) terms.splice(editingIndex, 1) // cleared out — delete rather than leave an empty chip
+      else terms[editingIndex].text = text
+    } else if (text) {
+      terms.push({ id: uid('term'), text, x, y })
+    }
+    redrawTerms()
+  }
+  const placeTermInput = (p: InkPoint, initialText: string, editingIndex: number | null) => {
+    if (termInput) return
+    const ta = document.createElement('textarea')
+    ta.className = 'bento-term-input'
+    ta.rows = 1
+    ta.spellcheck = false
+    ta.style.left = `${p.x * 100}%`
+    ta.style.top = `${p.y * 100}%`
+    ta.dataset.x = String(p.x)
+    ta.dataset.y = String(p.y)
+    ta.value = initialText
+    ta.addEventListener('keydown', (ev) => {
+      ev.stopPropagation()
+      if (ev.key === 'Escape') { ev.preventDefault(); cancelTermInput(); return }
+      if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commitTermInput() }
+    })
+    ta.addEventListener('blur', commitTermInput)
+    overlay.appendChild(ta)
+    termInput = ta
+    termEditingIndex = editingIndex
+    ta.focus()
+    ta.setSelectionRange(ta.value.length, ta.value.length)
+  }
+
 
   const redrawInk = () => {
     if (!inkCtx || !inkCanvas) return
@@ -537,6 +652,9 @@ export function startPresentation(
     overlay.insertBefore(inkCanvas, blackout)
     inkCtx = inkCanvas.getContext('2d')
     resizeInkCanvas()
+    termContainer = document.createElement('div')
+    termContainer.className = 'bento-term-layer'
+    overlay.insertBefore(termContainer, blackout)
     const toFrac = (ev: MouseEvent) => {
       const r = inkCanvas!.getBoundingClientRect()
       return { x: (ev.clientX - r.left) / r.width, y: (ev.clientY - r.top) / r.height }
@@ -545,6 +663,12 @@ export function startPresentation(
       if (!inkEnabled) return
       ev.preventDefault()
       const p = toFrac(ev)
+      if (inkTool === 'term') {
+        const hit = findTermAt(p)
+        if (hit) { placeTermInput({ x: hit.term.x, y: hit.term.y }, hit.term.text, hit.index); return }
+        placeTermInput(p, '', null)
+        return
+      }
       if (inkTool === 'text') {
         inkTextAnchor = p
         const hit = findTextMarkAt(p)
@@ -553,13 +677,15 @@ export function startPresentation(
         return
       }
       if (inkTool === 'hand') {
+        const termHit = findTermAt(p)
+        if (termHit) { startDragTerm(termHit.index, p); return }
         const hit = findTextMarkAt(p)
         if (hit) startDragTextMark(hit.index, p)
         return
       }
       // pen or eraser — both draw a stroke; eraser's stroke just erases
-      // instead of adding colour (double-click a text mark to remove it
-      // outright instead — see the dblclick listener below).
+      // instead of adding colour (double-click a text mark or term chip
+      // removes it outright instead — see the dblclick listener below).
       inkCanvas!.setPointerCapture(ev.pointerId)
       inkStroke = { kind: 'line', points: [p], color: inkColor, width: inkWidth / (inkCanvas!.height || 1), erase: inkTool === 'eraser' }
       const arr = inkBySlide.get(inkCurrentIdx) ?? []
@@ -569,7 +695,10 @@ export function startPresentation(
     })
     inkCanvas.addEventListener('dblclick', (ev) => {
       if (!inkEnabled || inkTool !== 'eraser') return
-      const hit = findTextMarkAt(toFrac(ev))
+      const p = toFrac(ev)
+      const termHit = findTermAt(p)
+      if (termHit) { ev.preventDefault(); deleteTerm(termHit.index); return }
+      const hit = findTextMarkAt(p)
       if (hit) { ev.preventDefault(); deleteInkMark(hit.index) }
     })
     inkCanvas.addEventListener('pointermove', (ev) => {
@@ -596,7 +725,7 @@ export function startPresentation(
     inkToolbar.classList.toggle('visible', on)
   }
   const toggleInk = () => setInkEnabled(!inkEnabled)
-  const clearInkForCurrent = () => { inkBySlide.delete(inkCurrentIdx); redrawInk() }
+  const clearInkForCurrent = () => { inkBySlide.delete(inkCurrentIdx); termsBySlide.set(inkCurrentIdx, []); redrawInk(); redrawTerms() }
 
   // ——— text placement marker (Text tool) ———
   // Drawing tools would otherwise leave a stroke wherever you tap — there'd
@@ -725,6 +854,7 @@ export function startPresentation(
     inkEraseBtn.classList.toggle('active', inkTool === 'eraser')
     inkHandBtn.classList.toggle('active', inkTool === 'hand')
     inkTextBtn.classList.toggle('active', inkTool === 'text')
+    inkTermBtn.classList.toggle('active', inkTool === 'term')
   }
   const inkPenBtn = document.createElement('button')
   inkPenBtn.className = 'bento-ink-pen'
@@ -774,17 +904,35 @@ export function startPresentation(
   const inkHandBtn = document.createElement('button')
   inkHandBtn.className = 'bento-ink-hand'
   inkHandBtn.innerHTML = INK_ICON_HAND
-  inkHandBtn.title = t('Hand: Textmarken an eine andere Stelle ziehen')
+  inkHandBtn.title = t('Hand: Textmarken oder Begriffe an eine andere Stelle ziehen')
   inkHandBtn.setAttribute('aria-label', t('Hand'))
   inkHandBtn.addEventListener('click', () => setInkTool(inkTool === 'hand' ? 'pen' : 'hand'))
   inkToolbar.appendChild(inkHandBtn)
   const inkEraseBtn = document.createElement('button')
   inkEraseBtn.className = 'bento-ink-erase'
   inkEraseBtn.innerHTML = INK_ICON_ERASER
-  inkEraseBtn.title = t('Radierer (Doppelklick auf eine Textmarke löscht sie ganz)')
+  inkEraseBtn.title = t('Radierer (Doppelklick auf eine Textmarke oder einen Begriff löscht sie ganz)')
   inkEraseBtn.setAttribute('aria-label', t('Radierer'))
   inkEraseBtn.addEventListener('click', () => setInkTool(inkTool === 'eraser' ? 'pen' : 'eraser'))
   inkToolbar.appendChild(inkEraseBtn)
+  const inkTermBtn = document.createElement('button')
+  inkTermBtn.className = 'bento-ink-term'
+  inkTermBtn.innerHTML = INK_ICON_TAG
+  inkTermBtn.title = t('Begriff platzieren/korrigieren — zieh ihn danach mit der Hand auf die richtige Stelle')
+  inkTermBtn.setAttribute('aria-label', t('Begriff'))
+  inkTermBtn.addEventListener('click', () => setInkTool(inkTool === 'term' ? 'pen' : 'term'))
+  inkToolbar.appendChild(inkTermBtn)
+  const inkSaveTermsBtn = document.createElement('button')
+  inkSaveTermsBtn.className = 'bento-ink-save-terms'
+  inkSaveTermsBtn.innerHTML = INK_ICON_SAVE_TERMS
+  inkSaveTermsBtn.title = t('Begriffe dauerhaft speichern — sonst gilt nur für diese Sitzung und setzt sich beim erneuten Öffnen auf den zuletzt gespeicherten Stand zurück')
+  inkSaveTermsBtn.setAttribute('aria-label', t('Begriffe speichern'))
+  inkSaveTermsBtn.addEventListener('click', () => {
+    opts.onSaveTerms?.(inkCurrentIdx, getTermsForSlide(inkCurrentIdx))
+    inkSaveTermsBtn.classList.add('bento-ink-save-terms-done')
+    setTimeout(() => inkSaveTermsBtn.classList.remove('bento-ink-save-terms-done'), 900)
+  })
+  inkToolbar.appendChild(inkSaveTermsBtn)
   const inkClearBtn = document.createElement('button')
   inkClearBtn.className = 'bento-ink-clear'
   inkClearBtn.innerHTML = INK_ICON_TRASH
@@ -802,11 +950,13 @@ export function startPresentation(
     inkCurrentIdx = idx
     inkTextAnchor = null
     cancelInkText()
+    cancelTermInput()
     updateInkTextMarker()
     const allowed = !!doc.slides[idx]?.annotate
     inkToggleBtn.hidden = !allowed
     if (!allowed && inkEnabled) setInkEnabled(false)
     redrawInk()
+    redrawTerms()
   }
 
   const setBlack = (on: boolean) => {

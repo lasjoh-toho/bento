@@ -386,6 +386,32 @@ export interface Slide {
   /** When set, wins over `background` (kept as the solid fallback) — same
    *  convention as ShapeElement.fillGradient. */
   backgroundGradient?: GradientFill
+  /**
+   * Persisted drag-and-drop term labels for Present mode — a lightweight
+   * annotation layer distinct from the ink strokes in present.ts (which are
+   * deliberately session-only and never saved). These start as unsaved,
+   * session-local state too (typed/placed/dragged live during Present,
+   * gated behind the same `annotate` toggle) — but an explicit "save"
+   * action in that toolbar writes the current arrangement here, through the
+   * normal Store.commit() path (undo, dirty-flag, the works). Reopening the
+   * deck without ever saving resets to whatever was last saved here (or
+   * empty, if nothing ever was).
+   *
+   * Deliberately minimal for now (an annotation tool, not a quiz tool yet) —
+   * but shaped so a later "correct drop zone" feature could add an optional
+   * field per term without a redesign: id/text/position only.
+   */
+  dragTerms?: DragTerm[]
+}
+
+/** One draggable term-label placed on a slide in Present mode — see
+ *  Slide.dragTerms. x/y are fractions (0..1) of the viewport, same
+ *  resize-independent convention as present.ts's ink marks. */
+export interface DragTerm {
+  id: string
+  text: string
+  x: number
+  y: number
 }
 
 export interface BentoDoc {

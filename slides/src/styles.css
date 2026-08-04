@@ -1696,8 +1696,59 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   place-items: center;
   cursor: pointer;
 }
-.bento-ink-erase.active, .bento-ink-textbtn.active, .bento-ink-pen.active, .bento-ink-hand.active { background: var(--bento-accent, #ED8266); color: #14161c; border-color: transparent; }
-.bento-ink-erase:hover, .bento-ink-clear:hover, .bento-ink-textbtn:hover, .bento-ink-pen:hover, .bento-ink-hand:hover { background: rgb(255 255 255 / 0.18); }
+.bento-ink-erase.active, .bento-ink-textbtn.active, .bento-ink-pen.active, .bento-ink-hand.active, .bento-ink-term.active { background: var(--bento-accent, #ED8266); color: #14161c; border-color: transparent; }
+.bento-ink-erase:hover, .bento-ink-clear:hover, .bento-ink-textbtn:hover, .bento-ink-pen:hover, .bento-ink-hand:hover, .bento-ink-term:hover, .bento-ink-save-terms:hover { background: rgb(255 255 255 / 0.18); }
+
+/* the explicit "persist current term arrangement" action — momentary
+   confirmation flash rather than a toggle state (see present.ts) */
+.bento-ink-save-terms-done { background: #6fce8f !important; color: #0d2016 !important; }
+
+/* drag-and-drop term labels (Slide.dragTerms) — a lightweight layer of DOM
+   chips above the ink canvas, deliberately NOT painted onto it: unlike ink
+   strokes/text these are real, individually addressable elements the user
+   drags around, so plain DOM (positioned by % of the layer) is simpler than
+   canvas hit-testing would be for something this shape. pointer-events:none
+   on both the layer and each chip is what routes taps/drags to the ink
+   canvas underneath instead — present.ts hit-tests chips itself (via
+   getBoundingClientRect) the same way it already does for ink text marks,
+   so one pointerdown/dblclick pipeline handles both. */
+.bento-term-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 65;
+  pointer-events: none;
+}
+.bento-term-chip {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-2px, -2px);
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.94);
+  color: #14161c;
+  font: 700 16px system-ui, -apple-system, sans-serif;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+  white-space: nowrap;
+}
+
+/* floating single-line input used both to place a NEW term and to correct
+   an existing one (tapping a chip with the Begriff tool reopens it here) */
+.bento-term-input {
+  position: absolute;
+  z-index: 67;
+  min-width: 60px;
+  max-width: 60vw;
+  padding: 5px 12px;
+  border: 1px dashed rgb(20 22 28 / 0.5);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.96);
+  color: #14161c;
+  font: 700 16px system-ui, -apple-system, sans-serif;
+  line-height: 1.15;
+  resize: none;
+  overflow: hidden;
+  outline: none;
+}
 
 /* pulsing crosshair shown while "T" (text-marker) mode is on, at inkTextAnchor */
 .bento-ink-textmarker {
