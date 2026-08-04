@@ -109,6 +109,13 @@ const fillStyles = (): Array<[string, string]> =>
 export class PropsPanel {
   private burst = false
 
+  /** Starts collapsed — the layer list can get long and isn't what most
+   *  editing sessions need open by default; the user's own expand/collapse
+   *  choice persists for the rest of this panel's lifetime (i.e. until the
+   *  file is reopened), same as the crop/mask "what's currently shown"
+   *  flags below. */
+  private layersCollapsed = true
+
   /** Which image element currently shows the Cancel/Apply crop controls in
    *  this panel (the interactive geometry itself — drag to pan, slider to
    *  zoom — lives on the canvas now; see canvas.ts's startCrop/commitCrop/
@@ -723,7 +730,19 @@ export class PropsPanel {
   private buildLayersSection() {
     const elements = this.store.slide.elements
     if (!elements.length) return
-    this.section(t('Ebenen'))
+    const header = document.createElement('h3')
+    header.className = 'ed-section ed-section-collapsible'
+    header.textContent = `${t('Ebenen')} (${elements.length})`
+    const chevron = document.createElement('span')
+    chevron.className = 'ed-section-chevron' + (this.layersCollapsed ? '' : ' ed-section-chevron-open')
+    chevron.textContent = '▸'
+    header.appendChild(chevron)
+    header.addEventListener('click', () => {
+      this.layersCollapsed = !this.layersCollapsed
+      this.rebuild(true)
+    })
+    this.host.appendChild(header)
+    if (this.layersCollapsed) return
     const list = document.createElement('div')
     list.className = 'ed-layers'
     for (let i = elements.length - 1; i >= 0; i--) {

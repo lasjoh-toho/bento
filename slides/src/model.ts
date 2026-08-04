@@ -387,34 +387,55 @@ export interface Slide {
    *  convention as ShapeElement.fillGradient. */
   backgroundGradient?: GradientFill
   /**
-   * Persisted drag-and-drop term labels for Present mode — a lightweight
-   * annotation layer distinct from the ink strokes in present.ts (which are
-   * deliberately session-only and never saved). These start as unsaved,
-   * session-local state too (typed/placed/dragged live during Present,
-   * gated behind the same `annotate` toggle) — but an explicit "save"
-   * action in that toolbar commits the current arrangement here, through
-   * the normal Store.commit() path (undo, dirty-flag, the works), same as
-   * any other edit in the app. It does NOT itself write the file — that
-   * still happens whenever the user does a normal save afterward, exactly
-   * like every other kind of change. Reopening the deck without ever using
-   * this action (or without a normal save afterward) resets to whatever
-   * was last actually saved to the file (or empty, if nothing ever was).
+   * Persisted Present-mode annotations — term labels AND freehand pen
+   * strokes both work the same way now: session-local by default (typed/
+   * drawn live during Present, gated behind the `annotate` toggle above),
+   * surviving Escape + restarting the presentation within the same editor
+   * session because they live directly here rather than in a separate
+   * draft copy — but an explicit "save" action in that toolbar marks
+   * whichever of these changed as a real, dirty-flagged edit (Store.touch(),
+   * since the mutation already happened in place — see present.ts), same as
+   * any other change in the app. It does NOT itself write the file — that
+   * still happens whenever the user does a normal save afterward. Reopening
+   * the deck without ever using that action (or without a normal save
+   * afterward) resets to whatever was last actually saved to the file (or
+   * empty, if nothing ever was).
    *
    * Deliberately minimal for now (an annotation tool, not a quiz tool yet) —
-   * but shaped so a later "correct drop zone" feature could add an optional
-   * field per term without a redesign: id/text/position only.
+   * but dragTerms is shaped so a later "correct drop zone" feature could add
+   * an optional field per term without a redesign: id/text/position(/style)
+   * only.
    */
   dragTerms?: DragTerm[]
+  /** Freehand pen/eraser strokes, persisted the same way dragTerms are —
+   *  see the comment above. */
+  inkStrokes?: PresentInkStroke[]
 }
 
 /** One draggable term-label placed on a slide in Present mode — see
  *  Slide.dragTerms. x/y are fractions (0..1) of the viewport, same
- *  resize-independent convention as present.ts's ink marks. */
+ *  resize-independent convention as present.ts's ink marks.
+ *  `style` picks how it renders: 'chip' (a pill/bubble background, the
+ *  original look) or 'plain' (just colored text, no background — using
+ *  `color`). Defaults to 'plain' if omitted. */
 export interface DragTerm {
   id: string
   text: string
   x: number
   y: number
+  style?: 'chip' | 'plain'
+  color?: string
+}
+
+/** One freehand pen/eraser stroke in Present mode — see Slide.inkStrokes.
+ *  Point coordinates and `width` are fractions of the viewport, same
+ *  resize-independent convention as DragTerm's x/y. */
+export interface PresentInkStroke {
+  id: string
+  points: Array<{ x: number; y: number }>
+  color: string
+  width: number
+  erase: boolean
 }
 
 export interface BentoDoc {

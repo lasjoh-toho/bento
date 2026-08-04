@@ -8,7 +8,7 @@ import Reveal from 'reveal.js'
 import 'reveal.js/dist/reveal.css'
 import { anim, resetXform } from './anim'
 import { chartSnapshotSvg, mountChart } from './charts'
-import type { BentoDoc, DragTerm, GradientFill, ShapeElement, Slide, SlideElement } from './model'
+import type { BentoDoc, DragTerm, GradientFill, PresentInkStroke, ShapeElement, Slide, SlideElement } from './model'
 import { morphKey, uid } from './model'
 import { applyElementFrame, gradientLineCoords, renderSlide } from './render'
 import { paintSpeaker, setSpeakerWindow, speakerIdleBody, speakerWindow } from './screens'
@@ -399,18 +399,14 @@ export function startPresentation(
   // A full-viewport canvas above the slide, gated by `slide.annotate` (an
   // explicit per-slide opt-in — see model.ts — so decks choose which slides
   // invite marks from a classroom touch/stylus display; a quiz slide, say,
-  // stays off). Freehand pen/eraser strokes here are session-only (never
-  // written to the document; gone the moment Present mode ends, same
-  // spirit as the laser pointer above) — the "T" tool is different: it
-  // places/edits DragTerm chips (see the drag-and-drop term section further
-  // down), which live directly on the slide and CAN be explicitly saved.
+  // stays off). Freehand pen/eraser strokes AND term chips both live
+  // directly on the slide (Slide.inkStrokes / Slide.dragTerms) and can be
+  // explicitly saved the same way — see the sections further down.
   type InkPoint = { x: number; y: number }
-  type InkLine = { kind: 'line'; points: InkPoint[]; color: string; width: number; erase: boolean }
-  type InkMark = InkLine
   /** One tool active at a time — Pen draws, Eraser erases (double-click a
-   *  term chip to delete it outright instead of just erasing pixels), Hand
-   *  drags an existing term chip to reposition it, Text places/corrects a
-   *  term chip for the keyboard to write into. */
+   *  stroke or term chip to delete it outright instead of just erasing
+   *  pixels), Hand drags an existing term chip to reposition it, Text
+   *  places/corrects a term chip for the keyboard to write into. */
   type InkTool = 'pen' | 'eraser' | 'hand' | 'text'
   const INK_COLORS = ['#ef4444', '#111111', '#2563eb', '#22c55e', '#facc15', '#ffffff']
   const INK_SIZES = [4, 10, 20, 36]
@@ -419,7 +415,17 @@ export function startPresentation(
   const INK_ICON_HAND = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v7"/><path d="M10 10.5V6a2 2 0 0 0-4 0v10"/><path d="M6 14l-1.5-1.5a2 2 0 0 0-3 2.6L6 21h9a2 2 0 0 0 2-2v-2a4 4 0 0 0 2-3.5V11a2 2 0 0 0-4 0"/></svg>'
   const INK_ICON_SAVE_TERMS = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>'
   const INK_ICON_TRASH = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>'
-  const inkBySlide = new Map<number, InkMark[]>()
+  // ——— freehand pen/eraser strokes (Slide.inkStrokes) ———
+  // Same model as term chips below: edited IN PLACE on the real doc object,
+  // not a separate session-local copy, so strokes survive Escape+restart
+  // within one editor session without needing an explicit save; that save
+  // action just marks the mutation dirty for the next real file save.
+  const slideStrokes = (idx: number): PresentInkStroke[] => {
+    const slide = doc.slides[idx]
+    if (!slide) return []
+    if (!slide.inkStrokes) slide.inkStrokes = []
+    return slide.inkStrokes
+  }
   // ——— drag-and-drop term labels (Slide.dragTerms) ———
   // Unlike ink marks above, these are edited IN PLACE on the real doc object
   // (the same one the Store holds — startPresentation() gets it by
@@ -444,7 +450,7 @@ export function startPresentation(
   let inkWidth = INK_SIZES[1]
   let inkTool: InkTool = 'pen'
   let inkCurrentIdx = 0
-  let inkStroke: InkLine | null = null
+  let inkStroke: PresentInkStroke | null = null
   let inkCanvas: HTMLCanvasElement | null = null
   let termContainer: HTMLDivElement | null = null
   let inkCtx: CanvasRenderingContext2D | null = null
@@ -472,6 +478,43 @@ export function startPresentation(
     slideTerms(inkCurrentIdx).splice(index, 1)
     redrawTerms()
   }
+  /** Distance-to-polyline hit test for the eraser's "double-click deletes
+   *  the whole stroke" behaviour — checks every segment of every stroke on
+   *  the current slide against a fixed pixel threshold (scaled to a
+   *  fraction of the canvas, same convention as everything else here), not
+   *  just the stroke's own drawn width, so thin strokes are still easy to
+   *  hit precisely. Returns the stroke's index, or null. */
+  const findStrokeAt = (p: InkPoint): number | null => {
+    if (!inkCanvas) return null
+    const w = inkCanvas.width
+    const h = inkCanvas.height
+    const thresholdPx = 14
+    const px = p.x * w
+    const py = p.y * h
+    const strokes = slideStrokes(inkCurrentIdx)
+    for (let i = strokes.length - 1; i >= 0; i--) {
+      const pts = strokes[i].points
+      for (let j = 1; j < pts.length; j++) {
+        const ax = pts[j - 1].x * w
+        const ay = pts[j - 1].y * h
+        const bx = pts[j].x * w
+        const by = pts[j].y * h
+        const dx = bx - ax
+        const dy = by - ay
+        const lenSq = dx * dx + dy * dy
+        const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq))
+        const cx = ax + t * dx
+        const cy = ay + t * dy
+        const dist = Math.hypot(px - cx, py - cy)
+        if (dist <= thresholdPx) return i
+      }
+    }
+    return null
+  }
+  const deleteStroke = (index: number) => {
+    slideStrokes(inkCurrentIdx).splice(index, 1)
+    redrawInk()
+  }
   const startDragTerm = (index: number, downP: InkPoint) => {
     const term = slideTerms(inkCurrentIdx)[index]
     if (!term) return
@@ -490,16 +533,22 @@ export function startPresentation(
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
   }
+  /** Style used for the NEXT term placed — toggled via the "Aa"/chip button
+   *  in the toolbar (see below). Existing terms keep whatever style they
+   *  were created with regardless of this. */
+  let termStyle = 'plain' as 'chip' | 'plain'
   const redrawTerms = () => {
     if (!termContainer) return
     termContainer.innerHTML = ''
     for (const term of slideTerms(inkCurrentIdx)) {
       const chip = document.createElement('div')
-      chip.className = 'bento-term-chip'
+      const style = term.style ?? 'plain'
+      chip.className = style === 'chip' ? 'bento-term-chip' : 'bento-term-plain'
       chip.dataset.termId = term.id
       chip.textContent = term.text
       chip.style.left = `${term.x * 100}%`
       chip.style.top = `${term.y * 100}%`
+      if (style === 'plain') chip.style.color = term.color ?? inkColor
       termContainer.appendChild(chip)
     }
   }
@@ -522,7 +571,7 @@ export function startPresentation(
       if (!text) terms.splice(editingIndex, 1) // cleared out — delete rather than leave an empty chip
       else terms[editingIndex].text = text
     } else if (text) {
-      terms.push({ id: uid('term'), text, x, y })
+      terms.push({ id: uid('term'), text, x, y, style: termStyle, color: inkColor })
     }
     redrawTerms()
   }
@@ -556,7 +605,7 @@ export function startPresentation(
     inkCtx.clearRect(0, 0, inkCanvas.width, inkCanvas.height)
     const w = inkCanvas.width
     const h = inkCanvas.height
-    for (const m of inkBySlide.get(inkCurrentIdx) ?? []) {
+    for (const m of slideStrokes(inkCurrentIdx)) {
       if (m.points.length < 1) continue
       inkCtx.globalCompositeOperation = m.erase ? 'destination-out' : 'source-over'
       inkCtx.strokeStyle = m.color
@@ -609,20 +658,20 @@ export function startPresentation(
         return
       }
       // pen or eraser — both draw a stroke; eraser's stroke just erases
-      // instead of adding colour (double-click a term chip removes it
-      // outright instead — see the dblclick listener below).
+      // instead of adding colour (double-click a stroke or term chip
+      // removes it outright instead — see the dblclick listener below).
       inkCanvas!.setPointerCapture(ev.pointerId)
-      inkStroke = { kind: 'line', points: [p], color: inkColor, width: inkWidth / (inkCanvas!.height || 1), erase: inkTool === 'eraser' }
-      const arr = inkBySlide.get(inkCurrentIdx) ?? []
-      arr.push(inkStroke)
-      inkBySlide.set(inkCurrentIdx, arr)
+      inkStroke = { id: uid('stroke'), points: [p], color: inkColor, width: inkWidth / (inkCanvas!.height || 1), erase: inkTool === 'eraser' }
+      slideStrokes(inkCurrentIdx).push(inkStroke)
       redrawInk()
     })
     inkCanvas.addEventListener('dblclick', (ev) => {
       if (!inkEnabled || inkTool !== 'eraser') return
       const p = toFrac(ev)
       const termHit = findTermAt(p)
-      if (termHit) { ev.preventDefault(); deleteTerm(termHit.index) }
+      if (termHit) { ev.preventDefault(); deleteTerm(termHit.index); return }
+      const strokeHit = findStrokeAt(p)
+      if (strokeHit !== null) { ev.preventDefault(); deleteStroke(strokeHit) }
     })
     inkCanvas.addEventListener('pointermove', (ev) => {
       const p = toFrac(ev)
@@ -647,7 +696,7 @@ export function startPresentation(
     inkToolbar.classList.toggle('visible', on)
   }
   const toggleInk = () => setInkEnabled(!inkEnabled)
-  const clearInkForCurrent = () => { inkBySlide.delete(inkCurrentIdx); slideTerms(inkCurrentIdx).length = 0; redrawInk(); redrawTerms() }
+  const clearInkForCurrent = () => { slideStrokes(inkCurrentIdx).length = 0; slideTerms(inkCurrentIdx).length = 0; redrawInk(); redrawTerms() }
 
   // ——— text placement marker (Text tool) ———
   // Drawing tools would otherwise leave a stroke wherever you tap — there'd
@@ -670,7 +719,7 @@ export function startPresentation(
   inkToggleBtn.title = t('Stift (P)')
   inkToggleBtn.setAttribute('aria-label', t('Stift'))
   inkToggleBtn.hidden = true
-  inkToggleBtn.textContent = '✏️'
+  inkToggleBtn.innerHTML = INK_ICON_PEN
   inkToggleBtn.addEventListener('click', toggleInk)
   overlay.appendChild(inkToggleBtn)
 
@@ -729,6 +778,16 @@ export function startPresentation(
   inkTextBtn.setAttribute('aria-label', t('Textmarke'))
   inkTextBtn.addEventListener('click', () => setInkTool(inkTool === 'text' ? 'pen' : 'text'))
   inkToolbar.appendChild(inkTextBtn)
+  const inkTermStyleBtn = document.createElement('button')
+  inkTermStyleBtn.className = 'bento-ink-term-style'
+  inkTermStyleBtn.textContent = termStyle === 'chip' ? '◯' : 'Aa'
+  inkTermStyleBtn.title = t('Darstellung neuer Begriffe umschalten: mit Hintergrund (Blase) oder nur farbiger Text — bereits gesetzte Begriffe behalten ihren eigenen Stil')
+  inkTermStyleBtn.setAttribute('aria-label', t('Begriffsstil'))
+  inkTermStyleBtn.addEventListener('click', () => {
+    termStyle = termStyle === 'chip' ? 'plain' : 'chip'
+    inkTermStyleBtn.textContent = termStyle === 'chip' ? '◯' : 'Aa'
+  })
+  inkToolbar.appendChild(inkTermStyleBtn)
   const inkHandBtn = document.createElement('button')
   inkHandBtn.className = 'bento-ink-hand'
   inkHandBtn.innerHTML = INK_ICON_HAND
@@ -760,7 +819,10 @@ export function startPresentation(
   inkClearBtn.innerHTML = INK_ICON_TRASH
   inkClearBtn.title = t('Löschen')
   inkClearBtn.setAttribute('aria-label', t('Löschen'))
-  inkClearBtn.addEventListener('click', clearInkForCurrent)
+  inkClearBtn.addEventListener('click', () => {
+    if (!window.confirm(t('Alle Striche und Begriffe auf dieser Folie löschen?'))) return
+    clearInkForCurrent()
+  })
   inkToolbar.appendChild(inkClearBtn)
   syncInkToolMode()
   overlay.appendChild(inkToolbar)
