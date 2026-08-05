@@ -352,10 +352,9 @@ export class PropsPanel {
     this.row('Corner arrows', this.toggle(pres.controls ?? false,
       (v) => setPresent('controls', v, false)))
 
-    this.row(t('Anmerkungsoptionen'), this.select(
-      ['aus', 'an'], slide.annotate ? 'an' : 'aus',
+    this.row(t('Anmerkungsoptionen'), this.toggle(!!slide.annotate,
       (v) => this.edit(() => {
-        if (v === 'an') this.store.slide.annotate = true
+        if (v) this.store.slide.annotate = true
         else delete this.store.slide.annotate
       }, true),
     ))
