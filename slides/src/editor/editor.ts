@@ -2089,7 +2089,7 @@ export class Editor {
   private wireAutosave() {
     if (this.store.doc.readonly) return // player file — nothing to autosave
     void pruneOld()
-    if (!moodleConfig) void this.checkRecovery() // local IndexedDB recovery is meaningless here — the document is Moodle's own database row, not this browser's storage; comparing the two only produces a confusing false "unsaved changes" prompt
+    void this.checkRecovery() // meaningful here too — Moodle context has no local-file backstop at all, so this is the ONLY safety net against losing in-progress edits to e.g. a crash before the next explicit Save
     this.noticeIfCannotWriteInPlace()
     this.noticeIfJustUpdated()
     this.store.on('doc', () => this.scheduleAutosave())
@@ -2104,7 +2104,6 @@ export class Editor {
   private async runAutosave() {
     const doc = this.store.doc
     if (doc.readonly) return
-    if (moodleConfig) return // saving here is explicit-only (the Save button), not this local-storage backstop — there's no local file handle to write back to either, so this whole mechanism has nothing to do in this context
     // Never write an encrypted deck's plaintext to IndexedDB; its file
     // write-back below stays encrypted via serializeAuto.
     let snapshotted = false
