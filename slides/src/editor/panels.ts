@@ -598,9 +598,15 @@ export class PropsPanel {
     this.section(t('Folie exportieren/importieren'))
     const exportBtn = document.createElement('button')
     exportBtn.className = 'ed-btn ed-btn-block'
-    exportBtn.textContent = t('Diese Folie exportieren…')
+    exportBtn.textContent = multiIds.size > 0 ? t('Nur diese eine Folie exportieren…') : t('Diese Folie exportieren…')
     exportBtn.addEventListener('click', () => this.exportCurrentSlide())
     this.host.appendChild(exportBtn)
+    if (multiIds.size > 0) {
+      const multiExportHint = document.createElement('p')
+      multiExportHint.className = 'ed-hint'
+      multiExportHint.textContent = t('Für alle {n} ausgewählten Folien zusammen: „Exportieren" in der Leiste oben in der Folienliste benutzen, nicht diesen Knopf hier.', { n: String(multiIds.size) })
+      this.host.appendChild(multiExportHint)
+    }
     const importBtn = document.createElement('button')
     importBtn.className = 'ed-btn ed-btn-block'
     importBtn.textContent = t('Folie(n) importieren…')
