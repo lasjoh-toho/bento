@@ -130,13 +130,22 @@ export class PropsPanel {
   /** "Farben" section scope selector — which slide(s) the next color pick
    *  applies to. 'next' is one-shot: applied to whichever slide the user
    *  switches to next, then reset to 'slide'. */
-  private colorScope: 'slide' | 'all' | 'next' = 'slide'
+  private colorScope: 'slide' | 'all' | 'next' | 'selected' = 'slide'
   private pendingColor: { color?: string; background?: string; backgroundGradient?: GradientFill | null } | null = null
 
   constructor(
     private host: HTMLElement,
     private store: Store,
     private canvas: SlideCanvas,
+    /** Slide ids currently marked in the sidebar (Editor.multiSelectedIds)
+     *  — a live getter rather than a value passed once, since the panel
+     *  doesn't rebuild every time that selection changes on its own; the
+     *  Farben section's "ausgewählte Folien" scope and the bulk Übergang/
+     *  Layout controls read this fresh each time they're used. */
+    private getMultiSelectedIds: () => Set<string> = () => new Set(),
+    /** Opens the sidebar's layout picker in "apply to every selected
+     *  slide" mode — that machinery lives in editor.ts, not here. */
+    private onOpenLayoutPickerForSelected: (anchor: HTMLElement) => void = () => {},
   ) {
     // Selection/slide switches always rebuild — the user acted outside the
     // panel, so whatever input was focused is obsolete. Doc mutations respect
@@ -217,7 +226,7 @@ export class PropsPanel {
     if (final) this.burst = false
   }
 
-  private rebuild(force = false) {
+  rebuild(force = false) {
     if (!force && this.isActiveEditFocus()) {
       this.stale = true // don't rip the field out from under the user; catch up on focusout
       return
@@ -464,11 +473,17 @@ export class PropsPanel {
     this.host.appendChild(saveLy)
 
     this.section(t('Farben'))
+    const multiIds = this.getMultiSelectedIds()
     const scopeOptions: Array<[string, string]> = [
       ['slide', t('diese Folie')],
       ['all', t('alle Folien')],
       ['next', t('auch auf nächste gewählte Folie anwenden')],
     ]
+    if (multiIds.size > 0) {
+      scopeOptions.push(['selected', t('ausgewählte Folien ({n})', { n: String(multiIds.size) })])
+    } else if (this.colorScope === 'selected') {
+      this.colorScope = 'slide' // the sidebar selection was cleared elsewhere — fall back rather than apply to nothing
+    }
     this.row(t('Anwenden auf'), this.labeledSelect(scopeOptions, this.colorScope, (v) => {
       this.colorScope = v as typeof this.colorScope
       if (this.colorScope === 'next') {
@@ -500,7 +515,9 @@ export class PropsPanel {
         this.rebuild(true)
         return
       }
-      const slides = this.colorScope === 'all' ? this.store.doc.slides : [this.store.slide]
+      const slides = this.colorScope === 'all' ? this.store.doc.slides
+        : this.colorScope === 'selected' ? this.store.doc.slides.filter((s) => multiIds.has(s.id))
+        : [this.store.slide]
       this.store.commit(() => { for (const s of slides) fn(s) })
     }
     const applyTextColor = (color: string) =>
@@ -555,6 +572,28 @@ export class PropsPanel {
     colorHint.className = 'ed-hint'
     colorHint.textContent = t('Schriftfarbe wirkt nur auf Textelemente (nicht Formen/Bilder); ein bestehender Farbverlauf im Text wird dabei entfernt.')
     this.host.appendChild(colorHint)
+
+    if (multiIds.size > 0) {
+      this.section(t('Für Auswahl ({n} Folien)', { n: String(multiIds.size) }))
+      this.row(t('Übergang'), this.select(
+        ['none', 'fade', 'slide', 'zoom', 'morph'],
+        slide.transition,
+        (v) => {
+          this.store.commit(() => {
+            for (const s of this.store.doc.slides) if (multiIds.has(s.id)) s.transition = v as TransitionKind
+          })
+        },
+      ))
+      const layoutBtn = document.createElement('button')
+      layoutBtn.className = 'ed-btn ed-btn-block'
+      layoutBtn.textContent = t('Layout auf Auswahl anwenden…')
+      layoutBtn.addEventListener('click', () => this.onOpenLayoutPickerForSelected(layoutBtn))
+      this.host.appendChild(layoutBtn)
+      const bulkHint = document.createElement('p')
+      bulkHint.className = 'ed-hint'
+      bulkHint.textContent = t('Layout ersetzt die Inhalte jeder ausgewählten Folie durch die des gewählten Layouts (wie beim Anwenden auf eine einzelne Folie) — Übergang ändert nur die eine Einstellung, ohne sonst etwas an den Folien zu verändern.')
+      this.host.appendChild(bulkHint)
+    }
 
     this.section(t('Folie exportieren/importieren'))
     const exportBtn = document.createElement('button')

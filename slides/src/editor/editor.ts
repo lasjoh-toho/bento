@@ -470,7 +470,7 @@ export class Editor {
     this.canvas = new SlideCanvas(canvasWrap, this.store)
     this.canvas.onCommentModeChange = (on) => commentB.classList.toggle('ed-btn-armed', on)
     this.canvas.onSlideNav = (dir) => this.store.goToLinear(dir)
-    this.panel = new PropsPanel(this.props, this.store, this.canvas)
+    this.panel = new PropsPanel(this.props, this.store, this.canvas, () => this.multiSelectedIds, (anchor) => this.openLayoutPickerForSelected(anchor))
 
     if (this.store.doc.collab?.role === 'reader') this.enterReaderMode()
   }
@@ -1528,6 +1528,7 @@ export class Editor {
     }
     this.highlightSidebar()
     this.updateMultiSelectBar()
+    this.panel.rebuild(true)
   }
 
   /** Rebuilds the small bar overlaying the top of the sidebar whenever
@@ -1547,7 +1548,7 @@ export class Editor {
     clearB.className = 'ed-multiselect-clear'
     clearB.textContent = '✕'
     clearB.title = t('Auswahl aufheben')
-    clearB.addEventListener('click', () => { this.multiSelectedIds.clear(); this.highlightSidebar(); this.updateMultiSelectBar() })
+    clearB.addEventListener('click', () => { this.multiSelectedIds.clear(); this.highlightSidebar(); this.updateMultiSelectBar(); this.panel.rebuild(true) })
     this.multiSelectBar.append(count, exportB, dupB, delB, clearB)
   }
 
@@ -1665,7 +1666,7 @@ export class Editor {
    *  insert-gaps (both insert at a position), and Apply-to-current-slide. */
   private openLayoutPicker(
     anchor: HTMLElement,
-    action: { kind: 'insert'; at: number } | { kind: 'apply' } = { kind: 'insert', at: this.store.currentIndex + 1 },
+    action: { kind: 'insert'; at: number } | { kind: 'apply' } | { kind: 'applyMulti' } = { kind: 'insert', at: this.store.currentIndex + 1 },
   ) {
     document.querySelector('.ed-layoutpick')?.remove()
     const pick = div('ed-layoutpick')
@@ -1691,6 +1692,7 @@ export class Editor {
         item.addEventListener('click', () => {
           pick.remove()
           if (action.kind === 'insert') this.insertSlideFromLayout(ly, action.at)
+          else if (action.kind === 'applyMulti') this.applyLayoutToSelected(ly)
           else this.applyLayoutToCurrent(ly)
         })
         if (custom) {
@@ -1748,6 +1750,26 @@ export class Editor {
       const s = this.store.slide
       s.elements = applyLayout(s, layout, known)
       s.background = layout.background
+    })
+    this.store.select([])
+  }
+
+  /** Entry point for the properties panel's own "Layout auf Auswahl…"
+   *  button (panels.ts) — that panel doesn't otherwise know about the
+   *  sidebar's layout-picker machinery. */
+  openLayoutPickerForSelected(anchor: HTMLElement) {
+    this.openLayoutPicker(anchor, { kind: 'applyMulti' })
+  }
+
+  private applyLayoutToSelected(layout: Slide) {
+    if (!this.multiSelectedIds.size) return
+    const known = layoutElementIds(this.store.doc)
+    this.store.commit(() => {
+      for (const s of this.store.doc.slides) {
+        if (!this.multiSelectedIds.has(s.id)) continue
+        s.elements = applyLayout(s, layout, known)
+        s.background = layout.background
+      }
     })
     this.store.select([])
   }
