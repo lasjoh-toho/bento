@@ -320,19 +320,6 @@ export class PropsPanel {
       hint.innerHTML = t('<b>Morph</b> animates elements that appear on both this slide and the previous one (copy a slide, then move things around).')
       this.host.appendChild(hint)
     }
-    this.row(t('Stift im Präsentationsmodus'), this.select(
-      ['aus', 'an'], slide.annotate ? 'an' : 'aus',
-      (v) => this.edit(() => {
-        if (v === 'an') this.store.slide.annotate = true
-        else delete this.store.slide.annotate
-      }, true),
-    ))
-    if (slide.annotate) {
-      const hint = document.createElement('p')
-      hint.className = 'ed-hint'
-      hint.textContent = t('Zeigt im Präsentationsmodus einen Stift-Umschalter — zum Anschreiben auf einem Touch-/Stylus-Display. Striche werden nie gespeichert.')
-      this.host.appendChild(hint)
-    }
 
     // Deck-wide slideshow chrome, in its own section: these are not properties
     // of THIS slide (the section above) but of how the whole deck presents, and
@@ -364,6 +351,20 @@ export class PropsPanel {
       (v) => setPresent('progress', v, true)))
     this.row('Corner arrows', this.toggle(pres.controls ?? false,
       (v) => setPresent('controls', v, false)))
+
+    this.row(t('Anmerkungsoptionen'), this.select(
+      ['aus', 'an'], slide.annotate ? 'an' : 'aus',
+      (v) => this.edit(() => {
+        if (v === 'an') this.store.slide.annotate = true
+        else delete this.store.slide.annotate
+      }, true),
+    ))
+    if (slide.annotate) {
+      const hint = document.createElement('p')
+      hint.className = 'ed-hint'
+      hint.textContent = t('Zeigt im Präsentationsmodus einen Stift-Umschalter — zum Anschreiben auf einem Touch-/Stylus-Display. Striche und Begriffe lassen sich dort auch dauerhaft speichern (siehe Speichern-Symbol in der Werkzeugleiste).')
+      this.host.appendChild(hint)
+    }
 
 
     // interactivity: naming, state-of, hover focus
