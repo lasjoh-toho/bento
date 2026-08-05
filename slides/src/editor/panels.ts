@@ -606,7 +606,7 @@ export class PropsPanel {
   /** Collects every `asset:<key>` reference found anywhere inside a value
    *  (a slide, in practice) — used so a single-slide export only carries the
    *  assets that slide actually uses, not the whole deck's. */
-  private static collectAssetRefs(node: unknown, out: Set<string>) {
+  static collectAssetRefs(node: unknown, out: Set<string>) {
     if (typeof node === 'string') {
       const m = /^asset:(.+)$/.exec(node)
       if (m) out.add(m[1])

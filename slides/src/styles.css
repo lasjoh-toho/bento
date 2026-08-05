@@ -217,7 +217,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 
 /* ————— main layout ————— */
 
-.ed-main { flex: 1; display: flex; min-height: 0; }
+.ed-main { flex: 1; display: flex; min-height: 0; position: relative; }
 
 .ed-sidebar {
   width: var(--panew, 188px);
@@ -246,6 +246,45 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 }
 .ed-thumb:hover { border-color: #c9d2de; }
 .ed-thumb.active { border-color: var(--accent); }
+.ed-thumb.multiselected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* overlays the top of the sidebar only while something is multi-selected —
+   see Editor.handleThumbClick/updateMultiSelectBar */
+.ed-multiselect-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--panew, 188px);
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+}
+.ed-multiselect-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-right: auto;
+  white-space: nowrap;
+}
+.ed-multiselect-clear {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 6px;
+}
+.ed-multiselect-clear:hover { color: var(--ink); }
 .ed-thumb.drop { border-color: var(--blue); }
 .ed-thumb-num {
   position: absolute;

@@ -61,6 +61,7 @@ export class Editor {
   private canvas!: SlideCanvas
   private panel!: PropsPanel
   private sidebar!: HTMLElement
+  private multiSelectBar!: HTMLElement
   private props!: HTMLElement
   private dirtyDot!: HTMLElement
   private fileChip?: HTMLElement
@@ -77,6 +78,14 @@ export class Editor {
    *  but aren't part of any one slide's own JSON — change.
    */
   private thumbCache = new Map<string, string>()
+  /** Slide ids currently marked for a bulk action (export/duplicate/
+   *  delete) — separate from the normal single "current slide" concept
+   *  (store.currentIndex): you can be editing one slide while several
+   *  others sit marked in the sidebar, same as a file manager's selection
+   *  vs. its focused item. Cleared on a plain click; Cmd/Ctrl-click toggles
+   *  one slide in or out; Shift-click extends from multiSelectAnchor. */
+  private multiSelectedIds = new Set<string>()
+  private multiSelectAnchor: number | null = null
   private thumbSharedKey = ''
   private presenting = false
   private updatesB!: HTMLElement
@@ -366,6 +375,8 @@ export class Editor {
     // main area
     const main = div('ed-main')
     this.sidebar = div('ed-sidebar')
+    this.multiSelectBar = div('ed-multiselect-bar')
+    this.multiSelectBar.hidden = true
     const canvasWrap = div('ed-canvas-wrap')
     // presenting lives in ONE split pill beside the zoom control: the main
     // half starts the fullscreen show; its menu holds tab-fill and speaker view.
@@ -408,7 +419,7 @@ export class Editor {
       if (zb) corner.appendChild(zb)
     })
     this.props = div('ed-props')
-    main.append(this.sidebar, this.makeResizer('left'), canvasWrap, this.makeResizer('right'), this.props)
+    main.append(this.sidebar, this.multiSelectBar, this.makeResizer('left'), canvasWrap, this.makeResizer('right'), this.props)
 
     this.root.append(bar, main)
 
@@ -1486,9 +1497,139 @@ export class Editor {
       btn(ICONS.trash, '', (ev) => { ev.stopPropagation(); this.deleteSlide(i) }, t('Delete slide')),
     )
     item.append(num, surface, tools)
-    item.addEventListener('click', () => this.store.goTo(i))
+    item.addEventListener('click', (ev) => this.handleThumbClick(ev, i, slide.id))
     if (!isState) this.wireThumbDrag(item, i)
     return item
+  }
+
+  /** Plain click: normal single-slide navigation, clearing any multi-
+   *  selection (same convention as a file manager). Cmd/Ctrl-click: toggle
+   *  this ONE slide in/out of the multi-selection without navigating.
+   *  Shift-click: select every (non-state) slide between the last anchor
+   *  and this one. State slides never join the multi-selection — bulk
+   *  export/duplicate/delete on a state without its parent wouldn't mean
+   *  much. */
+  private handleThumbClick(ev: MouseEvent, i: number, slideId: string) {
+    if (ev.shiftKey && this.multiSelectAnchor !== null) {
+      const [lo, hi] = [this.multiSelectAnchor, i].sort((a, b) => a - b)
+      this.multiSelectedIds.clear()
+      for (let j = lo; j <= hi; j++) {
+        const s = this.store.doc.slides[j]
+        if (s && !s.stateOf) this.multiSelectedIds.add(s.id)
+      }
+    } else if (ev.metaKey || ev.ctrlKey) {
+      if (this.multiSelectedIds.has(slideId)) this.multiSelectedIds.delete(slideId)
+      else this.multiSelectedIds.add(slideId)
+      this.multiSelectAnchor = i
+    } else {
+      this.multiSelectedIds.clear()
+      this.multiSelectAnchor = i
+      this.store.goTo(i)
+    }
+    this.highlightSidebar()
+    this.updateMultiSelectBar()
+  }
+
+  /** Rebuilds the small bar overlaying the top of the sidebar whenever
+   *  anything is multi-selected — hidden entirely otherwise, so it never
+   *  competes for attention during normal single-slide editing. */
+  private updateMultiSelectBar() {
+    const n = this.multiSelectedIds.size
+    this.multiSelectBar.hidden = n === 0
+    if (n === 0) return
+    this.multiSelectBar.innerHTML = ''
+    const count = div('ed-multiselect-count')
+    count.textContent = t('{n} Folien ausgewählt', { n: String(n) })
+    const exportB = btn(ICONS.download, t('Exportieren'), () => this.bulkExportSlides())
+    const dupB = btn(ICONS.copy, t('Duplizieren'), () => this.bulkDuplicateSlides())
+    const delB = btn(ICONS.trash, t('Löschen'), () => this.bulkDeleteSlides())
+    const clearB = document.createElement('button')
+    clearB.className = 'ed-multiselect-clear'
+    clearB.textContent = '✕'
+    clearB.title = t('Auswahl aufheben')
+    clearB.addEventListener('click', () => { this.multiSelectedIds.clear(); this.highlightSidebar(); this.updateMultiSelectBar() })
+    this.multiSelectBar.append(count, exportB, dupB, delB, clearB)
+  }
+
+  private selectedSlidesInOrder(): Slide[] {
+    return this.store.doc.slides.filter((s) => this.multiSelectedIds.has(s.id))
+  }
+
+  /** Same file shape as the single-slide export (panels.ts), just with
+   *  every marked slide instead of one — a merged, standalone bento/slides
+   *  file carrying only the assets those slides actually reference, ready
+   *  to re-import here later or drop into the standalone converter tool. */
+  private bulkExportSlides() {
+    const slides = this.selectedSlidesInOrder()
+    if (!slides.length) return
+    const refs = new Set<string>()
+    for (const s of slides) PropsPanel.collectAssetRefs(s, refs)
+    const assets: Record<string, string> = {}
+    for (const key of refs) {
+      const val = this.store.doc.assets?.[key]
+      if (val !== undefined) assets[key] = val
+    }
+    const exportDoc: Record<string, unknown> = {
+      format: 'bento/slides',
+      version: 1,
+      docId: uid('doc'),
+      title: `${this.store.doc.title} — ${slides.length} ${t('Folien')}`,
+      size: { ...this.store.doc.size },
+      theme: { ...this.store.doc.theme },
+      slides: JSON.parse(JSON.stringify(slides)),
+      modified: new Date().toISOString(),
+    }
+    if (Object.keys(assets).length) exportDoc.assets = assets
+    const blob = new Blob([JSON.stringify(exportDoc, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `slides-${slides.length}.bento.json`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 4000)
+  }
+
+  /** Duplicates every marked slide in place, right after the LAST of them
+   *  (in document order) — so the new copies land together as one block,
+   *  not interleaved with the originals. Selection moves to the new
+   *  copies, so a duplicate-then-immediately-export flow (e.g. "branch
+   *  this run of slides before editing them further") just works. */
+  private bulkDuplicateSlides() {
+    const doc = this.store.doc
+    const indices = doc.slides
+      .map((s, i) => (this.multiSelectedIds.has(s.id) ? i : -1))
+      .filter((i) => i >= 0)
+    if (!indices.length) return
+    const insertAt = Math.max(...indices) + 1
+    const copies: Slide[] = indices.map((i) => {
+      const copy = JSON.parse(JSON.stringify(doc.slides[i])) as Slide
+      copy.id = uid('slide')
+      return copy
+    })
+    this.store.commit(() => { doc.slides.splice(insertAt, 0, ...copies) })
+    this.multiSelectedIds = new Set(copies.map((c) => c.id))
+    this.rebuildSidebar()
+    this.updateMultiSelectBar()
+  }
+
+  private bulkDeleteSlides() {
+    const n = this.multiSelectedIds.size
+    if (!n) return
+    const doc = this.store.doc
+    if (doc.slides.length - n < 1) {
+      alert(t('Mindestens eine Folie muss übrig bleiben.'))
+      return
+    }
+    if (!window.confirm(t('{n} Folien löschen?', { n: String(n) }))) return
+    this.store.commit(() => {
+      doc.slides = doc.slides.filter((s) => !this.multiSelectedIds.has(s.id) && (!s.stateOf || !this.multiSelectedIds.has(s.stateOf)))
+    })
+    this.multiSelectedIds.clear()
+    this.store.currentIndex = Math.min(this.store.currentIndex, doc.slides.length - 1)
+    this.rebuildSidebar()
+    this.updateMultiSelectBar()
   }
 
   /** 1-based position among non-state slides (what the audience counts). */
@@ -1651,8 +1792,11 @@ export class Editor {
   private highlightSidebar() {
     let active: HTMLElement | undefined
     this.sidebar.querySelectorAll<HTMLElement>('.ed-thumb').forEach((n) => {
-      const isActive = Number(n.dataset.index) === this.store.currentIndex
+      const idx = Number(n.dataset.index)
+      const isActive = idx === this.store.currentIndex
       n.classList.toggle('active', isActive)
+      const slide = this.store.doc.slides[idx]
+      n.classList.toggle('multiselected', !!slide && this.multiSelectedIds.has(slide.id))
       if (isActive) active = n
     })
     active?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
