@@ -79,6 +79,18 @@ export async function saveToMoodle(doc: unknown): Promise<void> {
     throw new Error(`Moodle antwortete nicht mit JSON (HTTP ${res.status}): ${raw.slice(0, 200)}`)
   }
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${JSON.stringify(data)}`)
+  // A genuinely successful call always comes back as an array (one entry
+  // per call in the batch, per Moodle's AJAX protocol) — anything else
+  // (a plain object, typically {error, errorcode, ...}) means the
+  // dispatcher itself failed before it got that far: a PHP fatal error,
+  // a missing class, something that crashed before per-call wrapping even
+  // happened. Checking data[0]?.error alone missed this shape entirely
+  // (data[0] on a plain object is just undefined, so the check silently
+  // passed) — that is exactly how a real server-side failure here once
+  // produced a false "Gespeichert" toast.
+  if (!Array.isArray(data)) {
+    throw new Error(data?.message || data?.error || 'Speichern fehlgeschlagen (unerwartete Antwort)')
+  }
   if (data[0]?.error) {
     throw new Error(data[0].message || data[0].exception?.message || 'Speichern fehlgeschlagen')
   }
