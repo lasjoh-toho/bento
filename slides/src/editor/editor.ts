@@ -281,8 +281,7 @@ export class Editor {
       btn(ICONS.text, t('Text'), () => this.canvas.insert(defaultText({ color: readableInk(this.store.slide.background), y: 120 + Math.random() * 200 }), true),
         t('Add a text box — double-click it to edit; **bold**, *italic*, `code` and “- ” bullets format as you type')),
       this.shapeDropdown(),
-      btn(ICONS.image, t('Image'), () => this.pickImage(),
-        t('Add an image — or just paste one (⌘V) straight onto the slide')),
+      this.imageInsertGroup(),
       this.mediaDropdown(),
       btn(ICONS.table, t('Table'), () => this.canvas.insert(this.newTable()),
         t('Add a table — edit cells inline; turn it into a live chart from the panel')),
@@ -1954,6 +1953,73 @@ export class Editor {
 
   // --- insert image ------------------------------------------------------------------
 
+  /** Same click-to-insert convenience as before (a plain click still opens
+   *  the file picker directly, matching existing muscle memory) — the
+   *  small caret next to it, same ed-split-caret pattern the Save button
+   *  uses, adds "from a URL" without changing what the main button does. */
+  private imageInsertGroup(): HTMLElement {
+    const wrap = div('ed-dropdown')
+    const mainB = btn(ICONS.image, t('Image'), () => this.pickImage(),
+      t('Add an image — or just paste one (⌘V) straight onto the slide'))
+    const menu = div('ed-menu')
+    const caret = btn('<span class="ed-caret">▾</span>', '', () => {
+      wrap.classList.toggle('open')
+      if (wrap.classList.contains('open')) { menu.textContent = ''; menu.appendChild(btn(ICONS.image, t('From a URL…'), () => { wrap.classList.remove('open'); this.promptImageUrl() })) }
+    }, t('More ways to add an image'))
+    caret.classList.add('ed-split-caret')
+    wrap.append(mainB, caret, menu)
+    document.addEventListener('pointerdown', (ev) => {
+      if (!wrap.contains(ev.target as Node)) wrap.classList.remove('open')
+    })
+    return wrap
+  }
+
+  /** Downloads the image at the given URL and embeds it (a data: URI in
+   *  doc.assets, same as a picked/pasted/dropped file) — unlike
+   *  promptMediaUrl() for video/audio, which deliberately stays a bare
+   *  link, an image is small enough that downloading it is the expected
+   *  default (matches every other image-insert path in this app).
+   *  Fails with a clear, specific reason for the two realistic ways this
+   *  goes wrong: the URL doesn't point at an image at all, or the host's
+   *  CORS policy blocks reading the bytes (loading the image to LOOK at it
+   *  works regardless of CORS; actually reading its bytes to embed it does
+   *  not) — the second one has no client-side workaround, so the message
+   *  says so rather than leaving it looking like a bug. */
+  private async promptImageUrl() {
+    const url = window.prompt(t('Bild-URL einfügen — wird heruntergeladen und eingebettet:'))?.trim()
+    if (!url) return
+    this.toast(t('Bild wird geladen…'))
+    let blob: Blob
+    try {
+      const res = await fetch(url, { mode: 'cors' })
+      if (!res.ok) throw new Error(String(res.status))
+      blob = await res.blob()
+    } catch {
+      alert(t('Bild konnte nicht geladen werden — entweder ist die URL nicht erreichbar, oder der Server erlaubt kein direktes Einbetten (CORS). Workaround: Bild im Browser öffnen, lokal speichern, dann per Datei-Auswahl oder Ziehen auf die Folie einfügen.'))
+      return
+    }
+    if (!blob.type.startsWith('image/')) {
+      alert(t('Das ist offenbar kein Bild ({type}).', { type: blob.type || t('unbekannter Dateityp') }))
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const src = String(reader.result)
+      const img = new Image()
+      img.onload = () => {
+        const { width: dw, height: dh } = this.store.doc.size
+        const scale = Math.min((dw * 0.5) / img.width, (dh * 0.5) / img.height, 1)
+        const w = Math.round(img.width * scale)
+        const h = Math.round(img.height * scale)
+        this.canvas.insert(defaultImage(src, { w, h, x: (dw - w) / 2, y: (dh - h) / 2 }))
+        this.toast(t('Bild eingefügt'))
+      }
+      img.onerror = () => alert(t('Die heruntergeladenen Daten ließen sich nicht als Bild öffnen.'))
+      img.src = src
+    }
+    reader.readAsDataURL(blob)
+  }
+
   private pickImage() {
     const input = document.createElement('input')
     input.type = 'file'
@@ -2118,7 +2184,7 @@ export class Editor {
     document.addEventListener('dragover', (ev: DragEvent) => {
       if ([...(ev.dataTransfer?.items ?? [])].some((i) => i.kind === 'file')) ev.preventDefault()
     })
-    document.addEventListener('drop', (ev: DragEvent) => { void this.openDroppedDeck(ev) })
+    document.addEventListener('drop', (ev: DragEvent) => { void this.handleDrop(ev) })
 
     document.addEventListener('paste', (ev: ClipboardEvent) => {
       if (this.presenting) return
@@ -2435,6 +2501,28 @@ export class Editor {
    * unsaved work is confirmed before being replaced, since this is destructive
    * in a way dropping a picture is not.
    */
+  /** Single entry point for anything dropped on the page. A .bento.html
+   *  opens as a deck (openDroppedDeck, unchanged). Anything else that's an
+   *  image gets inserted the same way a picked/pasted one would — this is
+   *  the actual fix: previously, dropping anything BUT a .bento.html just
+   *  fell through with no handling at all (dragover's preventDefault()
+   *  allowed the drop, but drop itself never called it for that case), so
+   *  the browser's own default took over — typically navigating the whole
+   *  tab to the dropped file instead of doing anything useful with it. */
+  private async handleDrop(ev: DragEvent) {
+    if (await this.openDroppedDeck(ev)) return
+    const file = [...(ev.dataTransfer?.files ?? [])].find((f) => f.type.startsWith('image/'))
+    if (file) {
+      ev.preventDefault()
+      this.pasteImageFile(file)
+      return
+    }
+    // Not a deck, not an image — still swallow it. Letting the browser
+    // navigate away and silently lose an unsaved deck over a random
+    // dropped file is worse than a drop that visibly does nothing.
+    if ((ev.dataTransfer?.files?.length ?? 0) > 0) ev.preventDefault()
+  }
+
   private async openDroppedDeck(ev: DragEvent): Promise<boolean> {
     const item = [...(ev.dataTransfer?.items ?? [])].find((i) => i.kind === 'file')
     const named = ev.dataTransfer?.files?.[0]?.name ?? ''
