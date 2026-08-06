@@ -1,27 +1,57 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The Bento authors
-// Direct on-canvas image cropping. The element's frame — its box on the
-// slide — stays put; you reposition/zoom the PHOTO inside that fixed window,
-// the same mental model every mainstream photo tool uses (Photos, Canva,
-// Keynote's "Edit Mask"), rather than dragging a selection rectangle over a
-// static preview. Apply/Cancel live in the properties panel (see
-// panels.ts → PropsPanel.buildImageProps) — this class only owns the
-// interactive geometry; panels.ts calls start()/commit()/cancel() on it via
+// Direct on-canvas image cropping. Two ways to work, same as mainstream
+// photo/office tools offer both:
+//  - Drag the frame's own edge/corner handles inward (PowerPoint's crop
+//    tool, Keynote's mask handles) — the photo stays at its CURRENT scale
+//    and position; only the visible window (and so the element's own
+//    on-slide size) shrinks or grows. This is the direct "just trim the
+//    edge" interaction that was missing before — pan/zoom alone couldn't
+//    do this without first zooming out, cropping, then zooming back in to
+//    compensate, which is what prompted this.
+//  - Drag inside the frame to pan — the frame itself stays put; the PHOTO
+//    moves inside that fixed window (Photos, Canva). Useful for
+//    recomposing without changing the element's footprint on the slide.
+//    "Zoom" isn't a separate control here: resizing the element normally
+//    (crop mode closed) already scales whatever's currently cropped —
+//    there's nothing a dedicated slider would do that resize handles don't
+//    already cover once handles can also trim the frame directly.
+// Apply/Cancel live in the properties panel (see panels.ts →
+// PropsPanel.buildImageProps) — this class only owns the interactive
+// geometry; panels.ts calls start()/commit()/cancel() on it via
 // SlideCanvas's thin startCrop/commitCrop/cancelCrop wrappers.
 //
-// Working state lives in the SOURCE image's own natural pixels — not
-// fractions, not slide pixels — the one reference frame that doesn't move
-// while you zoom or pan. It's only converted to the doc's 0..1 fractions
-// once, on commit. Aspect is always locked to the element's own box (the
-// only choice that doesn't distort the image) — see model.ts's `crop` field
-// doc comment for the fraction format itself.
+// Two reference frames are tracked side by side, kept in sync by a fixed
+// scale factor (S = frame.w / box.w) for the duration of any one gesture:
+//  - `box`: the crop window in the SOURCE image's own natural pixels — the
+//    one reference frame that doesn't move while you pan/zoom/resize.
+//  - `frame`: the element's own on-slide position/size (slide px) — fixed
+//    while panning/zooming, but IS what a handle-drag directly changes.
+// Both are only converted to the doc's fields once, on commit (`box` to
+// the 0..1 `crop` fractions, `frame` back to el.x/y/w/h) — see model.ts's
+// `crop` field doc comment for the fraction format itself.
 
 import type { Store } from '../store'
 import type { ImageElement } from '../model'
 import { resolveAsset } from '../render'
-import { t } from '../i18n'
 
 type Box = { x: number; y: number; w: number; h: number } // natural image px
+type Frame = { x: number; y: number; w: number; h: number } // slide px
+type HandleId = 'nw' | 'n' | 'ne' | 'w' | 'e' | 'sw' | 's' | 'se'
+
+// Which edge(s) each handle moves: -1 = the frame's left/top edge (moves
+// with the drag, opposite edge fixed), 1 = right/bottom edge (same idea),
+// 0 = this axis is untouched by this handle.
+const HANDLE_AXES: Record<HandleId, { x: -1 | 0 | 1; y: -1 | 0 | 1 }> = {
+  nw: { x: -1, y: -1 }, n: { x: 0, y: -1 }, ne: { x: 1, y: -1 },
+  w: { x: -1, y: 0 }, e: { x: 1, y: 0 },
+  sw: { x: -1, y: 1 }, s: { x: 0, y: 1 }, se: { x: 1, y: 1 },
+}
+const HANDLE_CURSORS: Record<HandleId, string> = {
+  nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize',
+  n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
+}
+const MIN_FRAME_PX = 24 // slide px — a handle-drag can't shrink the frame past this
 
 export class ImageCropEditor {
   private overlay: HTMLElement | null = null
@@ -30,6 +60,10 @@ export class ImageCropEditor {
   private naturalW = 0
   private naturalH = 0
   private box: Box = { x: 0, y: 0, w: 0, h: 0 }
+  /** The element's own on-slide position/size — starts equal to el.x/y/w/h,
+   *  but a handle-drag mutates this directly (that's the whole point);
+   *  pan/zoom never touch it. Written back to the element at commit(). */
+  private frame: Frame = { x: 0, y: 0, w: 0, h: 0 }
   private dirty = false
   private scale = () => 1
 
@@ -62,6 +96,7 @@ export class ImageCropEditor {
     if (!el || el.type !== 'image') return
     this.elId = elId
     this.dirty = false
+    this.frame = { x: el.x, y: el.y, w: el.w, h: el.h }
     const probe = new Image()
     probe.onload = () => {
       if (this.elId !== elId) return // cancelled or replaced while this was loading
@@ -85,13 +120,15 @@ export class ImageCropEditor {
     probe.src = resolveAsset(this.store.doc, el.src)
   }
 
-  /** Persist the crop and tear down. No-op (keeps the original crop
-   *  byte-for-byte) if nothing was actually touched. */
+  /** Persist the crop (and, if a handle-drag changed it, the element's own
+   *  on-slide position/size) and tear down. No-op if nothing was actually
+   *  touched. */
   commit() {
     if (!this.overlay) return
     const id = this.elId
     const dirty = this.dirty
     const box = { ...this.box }
+    const frame = { ...this.frame }
     const naturalW = this.naturalW
     const naturalH = this.naturalH
     this.teardown()
@@ -105,6 +142,21 @@ export class ImageCropEditor {
         w: +(box.w / naturalW).toFixed(4),
         h: +(box.h / naturalH).toFixed(4),
       }
+      // Only a handle-drag ever changes these — pan/zoom leave frame
+      // exactly equal to the element's starting x/y/w/h, so this is a
+      // no-op (byte-for-byte) unless the frame itself was actually resized.
+      el.x = Math.round(frame.x * 10) / 10
+      el.y = Math.round(frame.y * 10) / 10
+      el.w = Math.round(frame.w * 10) / 10
+      el.h = Math.round(frame.h * 10) / 10
+      // A mask's own pixels are aligned to the crop rectangle that existed
+      // when it was painted (see model.ts's doc comment on `mask`) — a
+      // DIFFERENT crop rectangle re-projects that same mask image onto the
+      // wrong area at render time (the render-time math re-derives
+      // position/size from the CURRENT crop, which no longer matches what
+      // the mask was actually drawn against). Rather than show a visibly
+      // shifted cutout, clear it here.
+      if (el.mask) delete el.mask
     })
   }
 
@@ -127,7 +179,7 @@ export class ImageCropEditor {
 
     const wrap = document.createElement('div')
     wrap.className = 'ed-cropedit'
-    wrap.style.cssText = `position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;overflow:visible;z-index:48`
+    wrap.style.cssText = `position:absolute;overflow:visible;z-index:48`
 
     const imgEl = document.createElement('img')
     imgEl.className = 'ed-ce-img'
@@ -137,70 +189,48 @@ export class ImageCropEditor {
     imgEl.style.cssText = 'position:absolute;max-width:none;user-select:none;pointer-events:none;display:block'
     wrap.appendChild(imgEl)
 
-    // Fixed frame outline + the "dim everything outside" trick: a giant
+    // Frame outline + the "dim everything outside" trick: a giant
     // box-shadow spread, same technique the old panel-based cropper used.
-    const frame = document.createElement('div')
-    frame.className = 'ed-ce-frame'
-    frame.style.cssText = `position:absolute;inset:0;border:${2 * k}px solid var(--accent, #ED8266);box-shadow:0 0 0 9999px rgb(10 14 20 / 0.55);pointer-events:none`
-    wrap.appendChild(frame)
+    const frameEl = document.createElement('div')
+    frameEl.className = 'ed-ce-frame'
+    frameEl.style.cssText = `position:absolute;inset:0;border:${2 * k}px solid var(--accent, #ED8266);box-shadow:0 0 0 9999px rgb(10 14 20 / 0.55);pointer-events:none`
+    wrap.appendChild(frameEl)
 
     // Drag surface for panning — sits over the frame area (the part of the
-    // image that's actually visible), on top of the image.
+    // image that's actually visible), on top of the image, under the
+    // corner/edge handles (added after, so they get first pick of clicks).
     const hit = document.createElement('div')
     hit.className = 'ed-ce-hit'
     hit.style.cssText = 'position:absolute;inset:0;cursor:move;touch-action:none'
     hit.addEventListener('mousedown', (ev) => this.dragPan(ev))
     wrap.appendChild(hit)
 
-    // Zoom "handle": a small slider centred under the frame, counter-scaled
-    // so it stays a constant physical size regardless of canvas zoom.
-    const uiW = 150 / this.scale()
-    const uiH = 26 / this.scale()
-    const zoomWrap = document.createElement('div')
-    zoomWrap.className = 'ed-ce-zoomwrap'
-    zoomWrap.style.cssText =
-      `position:absolute;left:${el.w / 2 - uiW / 2}px;top:${el.h + 10 / this.scale()}px;` +
-      `width:${uiW}px;height:${uiH}px;transform:scale(${this.scale()});transform-origin:top left;`
-    const maxW = this.naturalW
-    const minW = Math.max(1, Math.min(this.naturalW, this.naturalH) * 0.15)
-    const wToSlider = (w: number) => Math.round(((maxW - w) / (maxW - minW || 1)) * 1000)
-    const sliderToW = (v: number) => maxW - (v / 1000) * (maxW - minW)
-    const slider = document.createElement('input')
-    slider.type = 'range'
-    slider.className = 'ed-ce-zoom'
-    slider.min = '0'
-    slider.max = '1000'
-    slider.step = '1'
-    slider.value = String(wToSlider(this.box.w))
-    slider.title = t('Zoom')
-    slider.addEventListener('mousedown', (ev) => ev.stopPropagation())
-    slider.addEventListener('input', () => {
-      this.zoomTo(sliderToW(+slider.value), el)
-      this.dirty = true
-      this.draw()
-    })
-    zoomWrap.appendChild(slider)
-    wrap.appendChild(zoomWrap)
+    // Crop handles — the actual fix this exists for: drag one inward and
+    // the frame (so the element's own on-slide size) shrinks to match,
+    // photo held at its current scale/position throughout, exactly the
+    // PowerPoint/Keynote crop-tool feel. A HANDLE_SIZE physical px square,
+    // counter-scaled like the zoom slider so it stays a constant size
+    // regardless of canvas zoom.
+    const HANDLE_SIZE = 10
+    for (const id of Object.keys(HANDLE_AXES) as HandleId[]) {
+      const ax = HANDLE_AXES[id]
+      const hEl = document.createElement('div')
+      hEl.className = 'ed-ce-handle'
+      const hw = HANDLE_SIZE * k
+      const left = ax.x === -1 ? `${-hw / 2}px` : ax.x === 1 ? `calc(100% - ${hw / 2}px)` : `calc(50% - ${hw / 2}px)`
+      const top = ax.y === -1 ? `${-hw / 2}px` : ax.y === 1 ? `calc(100% - ${hw / 2}px)` : `calc(50% - ${hw / 2}px)`
+      hEl.style.cssText =
+        `position:absolute;left:${left};top:${top};width:${hw}px;height:${hw}px;` +
+        `border-radius:${hw / 3}px;background:var(--accent, #ED8266);border:${1.5 * k}px solid #fff;` +
+        `cursor:${HANDLE_CURSORS[id]};touch-action:none;z-index:1`
+      hEl.addEventListener('mousedown', (ev) => this.dragHandle(id, ev))
+      wrap.appendChild(hEl)
+    }
 
     this.scaleHost.appendChild(wrap)
     this.overlay = wrap
     this.imgNode = imgEl
     this.draw()
-  }
-
-  private zoomTo(newW: number, el: ImageElement) {
-    const targetAR = el.w / (el.h || 1)
-    const minW = Math.max(1, Math.min(this.naturalW, this.naturalH) * 0.15)
-    newW = Math.max(minW, Math.min(this.naturalW, newW))
-    let newH = newW / targetAR
-    if (newH > this.naturalH) { newH = this.naturalH; newW = newH * targetAR }
-    const cx = this.box.x + this.box.w / 2
-    const cy = this.box.y + this.box.h / 2
-    this.box.w = newW
-    this.box.h = newH
-    this.box.x = cx - newW / 2
-    this.box.y = cy - newH / 2
-    this.clamp()
   }
 
   private clamp() {
@@ -210,11 +240,16 @@ export class ImageCropEditor {
     this.box.y = Math.max(0, Math.min(this.box.y, this.naturalH - this.box.h))
   }
 
+  /** Repositions/resizes the wrap (the frame itself — only ever changes
+   *  during a handle-drag) and the photo inside it (pan/zoom/handle-drag
+   *  all end up here). */
   private draw() {
     if (!this.overlay || !this.imgNode) return
-    const el = this.store.element(this.elId) as ImageElement | undefined
-    if (!el) return
-    const S = el.w / this.box.w // slide px per natural-image px
+    this.overlay.style.left = `${this.frame.x}px`
+    this.overlay.style.top = `${this.frame.y}px`
+    this.overlay.style.width = `${this.frame.w}px`
+    this.overlay.style.height = `${this.frame.h}px`
+    const S = this.frame.w / this.box.w // slide px per natural-image px
     const imgW = this.naturalW * S
     const imgH = this.naturalH * S
     this.imgNode.style.width = `${imgW}px`
@@ -228,12 +263,10 @@ export class ImageCropEditor {
   private dragPan(down: MouseEvent) {
     down.preventDefault()
     down.stopPropagation()
-    const el = this.store.element(this.elId) as ImageElement | undefined
-    if (!el) return
     const startClientX = down.clientX
     const startClientY = down.clientY
     const startBox = { ...this.box }
-    const S = el.w / startBox.w // fixed for the whole gesture — matches how zoom-mid-drag is handled elsewhere in this file set
+    const S = this.frame.w / startBox.w // fixed for the whole gesture
     const canvasScale = this.scale()
     const move = (ev: MouseEvent) => {
       const dxSlide = (ev.clientX - startClientX) / canvasScale
@@ -241,6 +274,68 @@ export class ImageCropEditor {
       this.box.x = startBox.x - dxSlide / S
       this.box.y = startBox.y - dySlide / S
       this.clamp()
+      this.dirty = true
+      this.draw()
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
+  /** The actual fix: drag a corner/edge handle to shrink or grow the
+   *  frame directly — photo held at exactly its current scale (S fixed for
+   *  the whole gesture, same convention as dragPan/zoomTo) and position;
+   *  only the visible window (and the element's own on-slide footprint)
+   *  changes. Natural-pixel `box` is what's actually authoritative here —
+   *  `frame` is derived from it each move via the fixed S, so clamping box
+   *  against the source image's edges (can't crop past the actual photo)
+   *  automatically stops the frame at the right point too, instead of
+   *  needing separate clamping logic for each. */
+  private dragHandle(id: HandleId, down: MouseEvent) {
+    down.preventDefault()
+    down.stopPropagation()
+    const ax = HANDLE_AXES[id]
+    const startClientX = down.clientX
+    const startClientY = down.clientY
+    const startBox = { ...this.box }
+    const startFrame = { ...this.frame }
+    const S = startFrame.w / startBox.w // fixed for the whole gesture
+    const canvasScale = this.scale()
+    const minBoxW = MIN_FRAME_PX / S
+    const minBoxH = MIN_FRAME_PX / S
+    const move = (ev: MouseEvent) => {
+      const dxSlide = (ev.clientX - startClientX) / canvasScale
+      const dySlide = (ev.clientY - startClientY) / canvasScale
+      const dxBox = dxSlide / S
+      const dyBox = dySlide / S
+      let { x, y, w, h } = startBox
+      if (ax.x === -1) { // left edge moves — right edge anchored
+        const newX = Math.max(0, Math.min(startBox.x + startBox.w - minBoxW, startBox.x + dxBox))
+        w = startBox.x + startBox.w - newX
+        x = newX
+      } else if (ax.x === 1) { // right edge moves — left edge anchored
+        w = Math.max(minBoxW, Math.min(this.naturalW - startBox.x, startBox.w + dxBox))
+      }
+      if (ax.y === -1) {
+        const newY = Math.max(0, Math.min(startBox.y + startBox.h - minBoxH, startBox.y + dyBox))
+        h = startBox.y + startBox.h - newY
+        y = newY
+      } else if (ax.y === 1) {
+        h = Math.max(minBoxH, Math.min(this.naturalH - startBox.y, startBox.h + dyBox))
+      }
+      this.box = { x, y, w, h }
+      // frame derives from box via the fixed S — the anchored edge(s)
+      // (opposite the handle being dragged) stay exactly where they
+      // started; only the dragged side's slide-position/frame size moves.
+      this.frame = {
+        x: ax.x === -1 ? startFrame.x + startFrame.w - w * S : startFrame.x,
+        y: ax.y === -1 ? startFrame.y + startFrame.h - h * S : startFrame.y,
+        w: w * S,
+        h: h * S,
+      }
       this.dirty = true
       this.draw()
     }

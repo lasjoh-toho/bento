@@ -636,6 +636,10 @@ export class SlideCanvas {
     this.imageMaskEditor.setTolerance(pct)
   }
 
+  setMaskFeather(px: number) {
+    this.imageMaskEditor.setFeather(px)
+  }
+
   undoMask() {
     this.imageMaskEditor.undo()
   }

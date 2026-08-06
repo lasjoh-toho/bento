@@ -126,7 +126,8 @@ export class PropsPanel {
   private maskElId: string | null = null
   private maskTool: 'wand' | 'eraser' | 'box' | 'ellipse' = 'eraser'
   private maskBrushSize = 40
-  private maskTolerance = 24
+  private maskTolerance = 2
+  private maskFeather = 0
   /** "Farben" section scope selector — which slide(s) the next color pick
    *  applies to. 'next' is one-shot: applied to whichever slide the user
    *  switches to next, then reset to 'slide'. */
@@ -2112,6 +2113,7 @@ export class PropsPanel {
       cropBtn.className = 'ed-btn ed-btn-block'
       cropBtn.textContent = img.crop ? t('Edit crop…') : t('Crop image…')
       cropBtn.addEventListener('click', () => {
+        if (img.mask && !window.confirm(t('Der Zuschnitt zu ändern entfernt die bestehende Freistellung dieses Bildes (sie passt sonst nicht mehr zum neuen Ausschnitt). Fortfahren?'))) return
         this.cropElId = el.id
         this.canvas.startCrop(el.id)
         this.rebuild(true)
@@ -2167,6 +2169,21 @@ export class PropsPanel {
           this.canvas.setMaskTolerance(this.maskTolerance)
         }))
       }
+      this.row(t('Feder'), this.toggle(this.maskFeather > 0, (on) => {
+        this.maskFeather = on ? 4 : 0 // 4px is a reasonable starting point once enabled — not "on" itself
+        this.canvas.setMaskFeather(this.maskFeather)
+        this.rebuild(true)
+      }))
+      if (this.maskFeather > 0) {
+        this.row(t('Federbreite (px)'), this.number(this.maskFeather, 1, (v) => {
+          this.maskFeather = Math.max(1, Math.min(40, v))
+          this.canvas.setMaskFeather(this.maskFeather)
+        }))
+        const featherHint = document.createElement('p')
+        featherHint.className = 'ed-hint'
+        featherHint.textContent = t('Weicher Übergang am Rand statt hartem Ausschnitt — wirkt erst beim Übernehmen, die Vorschau beim Malen bleibt scharf.')
+        this.host.appendChild(featherHint)
+      }
 
       const undoBtn = document.createElement('button')
       undoBtn.className = 'ed-btn ed-btn-block'
@@ -2201,6 +2218,7 @@ export class PropsPanel {
         this.canvas.setMaskTool('eraser')
         this.canvas.setMaskBrushSize(this.maskBrushSize)
         this.canvas.setMaskTolerance(this.maskTolerance)
+        this.canvas.setMaskFeather(this.maskFeather)
         this.canvas.setMaskOnChange(() => this.rebuild(true))
         this.canvas.startMask(el.id).then(() => this.rebuild(true))
         this.rebuild(true)

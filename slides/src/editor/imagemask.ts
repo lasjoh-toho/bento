@@ -60,7 +60,12 @@ export class ImageMaskEditor {
   private dirty = false
   private tool: MaskTool = 'eraser'
   private brushSize = 40 // working-canvas px
-  private tolerance = 24 // 0..100
+  private tolerance = 2 // 0..100
+  /** Softens the mask's edge by this many px (a blur applied to the alpha
+   *  channel right before baking, at commit — not per-stroke, so undo/redo
+   *  during editing stays crisp and only the final result feathers). 0 =
+   *  off, hard edge as before. */
+  private feather = 0
   private undoStack: ImageData[] = []
   private onChange: (() => void) | null = null
 
@@ -83,6 +88,7 @@ export class ImageMaskEditor {
   setTool(tool: MaskTool) { this.tool = tool }
   setBrushSize(px: number) { this.brushSize = Math.max(4, Math.min(400, px)) }
   setTolerance(pct: number) { this.tolerance = Math.max(0, Math.min(100, pct)) }
+  setFeather(px: number) { this.feather = Math.max(0, Math.min(40, px)) }
 
   async start(elId: string) {
     if (this.overlay && this.elId === elId) return
@@ -163,7 +169,20 @@ export class ImageMaskEditor {
     const outCanvas = document.createElement('canvas')
     outCanvas.width = w
     outCanvas.height = h
-    outCanvas.getContext('2d')!.putImageData(out, 0, 0)
+    if (this.feather > 0) {
+      // Draw the crisp alpha-only version through a blur filter rather than
+      // blurring `out`'s raw pixels directly — canvas 2D's own `filter`
+      // does exactly this in one draw, no manual box/Gaussian pass needed.
+      const crisp = document.createElement('canvas')
+      crisp.width = w
+      crisp.height = h
+      crisp.getContext('2d')!.putImageData(out, 0, 0)
+      const octx = outCanvas.getContext('2d')!
+      octx.filter = `blur(${this.feather}px)`
+      octx.drawImage(crisp, 0, 0)
+    } else {
+      outCanvas.getContext('2d')!.putImageData(out, 0, 0)
+    }
     const dataUrl = outCanvas.toDataURL('image/png')
     this.store.commit(() => {
       const el = this.store.element(id) as ImageElement | undefined
