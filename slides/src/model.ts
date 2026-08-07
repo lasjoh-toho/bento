@@ -441,10 +441,17 @@ export interface Slide {
  *  no nested formatting; the reading view styles each purely by `type`. */
 export interface LongReadBlock {
   id: string
-  type: 'heading' | 'explain' | 'quote' | 'caption'
+  type: 'heading' | 'explain' | 'quote' | 'caption' | 'glossary' | 'task'
+  /** The block's main text — for 'glossary' specifically, this is the
+   *  vocabulary term/word itself (see `translation` for its counterpart). */
   text: string
   /** Attribution/source line — only meaningful for type 'quote'. */
   source?: string
+  /** The term's translation OR explanation — only meaningful for type
+   *  'glossary'. Same field serves both a language-learning vocabulary
+   *  list (term + translation) and a plain glossary of terminology
+   *  (term + explanation); which one it is is just how it's written. */
+  translation?: string
 }
 
 /** One draggable term-label placed on a slide in Present mode — see

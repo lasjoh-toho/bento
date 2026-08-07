@@ -1572,6 +1572,22 @@ export function startPresentation(
     longReadInner.innerHTML = ''
     for (const block of lr?.blocks ?? []) {
       if (!block.text.trim()) continue
+      if (block.type === 'glossary') {
+        const dl = document.createElement('div')
+        dl.className = 'bento-longread-glossary'
+        const dt = document.createElement('span')
+        dt.className = 'bento-longread-glossary-term'
+        dt.textContent = block.text
+        dl.appendChild(dt)
+        if (block.translation?.trim()) {
+          const dd = document.createElement('span')
+          dd.className = 'bento-longread-glossary-def'
+          dd.textContent = block.translation
+          dl.appendChild(dd)
+        }
+        longReadInner.appendChild(dl)
+        continue
+      }
       const el = document.createElement(block.type === 'heading' ? 'h2' : block.type === 'quote' ? 'blockquote' : 'p')
       el.className = `bento-longread-${block.type}`
       el.textContent = block.text

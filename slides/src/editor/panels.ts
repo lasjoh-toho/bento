@@ -674,6 +674,7 @@ export class PropsPanel {
 
     const TYPE_LABELS: Record<LongReadBlock['type'], string> = {
       heading: t('Überschrift'), explain: t('Erklärtext'), quote: t('Quelle/Zitat'), caption: t('Caption'),
+      glossary: t('Glossar (Vokabel)'), task: t('Arbeitsauftrag'),
     }
     lr.blocks.forEach((block, i) => {
       const row = document.createElement('div')
@@ -731,8 +732,8 @@ export class PropsPanel {
 
       const ta = document.createElement('textarea')
       ta.className = 'ed-lr-text'
-      ta.rows = block.type === 'heading' || block.type === 'caption' ? 1 : 3
-      ta.placeholder = TYPE_LABELS[block.type]
+      ta.rows = block.type === 'heading' || block.type === 'caption' || block.type === 'glossary' ? 1 : 3
+      ta.placeholder = block.type === 'glossary' ? t('Vokabel/Begriff') : TYPE_LABELS[block.type]
       ta.value = block.text
       ta.addEventListener('input', () => this.edit(() => { (this.store.slide.longRead!.blocks[i] as LongReadBlock).text = ta.value }, false))
       ta.addEventListener('change', () => this.edit(() => { (this.store.slide.longRead!.blocks[i] as LongReadBlock).text = ta.value }, true))
@@ -747,6 +748,16 @@ export class PropsPanel {
         src.addEventListener('input', () => this.edit(() => { (this.store.slide.longRead!.blocks[i] as LongReadBlock).source = src.value || undefined }, false))
         src.addEventListener('change', () => this.edit(() => { (this.store.slide.longRead!.blocks[i] as LongReadBlock).source = src.value || undefined }, true))
         row.appendChild(src)
+      }
+      if (block.type === 'glossary') {
+        const trans = document.createElement('input')
+        trans.type = 'text'
+        trans.className = 'ed-lr-source'
+        trans.placeholder = t('Übersetzung oder Erklärung')
+        trans.value = block.translation ?? ''
+        trans.addEventListener('input', () => this.edit(() => { (this.store.slide.longRead!.blocks[i] as LongReadBlock).translation = trans.value || undefined }, false))
+        trans.addEventListener('change', () => this.edit(() => { (this.store.slide.longRead!.blocks[i] as LongReadBlock).translation = trans.value || undefined }, true))
+        row.appendChild(trans)
       }
       this.host.appendChild(row)
     })
