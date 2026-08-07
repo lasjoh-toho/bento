@@ -1498,6 +1498,13 @@ export class Editor {
       badge.title = `${slide.comments.filter((c) => !c.resolved).length} open comment(s)`
       item.appendChild(badge)
     }
+    if (slide.longRead && slide.longRead.blocks.length > 0) {
+      const headingBlock = slide.longRead.blocks.find((b) => b.type === 'heading' && b.text.trim())
+      const badge = div('ed-thumb-lr')
+      badge.textContent = 'T'
+      badge.title = headingBlock ? headingBlock.text.trim() : t('Zusatztext vorhanden')
+      item.appendChild(badge)
+    }
     const tools = div('ed-thumb-tools')
     tools.append(
       btn(ICONS.copy, '', (ev) => { ev.stopPropagation(); this.duplicateSlide(i) }, t('Duplicate slide')),

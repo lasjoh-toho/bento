@@ -7,7 +7,7 @@
 import type { Store } from '../store'
 import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type GradientFill, type ImageElement, type LineEnding, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement } from '../measure'
 import { isMacOS } from '../screens'
@@ -643,6 +643,134 @@ export class PropsPanel {
     notes.title = t('Shown in the speaker view (Slideshow menu, or S while presenting).') +
       (isMacOS() ? ' ' + t('On macOS, open the speaker view before going fullscreen.') : '')
     this.host.appendChild(notes)
+
+    this.buildLongReadSection(slide)
+  }
+
+  /** "Zusatztext" — a longer companion reading for this slide, reached via
+   *  swipe-up (or ArrowUp/a chevron on desktop) in Present mode instead of
+   *  living on the fixed slide canvas. See Slide.longRead's own doc
+   *  comment in model.ts for why this is deliberately self-contained. */
+  private buildLongReadSection(slide: Slide) {
+    this.section(t('Zusatztext (Lesetext)'))
+    const lr = slide.longRead
+    if (!lr || lr.blocks.length === 0) {
+      const addBtn = document.createElement('button')
+      addBtn.className = 'ed-btn ed-btn-block'
+      addBtn.textContent = t('Lesetext hinzufügen…')
+      addBtn.addEventListener('click', () => {
+        this.edit(() => {
+          this.store.slide.longRead = { blocks: [{ id: uid('lr'), type: 'heading', text: '' }] }
+        }, true)
+        this.rebuild(true)
+      })
+      this.host.appendChild(addBtn)
+      const hint = document.createElement('p')
+      hint.className = 'ed-hint'
+      hint.textContent = t('Fließtext zu dieser Folie, unabhängig von der festen Foliengröße — beim Präsentieren per Wisch nach oben (oder Pfeiltaste hoch) erreichbar. Eine Folie ohne Lesetext bleibt davon komplett unberührt.')
+      this.host.appendChild(hint)
+      return
+    }
+
+    const TYPE_LABELS: Record<LongReadBlock['type'], string> = {
+      heading: t('Überschrift'), explain: t('Erklärtext'), quote: t('Quelle/Zitat'), caption: t('Caption'),
+    }
+    lr.blocks.forEach((block, i) => {
+      const row = document.createElement('div')
+      row.className = 'ed-lr-block'
+      const head = document.createElement('div')
+      head.className = 'ed-lr-block-head'
+      const typeSel = document.createElement('select')
+      typeSel.className = 'ed-lr-type'
+      for (const ty of Object.keys(TYPE_LABELS) as Array<LongReadBlock['type']>) {
+        const opt = document.createElement('option')
+        opt.value = ty
+        opt.textContent = TYPE_LABELS[ty]
+        if (ty === block.type) opt.selected = true
+        typeSel.appendChild(opt)
+      }
+      typeSel.addEventListener('change', () => {
+        this.edit(() => { (this.store.slide.longRead!.blocks[i] as LongReadBlock).type = typeSel.value as LongReadBlock['type'] }, true)
+        this.rebuild(true)
+      })
+      head.appendChild(typeSel)
+      const upBtn = document.createElement('button')
+      upBtn.className = 'ed-lr-move'
+      upBtn.textContent = '↑'
+      upBtn.disabled = i === 0
+      upBtn.title = t('Nach oben')
+      upBtn.addEventListener('click', () => {
+        this.edit(() => {
+          const blocks = this.store.slide.longRead!.blocks
+          ;[blocks[i - 1], blocks[i]] = [blocks[i], blocks[i - 1]]
+        }, true)
+        this.rebuild(true)
+      })
+      const downBtn = document.createElement('button')
+      downBtn.className = 'ed-lr-move'
+      downBtn.textContent = '↓'
+      downBtn.disabled = i === lr.blocks.length - 1
+      downBtn.title = t('Nach unten')
+      downBtn.addEventListener('click', () => {
+        this.edit(() => {
+          const blocks = this.store.slide.longRead!.blocks
+          ;[blocks[i], blocks[i + 1]] = [blocks[i + 1], blocks[i]]
+        }, true)
+        this.rebuild(true)
+      })
+      const delBtn = document.createElement('button')
+      delBtn.className = 'ed-lr-del'
+      delBtn.textContent = '✕'
+      delBtn.title = t('Block entfernen')
+      delBtn.addEventListener('click', () => {
+        this.edit(() => { this.store.slide.longRead!.blocks.splice(i, 1) }, true)
+        this.rebuild(true)
+      })
+      head.append(upBtn, downBtn, delBtn)
+      row.appendChild(head)
+
+      const ta = document.createElement('textarea')
+      ta.className = 'ed-lr-text'
+      ta.rows = block.type === 'heading' || block.type === 'caption' ? 1 : 3
+      ta.placeholder = TYPE_LABELS[block.type]
+      ta.value = block.text
+      ta.addEventListener('input', () => this.edit(() => { (this.store.slide.longRead!.blocks[i] as LongReadBlock).text = ta.value }, false))
+      ta.addEventListener('change', () => this.edit(() => { (this.store.slide.longRead!.blocks[i] as LongReadBlock).text = ta.value }, true))
+      row.appendChild(ta)
+
+      if (block.type === 'quote') {
+        const src = document.createElement('input')
+        src.type = 'text'
+        src.className = 'ed-lr-source'
+        src.placeholder = t('Quelle (optional)')
+        src.value = block.source ?? ''
+        src.addEventListener('input', () => this.edit(() => { (this.store.slide.longRead!.blocks[i] as LongReadBlock).source = src.value || undefined }, false))
+        src.addEventListener('change', () => this.edit(() => { (this.store.slide.longRead!.blocks[i] as LongReadBlock).source = src.value || undefined }, true))
+        row.appendChild(src)
+      }
+      this.host.appendChild(row)
+    })
+
+    const addBlockBtn = document.createElement('button')
+    addBlockBtn.className = 'ed-btn ed-btn-block'
+    addBlockBtn.textContent = t('+ Block hinzufügen')
+    addBlockBtn.addEventListener('click', () => {
+      this.edit(() => {
+        this.store.slide.longRead!.blocks.push({ id: uid('lr'), type: 'explain', text: '' })
+      }, true)
+      this.rebuild(true)
+    })
+    this.host.appendChild(addBlockBtn)
+
+    const removeAllBtn = document.createElement('button')
+    removeAllBtn.className = 'ed-btn ed-btn-block ed-btn-danger'
+    removeAllBtn.textContent = t('Lesetext entfernen')
+    removeAllBtn.addEventListener('click', () => {
+      if (!window.confirm(t('Gesamten Lesetext dieser Folie entfernen?'))) return
+      this.edit(() => { delete this.store.slide.longRead }, true)
+      this.rebuild(true)
+    })
+    this.host.appendChild(removeAllBtn)
   }
 
   private buildMultiPanel(els: SlideElement[]) {

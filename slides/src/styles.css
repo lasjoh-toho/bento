@@ -334,6 +334,37 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   border: 1px solid var(--line);
   margin-top: 2px;
 }
+.ed-btn-danger { color: #b3261e; border-color: rgb(179 38 30 / 0.35); }
+.ed-btn-danger:hover { background: rgb(179 38 30 / 0.06); }
+
+/* ————— longRead block editor (panels.ts, Slide.longRead) ————— */
+.ed-lr-block {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  margin: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ed-lr-block-head { display: flex; align-items: center; gap: 4px; }
+.ed-lr-type { flex: 1; font-size: 12px; padding: 3px 4px; border-radius: 6px; border: 1px solid var(--line); }
+.ed-lr-move, .ed-lr-del {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+}
+.ed-lr-move:disabled { opacity: 0.35; cursor: default; }
+.ed-lr-del:hover { background: rgb(179 38 30 / 0.08); border-color: rgb(179 38 30 / 0.35); }
+.ed-lr-text { width: 100%; resize: vertical; font: inherit; padding: 6px; border-radius: 6px; border: 1px solid var(--line); }
+.ed-lr-source { width: 100%; font: inherit; padding: 5px 6px; border-radius: 6px; border: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 
 .ed-row input[type='text'] {
   width: 110px;
@@ -1298,6 +1329,20 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   background: rgb(20 22 28 / 0.75);
   color: #fff;
 }
+.ed-thumb-lr {
+  position: absolute;
+  bottom: 5px;
+  inset-inline-start: 5px;
+  z-index: 2;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  background: rgb(20 22 28 / 0.75);
+  color: #fff;
+  font: 700 10px system-ui, -apple-system, sans-serif;
+}
 
 /* layout picker — popover over the New-slide button */
 .ed-layoutpick {
@@ -1654,6 +1699,82 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
    pen toggle controls hides together, not just stops being interactive. */
 .bento-term-layer { opacity: 0; transition: opacity 0.15s ease; }
 .bento-present-overlay.ink-enabled .bento-term-layer { opacity: 1; }
+
+/* ————— long-read companion (present.ts, Slide.longRead) ————— */
+/* Deliberately NOT themed off the deck's own colors/fonts — a slide's
+   background can be a photo or a dark color chosen for a 16:9 canvas,
+   neither of which makes a good backdrop for a page of body text. Plain,
+   always-legible, reflows to whatever the viewport actually is (a
+   portrait phone included) rather than the deck's fixed aspect ratio. */
+.bento-longread {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: #fdfdfb;
+  color: #1a1a1a;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.bento-longread-inner {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 64px 24px 96px;
+  font: 400 19px/1.65 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.bento-longread-heading { font-size: 1.5em; font-weight: 700; line-height: 1.25; margin: 1.2em 0 0.5em; }
+.bento-longread-heading:first-child { margin-top: 0; }
+.bento-longread-explain { margin: 0 0 1em; }
+.bento-longread-quote {
+  margin: 1.2em 0;
+  padding-inline-start: 18px;
+  border-inline-start: 3px solid #d8d4c9;
+  font-style: italic;
+  color: #3a3a38;
+}
+.bento-longread-source { display: block; margin: 0.3em 0 1.2em 21px; font-size: 0.8em; color: #78756c; font-style: normal; }
+.bento-longread-caption { font-size: 0.85em; color: #78756c; margin: 0 0 1em; }
+.bento-longread-close {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 91;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: none;
+  background: rgb(0 0 0 / 0.06);
+  color: #1a1a1a;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.bento-longread-close:hover { background: rgb(0 0 0 / 0.1); }
+/* the discoverability cue swipe-up needs — otherwise nothing on screen
+   hints that there's more to read, and a mouse/keyboard user has no swipe
+   gesture at all to fall back on. */
+.bento-longread-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 62;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 0.35);
+  background: rgb(255 255 255 / 0.14);
+  backdrop-filter: blur(16px);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  animation: bento-longread-hint-bob 1.8s ease-in-out infinite;
+}
+@keyframes bento-longread-hint-bob {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-4px); }
+}
+
 /* ————— long-press/long-click exit zone, bottom-right corner — no visible button ————— */
 .bento-exit-zone {
   position: fixed;

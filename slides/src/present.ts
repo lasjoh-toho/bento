@@ -1332,10 +1332,25 @@ export function startPresentation(
     // see Escape FIRST and exit the whole show instead. Let it alone entirely.
     if (termInput && document.activeElement === termInput) return
     if (ev.key === 'Escape') {
+      if (longReadOpen) { ev.preventDefault(); ev.stopPropagation(); closeLongRead(); return }
       if (deck.isOverview()) return // let Reveal close its overview first
       ev.preventDefault()
       ev.stopPropagation()
       exit()
+      return
+    }
+    if (ev.key === 'ArrowUp' && !longReadOpen) {
+      if (doc.slides[deck.getIndices().h]?.longRead?.blocks.length) {
+        ev.preventDefault()
+        ev.stopPropagation()
+        openLongRead(deck.getIndices().h)
+      }
+      return
+    }
+    if (ev.key === 'ArrowDown' && longReadOpen) {
+      ev.preventDefault()
+      ev.stopPropagation()
+      closeLongRead()
       return
     }
     if (ev.key === 's' || ev.key === 'S') {
@@ -1404,6 +1419,14 @@ export function startPresentation(
     if (!t0) return
     const dx = t0.clientX - touchX
     const dy = t0.clientY - touchY
+    if (longReadOpen) {
+      if (dy > 60 && Math.abs(dy) > Math.abs(dx) * 1.2) closeLongRead()
+      return
+    }
+    if (Math.abs(dy) > 50 && Math.abs(dy) > Math.abs(dx) * 1.2) {
+      if (dy < 0) openLongRead(deck.getIndices().h) // swipe up
+      return
+    }
     if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.2) return // a tap or a scroll
     if (dx < 0) {
       if (hasNext()) goNext()
@@ -1505,7 +1528,77 @@ export function startPresentation(
     cacheSlideSymbols(doc, to, toIdx)
     updateSpeaker()
     updateInkForSlide(toIdx)
+    updateLongReadHint(toIdx)
   }) as any)
+
+  // ——— long-read companion (Slide.longRead) — swipe up, ArrowUp, or the
+  // chevron hint opens a plain, reflowing text view for the current
+  // slide's longer-form companion reading; entirely separate from the
+  // fixed slide canvas so it can adapt to any screen shape, a portrait
+  // phone included. Self-contained: nothing above this point references
+  // any of it, and every call site below checks for a slide actually
+  // having longRead content before doing anything — a deck with no
+  // longRead anywhere behaves exactly as if this whole block didn't exist.
+  let longReadOpen = false
+  const longReadOverlay = document.createElement('div')
+  longReadOverlay.className = 'bento-longread'
+  longReadOverlay.hidden = true
+  overlay.appendChild(longReadOverlay)
+  const longReadInner = document.createElement('div')
+  longReadInner.className = 'bento-longread-inner'
+  longReadOverlay.appendChild(longReadInner)
+  const longReadClose = document.createElement('button')
+  longReadClose.className = 'bento-longread-close'
+  longReadClose.setAttribute('aria-label', 'Close')
+  longReadClose.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 15l-6-6-6 6"/></svg>'
+  longReadClose.addEventListener('click', () => closeLongRead())
+  longReadOverlay.appendChild(longReadClose)
+
+  const chevronHint = document.createElement('button')
+  chevronHint.className = 'bento-longread-hint'
+  chevronHint.setAttribute('aria-label', 'Zusatztext')
+  chevronHint.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 15l-6-6-6 6"/></svg>'
+  chevronHint.hidden = true
+  chevronHint.addEventListener('click', () => openLongRead(deck.getIndices().h))
+  overlay.appendChild(chevronHint)
+
+  function updateLongReadHint(idx: number) {
+    const has = !!doc.slides[idx]?.longRead?.blocks.length
+    chevronHint.hidden = !has || longReadOpen
+  }
+
+  function renderLongRead(idx: number) {
+    const lr = doc.slides[idx]?.longRead
+    longReadInner.innerHTML = ''
+    for (const block of lr?.blocks ?? []) {
+      if (!block.text.trim()) continue
+      const el = document.createElement(block.type === 'heading' ? 'h2' : block.type === 'quote' ? 'blockquote' : 'p')
+      el.className = `bento-longread-${block.type}`
+      el.textContent = block.text
+      longReadInner.appendChild(el)
+      if (block.type === 'quote' && block.source) {
+        const cite = document.createElement('cite')
+        cite.className = 'bento-longread-source'
+        cite.textContent = block.source
+        longReadInner.appendChild(cite)
+      }
+    }
+  }
+
+  function openLongRead(idx: number) {
+    if (!doc.slides[idx]?.longRead?.blocks.length) return
+    renderLongRead(idx)
+    longReadOverlay.hidden = false
+    longReadOpen = true
+    chevronHint.hidden = true
+    longReadInner.scrollTop = 0
+  }
+
+  function closeLongRead() {
+    longReadOverlay.hidden = true
+    longReadOpen = false
+    updateLongReadHint(deck.getIndices().h)
+  }
 
   // Clicking an element with a link jumps to its target slide.
   slidesEl.addEventListener('click', (ev) => {
@@ -1548,6 +1641,7 @@ export function startPresentation(
       mountLiveCharts(doc.slides[effectiveStart], first)
       startMediaIn(first)
       updateInkForSlide(effectiveStart)
+      updateLongReadHint(effectiveStart)
     }
   })
 

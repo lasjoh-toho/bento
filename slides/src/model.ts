@@ -374,6 +374,23 @@ export interface Slide {
    */
   hidden?: boolean
   /**
+   * Optional longer-form companion reading for this slide — reached via a
+   * swipe-up (or ArrowUp / an on-screen chevron on desktop) during Present
+   * mode, NOT part of the fixed slide canvas: rendered as ordinary flowing
+   * text in its own reading view, so it can reflow to any screen shape,
+   * including a phone held in portrait, instead of being squeezed into
+   * whatever the deck's fixed aspect ratio happens to be.
+   *
+   * Deliberately isolated as a single, self-contained module: nothing
+   * else in the app reads or requires this field, so a deck without it
+   * behaves exactly as if it didn't exist (fully backward compatible),
+   * and the whole feature — this field, its editing UI, and the Present-
+   * mode swipe/reading view — could be deleted again later without
+   * touching anything else; any leftover `longRead` data in an existing
+   * file would simply stop being read, never causing an error.
+   */
+  longRead?: { blocks: LongReadBlock[] }
+  /**
    * present-mode hover behaviour:
    * - focus-group: dim every element outside the hovered element's group
    * - reveal: show the showOnHover set matching the hovered group
@@ -418,6 +435,16 @@ export interface Slide {
   /** Freehand pen/eraser strokes, persisted the same way dragTerms are —
    *  see the comment above. */
   inkStrokes?: PresentInkStroke[]
+}
+
+/** One block within a slide's longRead (see Slide.longRead) — plain text,
+ *  no nested formatting; the reading view styles each purely by `type`. */
+export interface LongReadBlock {
+  id: string
+  type: 'heading' | 'explain' | 'quote' | 'caption'
+  text: string
+  /** Attribution/source line — only meaningful for type 'quote'. */
+  source?: string
 }
 
 /** One draggable term-label placed on a slide in Present mode — see
