@@ -66,6 +66,18 @@ export class ImageMaskEditor {
    *  during editing stays crisp and only the final result feathers). 0 =
    *  off, hard edge as before. */
   private feather = 0
+  /** Grows (positive) or shrinks (negative) the mask boundary BEFORE
+   *  feathering — same idea as Photoshop's Expand/Contract Selection ahead
+   *  of a feather: feathering alone centres the soft transition exactly ON
+   *  the original hard edge, which can leave a thin fringe of the old
+   *  background bleeding into the subject, or eat into fine subject detail.
+   *  Shifting the edge first moves where that transition sits: shrink to
+   *  clear a background fringe, expand to protect subject detail (at the
+   *  cost of a slightly wider halo of what used to be background). 0 = off,
+   *  same as before. Applied via blur+threshold — a standard way to
+   *  approximate morphological dilate/erode without a real distance-
+   *  transform implementation. */
+  private expand = 0
   private undoStack: ImageData[] = []
   private onChange: (() => void) | null = null
 
@@ -89,6 +101,7 @@ export class ImageMaskEditor {
   setBrushSize(px: number) { this.brushSize = Math.max(4, Math.min(400, px)) }
   setTolerance(pct: number) { this.tolerance = Math.max(0, Math.min(100, pct)) }
   setFeather(px: number) { this.feather = Math.max(0, Math.min(40, px)) }
+  setExpand(px: number) { this.expand = Math.max(-40, Math.min(40, px)) }
 
   async start(elId: string) {
     if (this.overlay && this.elId === elId) return
@@ -169,19 +182,46 @@ export class ImageMaskEditor {
     const outCanvas = document.createElement('canvas')
     outCanvas.width = w
     outCanvas.height = h
+    let crispSrc = out
+    if (this.expand !== 0) {
+      // Blur, then threshold — a standard way to approximate dilate
+      // (expand>0: threshold LOW, so even faintly-blurred pixels beyond the
+      // original edge become fully opaque, growing the mask) or erode
+      // (expand<0: threshold HIGH, so any edge pixel that isn't ALREADY
+      // fully opaque gets killed, shrinking the mask) without a real
+      // distance-transform implementation.
+      const pre = document.createElement('canvas')
+      pre.width = w
+      pre.height = h
+      pre.getContext('2d')!.putImageData(out, 0, 0)
+      const blurred = document.createElement('canvas')
+      blurred.width = w
+      blurred.height = h
+      const bctx = blurred.getContext('2d')!
+      bctx.filter = `blur(${Math.abs(this.expand)}px)`
+      bctx.drawImage(pre, 0, 0)
+      const blurredData = bctx.getImageData(0, 0, w, h)
+      const threshold = this.expand > 0 ? 12 : 243 // 0..255
+      const thresholded = new ImageData(w, h)
+      for (let i = 0; i < blurredData.data.length; i += 4) {
+        const a = blurredData.data[i + 3] >= threshold ? 255 : 0
+        thresholded.data[i] = a; thresholded.data[i + 1] = a; thresholded.data[i + 2] = a; thresholded.data[i + 3] = a
+      }
+      crispSrc = thresholded
+    }
     if (this.feather > 0) {
       // Draw the crisp alpha-only version through a blur filter rather than
-      // blurring `out`'s raw pixels directly — canvas 2D's own `filter`
-      // does exactly this in one draw, no manual box/Gaussian pass needed.
+      // blurring the raw pixels directly — canvas 2D's own `filter` does
+      // exactly this in one draw, no manual box/Gaussian pass needed.
       const crisp = document.createElement('canvas')
       crisp.width = w
       crisp.height = h
-      crisp.getContext('2d')!.putImageData(out, 0, 0)
+      crisp.getContext('2d')!.putImageData(crispSrc, 0, 0)
       const octx = outCanvas.getContext('2d')!
       octx.filter = `blur(${this.feather}px)`
       octx.drawImage(crisp, 0, 0)
     } else {
-      outCanvas.getContext('2d')!.putImageData(out, 0, 0)
+      outCanvas.getContext('2d')!.putImageData(crispSrc, 0, 0)
     }
     const dataUrl = outCanvas.toDataURL('image/png')
     this.store.commit(() => {

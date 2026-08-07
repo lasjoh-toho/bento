@@ -591,19 +591,37 @@ export class SlideCanvas {
     return this.imageCropEditor.active && this.imageCropEditor.elementId === elId
   }
 
+  /** The properties panel's crop/mask "editor overlays" (imagecrop.ts,
+   *  imagemask.ts) draw their own interactive copy of the image on top of
+   *  the slide — but nothing ever hid the ELEMENT'S OWN normal render
+   *  underneath while that was active, so its stale pre-edit content (old
+   *  position/size, old crop) stayed fully visible the whole time,
+   *  underneath the dimmed "outside the frame" area a crop drag produces.
+   *  That's very likely what looked like the image not actually changing
+   *  scale — it hadn't yet, underneath. */
+  private setNodeHidden(elId: string, hidden: boolean) {
+    const node = this.surface?.querySelector<HTMLElement>(`[data-el-id="${CSS.escape(elId)}"]`)
+    if (node) node.style.visibility = hidden ? 'hidden' : ''
+  }
+
   startCrop(elId: string) {
     this.commitTextEdit()
     this.imageCropEditor.start(elId)
+    this.setNodeHidden(elId, true)
     this.syncTargets()
   }
 
   commitCrop() {
+    const elId = this.imageCropEditor.elementId
     this.imageCropEditor.commit()
+    if (elId) this.setNodeHidden(elId, false)
     this.syncTargets()
   }
 
   cancelCrop() {
+    const elId = this.imageCropEditor.elementId
     this.imageCropEditor.cancel()
+    if (elId) this.setNodeHidden(elId, false)
     this.syncTargets()
   }
 
@@ -640,6 +658,10 @@ export class SlideCanvas {
     this.imageMaskEditor.setFeather(px)
   }
 
+  setMaskExpand(px: number) {
+    this.imageMaskEditor.setExpand(px)
+  }
+
   undoMask() {
     this.imageMaskEditor.undo()
   }
@@ -647,16 +669,21 @@ export class SlideCanvas {
   async startMask(elId: string) {
     this.commitTextEdit()
     await this.imageMaskEditor.start(elId)
+    this.setNodeHidden(elId, true)
     this.syncTargets()
   }
 
   commitMask() {
+    const elId = this.imageMaskEditor.elementId
     this.imageMaskEditor.commit()
+    if (elId) this.setNodeHidden(elId, false)
     this.syncTargets()
   }
 
   cancelMask() {
+    const elId = this.imageMaskEditor.elementId
     this.imageMaskEditor.cancel()
+    if (elId) this.setNodeHidden(elId, false)
     this.syncTargets()
   }
 

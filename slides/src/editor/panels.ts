@@ -128,6 +128,7 @@ export class PropsPanel {
   private maskBrushSize = 40
   private maskTolerance = 2
   private maskFeather = 0
+  private maskExpand = 0
   /** "Farben" section scope selector — which slide(s) the next color pick
    *  applies to. 'next' is one-shot: applied to whichever slide the user
    *  switches to next, then reset to 'slide'. */
@@ -2179,9 +2180,13 @@ export class PropsPanel {
           this.maskFeather = Math.max(1, Math.min(40, v))
           this.canvas.setMaskFeather(this.maskFeather)
         }))
+        this.row(t('Rand verschieben (px)'), this.number(this.maskExpand, 1, (v) => {
+          this.maskExpand = Math.max(-40, Math.min(40, v))
+          this.canvas.setMaskExpand(this.maskExpand)
+        }))
         const featherHint = document.createElement('p')
         featherHint.className = 'ed-hint'
-        featherHint.textContent = t('Weicher Übergang am Rand statt hartem Ausschnitt — wirkt erst beim Übernehmen, die Vorschau beim Malen bleibt scharf.')
+        featherHint.textContent = t('Weicher Übergang am Rand statt hartem Ausschnitt — wirkt erst beim Übernehmen, die Vorschau beim Malen bleibt scharf. „Rand verschieben“ legt fest, wo dieser Übergang ansetzt: positiv erweitert die freigestellte Fläche zuerst (schützt feine Details am Motivrand, kann einen schmalen Saum des alten Hintergrunds mit einschließen), negativ verkleinert sie zuerst (entfernt einen Hintergrundsaum sicher, kann feine Motivkanten kappen).')
         this.host.appendChild(featherHint)
       }
 
@@ -2219,7 +2224,7 @@ export class PropsPanel {
         this.canvas.setMaskBrushSize(this.maskBrushSize)
         this.canvas.setMaskTolerance(this.maskTolerance)
         this.canvas.setMaskFeather(this.maskFeather)
-        this.canvas.setMaskOnChange(() => this.rebuild(true))
+        this.canvas.setMaskExpand(this.maskExpand)
         this.canvas.startMask(el.id).then(() => this.rebuild(true))
         this.rebuild(true)
       })
