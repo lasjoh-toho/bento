@@ -389,7 +389,7 @@ export interface Slide {
    * touching anything else; any leftover `longRead` data in an existing
    * file would simply stop being read, never causing an error.
    */
-  longRead?: { blocks: LongReadBlock[] }
+  longRead?: { blocks: LongReadBlock[]; footnotes?: LongReadFootnote[] }
   /**
    * present-mode hover behaviour:
    * - focus-group: dim every element outside the hovered element's group
@@ -441,9 +441,13 @@ export interface Slide {
  *  no nested formatting; the reading view styles each purely by `type`. */
 export interface LongReadBlock {
   id: string
-  type: 'heading' | 'explain' | 'quote' | 'caption' | 'glossary' | 'task'
+  type: 'heading' | 'explain' | 'quote' | 'caption' | 'glossary' | 'task' | 'references'
   /** The block's main text — for 'glossary' specifically, this is the
-   *  vocabulary term/word itself (see `translation` for its counterpart). */
+   *  vocabulary term/word itself (see `translation` for its counterpart);
+   *  for 'references', one citation per line (a bibliography/further-
+   *  reading list, distinct from a single quote's own `source` line).
+   *  May contain inline footnote references as `[^id]`, where `id`
+   *  matches a Slide.longRead.footnotes entry — see LongReadFootnote. */
   text: string
   /** Attribution/source line — only meaningful for type 'quote'. */
   source?: string
@@ -452,6 +456,15 @@ export interface LongReadBlock {
    *  list (term + translation) and a plain glossary of terminology
    *  (term + explanation); which one it is is just how it's written. */
   translation?: string
+}
+
+/** One footnote, referenced from block text via an inline `[^id]` marker
+ *  — see LongReadBlock.text. Rendered as a small superscript reference,
+ *  readable via tooltip/tap right where it's referenced AND listed,
+ *  numbered by order of first appearance, at the end of the reading view. */
+export interface LongReadFootnote {
+  id: string
+  text: string
 }
 
 /** One draggable term-label placed on a slide in Present mode — see

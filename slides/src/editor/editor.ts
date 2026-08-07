@@ -16,6 +16,7 @@ import { CHART_PRESETS } from '../charts'
 import { renderSlide, renderThumbnail } from '../render'
 import { SlideCanvas } from './canvas'
 import { PropsPanel } from './panels'
+import { LongReadEditor } from './longread'
 import { startPresentation } from '../present'
 import { adoptFileHandle, canWriteInPlace, currentFileName, fileBase, hasFileHandle, isEncryptionActive, openedFileName, saveFile, serializeAuto, serializeFile, setEncryptionPassword, writeUpdatedFile, writeUpdatedFileAs } from '../save'
 import { moodleConfig, saveToMoodle } from './moodle'
@@ -60,6 +61,7 @@ const SHAPE_MENU: Array<{ kind: ShapeKind; label: string; icon: string; draw?: '
 export class Editor {
   private canvas!: SlideCanvas
   private panel!: PropsPanel
+  private longReadEditor!: LongReadEditor
   private sidebar!: HTMLElement
   private multiSelectBar!: HTMLElement
   private props!: HTMLElement
@@ -378,6 +380,7 @@ export class Editor {
     this.multiSelectBar = div('ed-multiselect-bar')
     this.multiSelectBar.hidden = true
     const canvasWrap = div('ed-canvas-wrap')
+    this.longReadEditor = new LongReadEditor(canvasWrap, this.store, () => this.panel.rebuild(true))
     // presenting lives in ONE split pill beside the zoom control: the main
     // half starts the fullscreen show; its menu holds tab-fill and speaker view.
     const pill = div('ed-dropdown ed-present-pill')
@@ -470,7 +473,7 @@ export class Editor {
     this.canvas = new SlideCanvas(canvasWrap, this.store)
     this.canvas.onCommentModeChange = (on) => commentB.classList.toggle('ed-btn-armed', on)
     this.canvas.onSlideNav = (dir) => this.store.goToLinear(dir)
-    this.panel = new PropsPanel(this.props, this.store, this.canvas, () => this.multiSelectedIds, (anchor) => this.openLayoutPickerForSelected(anchor))
+    this.panel = new PropsPanel(this.props, this.store, this.canvas, () => this.multiSelectedIds, (anchor) => this.openLayoutPickerForSelected(anchor), (slideId) => this.openLongReadEditor(slideId))
 
     if (this.store.doc.collab?.role === 'reader') this.enterReaderMode()
   }
@@ -1773,6 +1776,13 @@ export class Editor {
    *  sidebar's layout-picker machinery. */
   openLayoutPickerForSelected(anchor: HTMLElement) {
     this.openLayoutPicker(anchor, { kind: 'applyMulti' })
+  }
+
+  /** Entry point for the properties panel's "Lesetext bearbeiten…" button
+   *  — the actual editing surface (LongReadEditor) lives over the canvas,
+   *  not in that sidebar. */
+  openLongReadEditor(slideId: string) {
+    this.longReadEditor.open(slideId)
   }
 
   private applyLayoutToSelected(layout: Slide) {

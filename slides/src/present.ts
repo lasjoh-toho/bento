@@ -8,7 +8,7 @@ import Reveal from 'reveal.js'
 import 'reveal.js/dist/reveal.css'
 import { anim, resetXform } from './anim'
 import { chartSnapshotSvg, mountChart } from './charts'
-import type { BentoDoc, DragTerm, GradientFill, PresentInkStroke, ShapeElement, Slide, SlideElement } from './model'
+import type { BentoDoc, DragTerm, GradientFill, LongReadFootnote, PresentInkStroke, ShapeElement, Slide, SlideElement } from './model'
 import { morphKey, uid } from './model'
 import { applyElementFrame, gradientLineCoords, renderSlide } from './render'
 import { paintSpeaker, setSpeakerWindow, speakerIdleBody, speakerWindow } from './screens'
@@ -1567,8 +1567,62 @@ export function startPresentation(
     chevronHint.hidden = !has || longReadOpen
   }
 
+  /** Splits `[^id]` markers out of plain text into a small superscript
+   *  reference button per marker — `numbering` assigns each footnote id
+   *  its number by order of first appearance across the WHOLE longRead
+   *  (built once per render, shared across every block/call), not per
+   *  block, so the same footnote referenced twice keeps one number. */
+  function appendTextWithFootnotes(host: HTMLElement, text: string, footnotes: LongReadFootnote[], numbering: Map<string, number>) {
+    const re = /\[\^([^\]]+)\]/g
+    let last = 0
+    let m: RegExpExecArray | null
+    while ((m = re.exec(text))) {
+      if (m.index > last) host.appendChild(document.createTextNode(text.slice(last, m.index)))
+      const fn = footnotes.find((f) => f.id === m![1])
+      if (fn) {
+        if (!numbering.has(fn.id)) numbering.set(fn.id, numbering.size + 1)
+        const n = numbering.get(fn.id)!
+        const ref = document.createElement('button')
+        ref.className = 'bento-longread-fnref'
+        ref.textContent = String(n)
+        ref.type = 'button'
+        ref.title = fn.text // native tooltip on hover — desktop
+        ref.addEventListener('click', (ev) => {
+          ev.stopPropagation()
+          showFootnotePopover(ref, fn.text) // tap-friendly version — touch
+        })
+        host.appendChild(ref)
+      } else {
+        host.appendChild(document.createTextNode(m[0])) // dangling reference — show the raw marker rather than silently eat it
+      }
+      last = m.index + m[0].length
+    }
+    if (last < text.length) host.appendChild(document.createTextNode(text.slice(last)))
+  }
+
+  let footnotePopover: HTMLElement | null = null
+  function showFootnotePopover(anchor: HTMLElement, text: string) {
+    footnotePopover?.remove()
+    const pop = document.createElement('div')
+    pop.className = 'bento-longread-fnpopover'
+    pop.textContent = text
+    document.body.appendChild(pop)
+    const r = anchor.getBoundingClientRect()
+    pop.style.left = `${Math.min(r.left, window.innerWidth - pop.offsetWidth - 12)}px`
+    pop.style.top = `${r.bottom + 6}px`
+    footnotePopover = pop
+    const closeOnAway = (ev: MouseEvent) => {
+      if (ev.target === anchor) return
+      pop.remove()
+      document.removeEventListener('click', closeOnAway, true)
+    }
+    setTimeout(() => document.addEventListener('click', closeOnAway, true), 0)
+  }
+
   function renderLongRead(idx: number) {
     const lr = doc.slides[idx]?.longRead
+    const footnotes = lr?.footnotes ?? []
+    const numbering = new Map<string, number>()
     longReadInner.innerHTML = ''
     for (const block of lr?.blocks ?? []) {
       if (!block.text.trim()) continue
@@ -1577,20 +1631,32 @@ export function startPresentation(
         dl.className = 'bento-longread-glossary'
         const dt = document.createElement('span')
         dt.className = 'bento-longread-glossary-term'
-        dt.textContent = block.text
+        appendTextWithFootnotes(dt, block.text, footnotes, numbering)
         dl.appendChild(dt)
         if (block.translation?.trim()) {
           const dd = document.createElement('span')
           dd.className = 'bento-longread-glossary-def'
-          dd.textContent = block.translation
+          appendTextWithFootnotes(dd, block.translation, footnotes, numbering)
           dl.appendChild(dd)
         }
         longReadInner.appendChild(dl)
         continue
       }
+      if (block.type === 'references') {
+        const ul = document.createElement('ul')
+        ul.className = 'bento-longread-references'
+        for (const line of block.text.split('\n')) {
+          if (!line.trim()) continue
+          const li = document.createElement('li')
+          appendTextWithFootnotes(li, line, footnotes, numbering)
+          ul.appendChild(li)
+        }
+        longReadInner.appendChild(ul)
+        continue
+      }
       const el = document.createElement(block.type === 'heading' ? 'h2' : block.type === 'quote' ? 'blockquote' : 'p')
       el.className = `bento-longread-${block.type}`
-      el.textContent = block.text
+      appendTextWithFootnotes(el, block.text, footnotes, numbering)
       longReadInner.appendChild(el)
       if (block.type === 'quote' && block.source) {
         const cite = document.createElement('cite')
@@ -1598,6 +1664,25 @@ export function startPresentation(
         cite.textContent = block.source
         longReadInner.appendChild(cite)
       }
+    }
+    // Collected again at the end, numbered by the same first-appearance
+    // order the inline references already used — only the footnotes that
+    // actually got referenced somewhere above show up here.
+    if (numbering.size > 0) {
+      const hr = document.createElement('hr')
+      hr.className = 'bento-longread-fnrule'
+      longReadInner.appendChild(hr)
+      const list = document.createElement('ol')
+      list.className = 'bento-longread-fnlist'
+      const ordered = [...numbering.entries()].sort((a, b) => a[1] - b[1])
+      for (const [id] of ordered) {
+        const fn = footnotes.find((f) => f.id === id)
+        if (!fn) continue
+        const li = document.createElement('li')
+        li.textContent = fn.text
+        list.appendChild(li)
+      }
+      longReadInner.appendChild(list)
     }
   }
 
