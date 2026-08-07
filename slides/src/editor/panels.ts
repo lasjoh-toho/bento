@@ -298,6 +298,20 @@ export class PropsPanel {
   private buildSlidePanel() {
     const slide = this.store.slide
     this.section(t('Slide'))
+    if (!slide.stateOf) {
+      this.row(t('Folie ausblenden'), this.toggle(!!slide.hidden, (on) => {
+        this.edit(() => {
+          if (on) this.store.slide.hidden = true
+          else delete this.store.slide.hidden
+        }, true)
+      }))
+      if (slide.hidden) {
+        const hiddenHint = document.createElement('p')
+        hiddenHint.className = 'ed-hint'
+        hiddenHint.textContent = t('Wird beim Präsentieren übersprungen (zählt auch nicht mit) — bleibt hier zum Bearbeiten normal erreichbar.')
+        this.host.appendChild(hiddenHint)
+      }
+    }
     // deck-wide page size: presets + custom. Elements keep their absolute
     // positions — a size change reframes the canvas, it never rescales art.
     const { width: dw, height: dh } = this.store.doc.size

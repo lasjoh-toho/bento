@@ -1284,6 +1284,21 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   box-shadow: 0 0 0 2px #fff;
 }
 
+.ed-thumb-hidden { opacity: 0.55; }
+.ed-thumb-hiddenbadge {
+  position: absolute;
+  top: 5px;
+  inset-inline-start: 5px;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgb(20 22 28 / 0.75);
+  color: #fff;
+}
+
 /* layout picker — popover over the New-slide button */
 .ed-layoutpick {
   position: fixed;

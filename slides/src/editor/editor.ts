@@ -1486,6 +1486,13 @@ export class Editor {
     // thumb width tracks the (resizable) sidebar; states render smaller
     const base = Math.max(96, this.panelW.left - 52)
     const surface = renderThumbnail(slide, this.store.doc, isState ? Math.round(base * 0.84) : base)
+    if (slide.hidden) {
+      item.classList.add('ed-thumb-hidden')
+      const badge = div('ed-thumb-hiddenbadge')
+      badge.title = t('Ausgeblendet — wird beim Präsentieren übersprungen')
+      badge.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.3 5.3A9.9 9.9 0 0 1 12 5c5 0 8.5 3.5 10 7-.6 1.4-1.5 2.7-2.6 3.8M6.6 6.6C4.5 8 3 10 2 12c1.5 3.5 5 7 10 7 1.1 0 2.1-.2 3.1-.5"/></svg>'
+      item.appendChild(badge)
+    }
     if (slide.comments?.some((c) => !c.resolved)) {
       const badge = div('ed-thumb-cmt')
       badge.title = `${slide.comments.filter((c) => !c.resolved).length} open comment(s)`

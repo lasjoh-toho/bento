@@ -366,6 +366,14 @@ export interface Slide {
    */
   stateOf?: string
   /**
+   * Presenter's own equivalent of PowerPoint's "Hide Slide" — skipped by
+   * next/prev, the slide count, and the presenter grid in present mode
+   * (same treatment as a stateOf slide gets there), but stays fully
+   * editable and visible in the sidebar (dimmed, with an indicator) rather
+   * than actually being removed from the deck.
+   */
+  hidden?: boolean
+  /**
    * present-mode hover behaviour:
    * - focus-group: dim every element outside the hovered element's group
    * - reveal: show the showOnHover set matching the hovered group

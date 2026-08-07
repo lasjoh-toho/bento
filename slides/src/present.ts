@@ -64,7 +64,14 @@ export function startPresentation(
 
   // ——— state-aware linear navigation ———
   // Slides with stateOf are interactive states: linked-to, never walked-to.
+  // Slides with `hidden` are the presenter's own equivalent of PowerPoint's
+  // "Hide Slide" — kept in the deck (still fully editable, still reachable
+  // by a direct link/trigger like a state slide would be) but skipped by
+  // next/prev, the slide count, and the presenter grid, same as a state
+  // slide already was. Both share the same "don't stop here while walking
+  // through the deck" treatment below.
   const isState = (i: number) => !!doc.slides[i]?.stateOf
+  const isSkipped = (i: number) => isState(i) || !!doc.slides[i]?.hidden
   const anchorOf = (i: number) => {
     const pid = doc.slides[i]?.stateOf
     const p = doc.slides.findIndex((s) => s.id === pid)
@@ -72,37 +79,37 @@ export function startPresentation(
   }
   const goNext = () => {
     const cur = deck.getIndices().h
-    for (let i = (isState(cur) ? anchorOf(cur) : cur) + 1; i < doc.slides.length; i++) {
-      if (!isState(i)) return deck.slide(i, 0)
+    for (let i = (isSkipped(cur) ? anchorOf(cur) : cur) + 1; i < doc.slides.length; i++) {
+      if (!isSkipped(i)) return deck.slide(i, 0)
     }
   }
   const goPrev = () => {
     const cur = deck.getIndices().h
-    if (isState(cur)) return deck.slide(anchorOf(cur), 0)
+    if (isSkipped(cur)) return deck.slide(anchorOf(cur), 0)
     for (let i = cur - 1; i >= 0; i--) {
-      if (!isState(i)) return deck.slide(i, 0)
+      if (!isSkipped(i)) return deck.slide(i, 0)
     }
   }
   const hasNext = () => {
     const cur = deck.getIndices().h
-    for (let i = (isState(cur) ? anchorOf(cur) : cur) + 1; i < doc.slides.length; i++) {
-      if (!isState(i)) return true
+    for (let i = (isSkipped(cur) ? anchorOf(cur) : cur) + 1; i < doc.slides.length; i++) {
+      if (!isSkipped(i)) return true
     }
     return false
   }
   const hasPrev = () => {
     const cur = deck.getIndices().h
-    if (isState(cur)) return true // right-swipe returns to the parent slide
+    if (isSkipped(cur)) return true // right-swipe returns to the parent slide
     for (let i = cur - 1; i >= 0; i--) {
-      if (!isState(i)) return true
+      if (!isSkipped(i)) return true
     }
     return false
   }
-  const visibleIndex = (i: number) => doc.slides.slice(0, i + 1).filter((s) => !s.stateOf).length
-  const visibleTotal = doc.slides.filter((s) => !s.stateOf).length
-  // real slide indices that appear in linear navigation (states are excluded) —
-  // the presenter-view thumbnail rail and grid iterate this.
-  const railIndices = doc.slides.map((_, i) => i).filter((i) => !isState(i))
+  const visibleIndex = (i: number) => doc.slides.slice(0, i + 1).filter((_, j) => !isSkipped(j)).length
+  const visibleTotal = doc.slides.filter((_, i) => !isSkipped(i)).length
+  // real slide indices that appear in linear navigation (states AND hidden
+  // slides excluded) — the presenter-view thumbnail rail and grid iterate this.
+  const railIndices = doc.slides.map((_, i) => i).filter((i) => !isSkipped(i))
   const goFirst = () => deck.slide(railIndices[0] ?? 0, 0)
   const goLast = () => deck.slide(railIndices[railIndices.length - 1] ?? 0, 0)
 
@@ -1514,7 +1521,12 @@ export function startPresentation(
 
   deck.initialize().then(() => {
     deckReady = true
-    if (startIndex > 0) deck.slide(startIndex, 0)
+    // A hidden (or state) slide should never be where a presentation just
+    // *opens* — even for the startIndex===0 default case main.ts always
+    // passes, which otherwise skips this branch entirely and just shows
+    // whatever's first in the DOM regardless of its hidden flag.
+    const effectiveStart = isSkipped(startIndex) ? (railIndices[0] ?? startIndex) : startIndex
+    if (effectiveStart > 0) deck.slide(effectiveStart, 0)
     // if the speaker view was opened before init (macOS reorder), fill it now
     updateSpeaker()
     // late layout: fonts/images that finish loading after init can change
@@ -1522,20 +1534,20 @@ export function startPresentation(
     window.addEventListener('resize', onResize)
     setTimeout(onResize, 120)
     setTimeout(onResize, 600)
-    const first = slidesEl.children[startIndex] as HTMLElement | undefined
+    const first = slidesEl.children[effectiveStart] as HTMLElement | undefined
     if (first) {
       if (!reduceMotion) {
-        runEnterFx(doc.slides[startIndex], first)
-        runAmbientFx(doc.slides[startIndex], first)
+        runEnterFx(doc.slides[effectiveStart], first)
+        runAmbientFx(doc.slides[effectiveStart], first)
         restartSvgAnimations(first)
       }
-      wireHoverFocus(doc.slides[startIndex], first)
+      wireHoverFocus(doc.slides[effectiveStart], first)
       // the opening slide never gets a slidechanged, so capture its symbols
       // here or the very first morph would have no from-side to travel from
-      cacheSlideSymbols(doc, first, startIndex)
-      mountLiveCharts(doc.slides[startIndex], first)
+      cacheSlideSymbols(doc, first, effectiveStart)
+      mountLiveCharts(doc.slides[effectiveStart], first)
       startMediaIn(first)
-      updateInkForSlide(startIndex)
+      updateInkForSlide(effectiveStart)
     }
   })
 
