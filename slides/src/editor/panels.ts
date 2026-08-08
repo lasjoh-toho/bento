@@ -2127,17 +2127,45 @@ export class PropsPanel {
       const cropBtn = document.createElement('button')
       cropBtn.className = 'ed-btn ed-btn-block'
       cropBtn.textContent = img.crop ? t('Edit crop…') : t('Crop image…')
-      cropBtn.addEventListener('click', () => {
+      cropBtn.addEventListener('click', async () => {
         if (img.mask && !window.confirm(t('Der Zuschnitt zu ändern entfernt die bestehende Freistellung dieses Bildes (sie passt sonst nicht mehr zum neuen Ausschnitt). Fortfahren?'))) return
+        if (!img.crop && img.fit === 'contain') {
+          // 'contain' can leave the box bigger than what's actually shown
+          // (letterboxed) — crop always fills the frame completely, so
+          // starting from the box AS-IS would jump to a "cover"-style view
+          // that looks nothing like what's currently on screen. Snapping
+          // the frame to the image's own visible bounds FIRST (the same
+          // rect object-fit:contain itself would compute) means crop then
+          // starts from exactly what's already showing — no jump, because
+          // there's nothing left to reconcile.
+          const probe = await new Promise<HTMLImageElement | null>((resolve) => {
+            const im = new Image()
+            im.onload = () => resolve(im)
+            im.onerror = () => resolve(null)
+            im.src = resolveAsset(this.store.doc, img.src)
+          })
+          if (probe && probe.naturalWidth && probe.naturalHeight) {
+            const scale = Math.min(el.w / probe.naturalWidth, el.h / probe.naturalHeight)
+            const w = probe.naturalWidth * scale
+            const h = probe.naturalHeight * scale
+            this.mutate(el.id, (e) => {
+              const ie = e as ImageElement
+              ie.x = el.x + (el.w - w) / 2
+              ie.y = el.y + (el.h - h) / 2
+              ie.w = w
+              ie.h = h
+            }, true)
+          }
+        }
         this.cropElId = el.id
         this.canvas.startCrop(el.id)
         this.rebuild(true)
       })
       this.host.appendChild(cropBtn)
-      if (!img.crop && img.fit !== 'cover') {
+      if (!img.crop && img.fit === 'fill') {
         const note = document.createElement('p')
         note.className = 'ed-hint'
-        note.textContent = t('Zuschneiden zeigt zunächst den größtmöglichen Bildausschnitt (wie bei „cover“) — bei „contain“/„fill“ sieht das je nach Rahmenform deutlich anders aus als die aktuelle Darstellung (mal an der Breite, mal an der Höhe orientiert). Das ist eine begriffliche Grenze von Zuschnitt selbst, kein Fehler: Zuschnitt füllt den Rahmen immer ganz aus, „contain“/„fill“ tun das nicht.')
+        note.textContent = t('„fill“ verzerrt das Bild nicht-gleichmäßig, um den Rahmen exakt zu füllen — Zuschnitt kann das nicht nachbilden (Zuschnitt verzerrt nie, nur „fill“ tut das), daher sieht der erste Zuschnitt-Ausschnitt anders aus als die aktuelle Darstellung.')
         this.host.appendChild(note)
       }
       if (img.crop) {
