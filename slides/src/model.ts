@@ -389,7 +389,13 @@ export interface Slide {
    * touching anything else; any leftover `longRead` data in an existing
    * file would simply stop being read, never causing an error.
    */
-  longRead?: { blocks: LongReadBlock[]; footnotes?: LongReadFootnote[] }
+  longRead?: {
+    /** Short, readable label for the trigger button (editor toolbar, next
+     *  to Slideshow — and present mode's own hint) — falls back to a
+     *  plain '^' when unset, per how it's actually surfaced there. */
+    title?: string
+    blocks: LongReadBlock[]
+  }
   /**
    * present-mode hover behaviour:
    * - focus-group: dim every element outside the hovered element's group
@@ -446,8 +452,13 @@ export interface LongReadBlock {
    *  vocabulary term/word itself (see `translation` for its counterpart);
    *  for 'references', one citation per line (a bibliography/further-
    *  reading list, distinct from a single quote's own `source` line).
-   *  May contain inline footnote references as `[^id]`, where `id`
-   *  matches a Slide.longRead.footnotes entry — see LongReadFootnote. */
+   *  May contain inline explanatory references using
+   *  `<<Referenz:Hervorgehobenes Wort|Erklärung...>>` — the highlighted
+   *  word/phrase renders inline (not a footnote number), and the
+   *  explanation shows in a small bubble on click; every reference found
+   *  anywhere in the longRead is also collected again as a numbered list
+   *  at the end of the reading view. Self-contained (no separate lookup
+   *  table): the explanation lives right in the marker itself. */
   text: string
   /** Attribution/source line — only meaningful for type 'quote'. */
   source?: string
@@ -456,15 +467,6 @@ export interface LongReadBlock {
    *  list (term + translation) and a plain glossary of terminology
    *  (term + explanation); which one it is is just how it's written. */
   translation?: string
-}
-
-/** One footnote, referenced from block text via an inline `[^id]` marker
- *  — see LongReadBlock.text. Rendered as a small superscript reference,
- *  readable via tooltip/tap right where it's referenced AND listed,
- *  numbered by order of first appearance, at the end of the reading view. */
-export interface LongReadFootnote {
-  id: string
-  text: string
 }
 
 /** One draggable term-label placed on a slide in Present mode — see

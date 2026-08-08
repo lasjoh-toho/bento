@@ -412,10 +412,28 @@ export class Editor {
     document.addEventListener('pointerdown', (ev) => {
       if (!pill.contains(ev.target as Node)) pill.classList.remove('open')
     })
-    // shared bottom-right cluster: [Slideshow pill] [zoom pill] — the canvas
-    // appends its zoombar to canvasWrap; we adopt it into the cluster below.
+    // Opens the long-read editor for whichever slide is current — label
+    // follows Slide.longRead.title when set (a short, readable name for
+    // what's behind it), falls back to a plain '^' otherwise. Updated on
+    // both navigation (current) and edits to the title itself (doc).
+    const longReadBtn = document.createElement('button')
+    longReadBtn.className = 'ed-lr-trigger'
+    const updateLongReadBtn = () => {
+      const title = this.store.slide.longRead?.title?.trim()
+      longReadBtn.textContent = title || '^'
+      longReadBtn.title = title
+        ? t('Erklärung, Quellen, Arbeitsaufträge bearbeiten: {title}', { title })
+        : t('Erklärung, Quellen, Arbeitsaufträge hinzufügen/bearbeiten')
+    }
+    updateLongReadBtn()
+    longReadBtn.addEventListener('click', () => this.openLongReadEditor(this.store.slide.id))
+    this.store.on('current', updateLongReadBtn)
+    this.store.on('doc', updateLongReadBtn)
+    // shared bottom-right cluster: [longRead trigger] [Slideshow pill] [zoom
+    // pill] — the canvas appends its zoombar to canvasWrap; we adopt it into
+    // the cluster below.
     const corner = div('ed-corner-br')
-    corner.appendChild(pill)
+    corner.append(longReadBtn, pill)
     canvasWrap.appendChild(corner)
     queueMicrotask(() => {
       const zb = canvasWrap.querySelector('.ed-zoombar')
@@ -473,7 +491,7 @@ export class Editor {
     this.canvas = new SlideCanvas(canvasWrap, this.store)
     this.canvas.onCommentModeChange = (on) => commentB.classList.toggle('ed-btn-armed', on)
     this.canvas.onSlideNav = (dir) => this.store.goToLinear(dir)
-    this.panel = new PropsPanel(this.props, this.store, this.canvas, () => this.multiSelectedIds, (anchor) => this.openLayoutPickerForSelected(anchor), (slideId) => this.openLongReadEditor(slideId))
+    this.panel = new PropsPanel(this.props, this.store, this.canvas, () => this.multiSelectedIds, (anchor) => this.openLayoutPickerForSelected(anchor))
 
     if (this.store.doc.collab?.role === 'reader') this.enterReaderMode()
   }

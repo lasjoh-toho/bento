@@ -1863,24 +1863,20 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
 .bento-longread-glossary-term { font-weight: 700; }
 .bento-longread-glossary-def { color: #55524a; }
 
-.bento-longread-fnref {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 3px;
-  margin: 0 1px;
+.bento-longread-ref {
+  display: inline;
   border: none;
-  border-radius: 4px;
-  background: #e4e1d6;
-  color: #4a473e;
-  font: 700 11px system-ui, -apple-system, sans-serif;
-  vertical-align: super;
-  line-height: 1;
+  border-radius: 3px;
+  padding: 0 2px;
+  margin: 0 -2px;
+  background: #f3e2b3;
+  color: inherit;
+  font: inherit;
   cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
 }
-.bento-longread-fnref:hover { background: #d8d4c9; }
+.bento-longread-ref:hover { background: #eed89a; }
 .bento-longread-fnpopover {
   position: fixed;
   z-index: 95;
@@ -1931,6 +1927,13 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   place-items: center;
   cursor: pointer;
   animation: bento-longread-hint-bob 1.8s ease-in-out infinite;
+}
+.bento-longread-hint-labeled {
+  width: auto;
+  height: auto;
+  padding: 9px 18px;
+  font: 600 13px system-ui, -apple-system, sans-serif;
+  white-space: nowrap;
 }
 @keyframes bento-longread-hint-bob {
   0%, 100% { transform: translateX(-50%) translateY(0); }

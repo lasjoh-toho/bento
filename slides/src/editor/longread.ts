@@ -63,7 +63,7 @@ export class LongReadEditor {
     const header = document.createElement('div')
     header.className = 'ed-lr-header'
     const title = document.createElement('span')
-    title.textContent = t('Zusatztext (Lesetext)')
+    title.textContent = t('Erklärung, Quellen, Arbeitsaufträge')
     const closeBtn = document.createElement('button')
     closeBtn.className = 'ed-lr-close'
     closeBtn.textContent = '✕'
@@ -79,6 +79,22 @@ export class LongReadEditor {
     })
     header.append(title, removeAllBtn, closeBtn)
     overlay.appendChild(header)
+
+    const titleWrap = document.createElement('div')
+    titleWrap.className = 'ed-lr-titlewrap'
+    const titleInput = document.createElement('input')
+    titleInput.type = 'text'
+    titleInput.className = 'ed-lr-titlefield'
+    titleInput.placeholder = t('Linktext für den Button (leer = nur „^“)')
+    titleInput.value = s.longRead?.title ?? ''
+    titleInput.addEventListener('input', () => {
+      this.edit(() => { const live = this.findSlide(); if (live?.longRead) live.longRead.title = titleInput.value || undefined }, false)
+    })
+    titleInput.addEventListener('change', () => {
+      this.edit(() => { const live = this.findSlide(); if (live?.longRead) live.longRead.title = titleInput.value || undefined }, true)
+    })
+    titleWrap.appendChild(titleInput)
+    overlay.appendChild(titleWrap)
 
     this.blocksHost = document.createElement('div')
     this.blocksHost.className = 'ed-lr-overlay-blocks'
@@ -268,7 +284,7 @@ export class LongReadEditor {
     }
     const fnBtn = document.createElement('button')
     fnBtn.className = 'ed-lr-fnbtn'
-    fnBtn.textContent = t('Fußnote')
+    fnBtn.textContent = t('Referenz/Erklärung')
     fnBtn.addEventListener('mousedown', (ev) => {
       ev.preventDefault()
       this.insertFootnote(blockIndex, ta.selectionStart, ta.selectionEnd)
@@ -298,19 +314,17 @@ export class LongReadEditor {
     this.rebuildBlocks()
   }
 
-  /** Inserts an inline `[^id]` marker right after the selected text in
-   *  place (no split — a footnote annotates text, it doesn't become its
-   *  own block) and adds the note itself to Slide.longRead.footnotes. */
-  private insertFootnote(blockIndex: number, _selStart: number, selEnd: number) {
-    const noteText = window.prompt(t('Fußnotentext:'))?.trim()
+  /** Wraps the selected text into `<<Referenz:Wort|Erklärung>>` in place
+   *  (no split — a reference annotates text, it doesn't become its own
+   *  block) — self-contained, no separate footnotes table to maintain. */
+  private insertFootnote(blockIndex: number, selStart: number, selEnd: number) {
+    const noteText = window.prompt(t('Erklärung für die markierte Stelle:'))?.trim()
     if (!noteText) { this.toolbar.hidden = true; return }
     this.store.commit(() => {
-      const lr = this.findSlide()?.longRead
-      const block = lr?.blocks[blockIndex]
-      if (!lr || !block) return
-      const id = uid('fn')
-      lr.footnotes = [...(lr.footnotes ?? []), { id, text: noteText }]
-      block.text = block.text.slice(0, selEnd) + `[^${id}]` + block.text.slice(selEnd)
+      const block = this.findSlide()?.longRead?.blocks[blockIndex]
+      if (!block) return
+      const selected = block.text.slice(selStart, selEnd)
+      block.text = block.text.slice(0, selStart) + `<<Referenz:${selected}|${noteText}>>` + block.text.slice(selEnd)
     })
     this.toolbar.hidden = true
     this.rebuildBlocks()

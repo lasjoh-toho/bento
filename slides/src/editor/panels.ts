@@ -148,10 +148,6 @@ export class PropsPanel {
     /** Opens the sidebar's layout picker in "apply to every selected
      *  slide" mode — that machinery lives in editor.ts, not here. */
     private onOpenLayoutPickerForSelected: (anchor: HTMLElement) => void = () => {},
-    /** Opens the larger, above-canvas long-read editor (editor.ts) for the
-     *  given slide — the sidebar itself only shows a summary/trigger now,
-     *  the real block editing happens over there. */
-    private onOpenLongReadEditor: (slideId: string) => void = () => {},
   ) {
     // Selection/slide switches always rebuild — the user acted outside the
     // panel, so whatever input was focused is obsolete. Doc mutations respect
@@ -647,27 +643,6 @@ export class PropsPanel {
     notes.title = t('Shown in the speaker view (Slideshow menu, or S while presenting).') +
       (isMacOS() ? ' ' + t('On macOS, open the speaker view before going fullscreen.') : '')
     this.host.appendChild(notes)
-
-    this.buildLongReadSection(slide)
-  }
-
-  /** "Zusatztext" — a longer companion reading for this slide, reached via
-   *  swipe-up (or ArrowUp/a chevron on desktop) in Present mode instead of
-   *  living on the fixed slide canvas. See Slide.longRead's own doc
-   *  comment in model.ts for why this is deliberately self-contained. */
-  private buildLongReadSection(slide: Slide) {
-    const btn = document.createElement('button')
-    btn.className = 'ed-btn ed-btn-block'
-    btn.textContent = t('Erklärungen, Quellen und Aufgaben hinzufügen/bearbeiten…')
-    btn.addEventListener('click', () => {
-      if (!slide.longRead) {
-        this.edit(() => {
-          this.store.slide.longRead = { blocks: [{ id: uid('lr'), type: 'heading', text: '' }] }
-        }, true)
-      }
-      this.onOpenLongReadEditor(slide.id)
-    })
-    this.host.appendChild(btn)
   }
 
   private buildMultiPanel(els: SlideElement[]) {
