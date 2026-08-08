@@ -405,6 +405,19 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   border-radius: 6px;
 }
 .ed-lr-removeall:hover { background: rgb(179 38 30 / 0.08); }
+.ed-lr-titlewrap { padding: 20px 28px 0; max-width: 760px; width: 100%; margin: 0 auto; text-align: center; }
+.ed-lr-titlecaption { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+.ed-lr-titlefield {
+  width: 100%;
+  padding: 16px;
+  font-size: 26px;
+  font-weight: 700;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--chrome-2);
+}
+.ed-lr-titlefield::placeholder { color: var(--muted); opacity: 0.6; }
 .ed-lr-overlay-blocks {
   flex: 1;
   overflow-y: auto;
@@ -466,6 +479,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 }
 .ed-lr-floattoolbar button:hover { background: rgb(255 255 255 / 0.22); }
 .ed-lr-fnbtn { background: var(--accent, #ED8266) !important; color: #14161c !important; }
+.ed-lr-linkbtn { background: #5b8def !important; color: #fff !important; }
 .ed-lr-move:disabled { opacity: 0.35; cursor: default; }
 .ed-lr-del:hover { background: rgb(179 38 30 / 0.08); border-color: rgb(179 38 30 / 0.35); }
 .ed-lr-text { width: 100%; resize: vertical; font: inherit; padding: 6px; border-radius: 6px; border: 1px solid var(--line); }
@@ -1879,6 +1893,12 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   text-underline-offset: 2px;
 }
 .bento-longread-ref:hover { background: #eed89a; }
+.bento-longread-link {
+  color: #3a5fc2;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.bento-longread-link:hover { color: #2a4a9e; }
 .bento-longread-fnpopover {
   position: fixed;
   z-index: 95;

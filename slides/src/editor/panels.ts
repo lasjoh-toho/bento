@@ -2084,6 +2084,40 @@ export class PropsPanel {
     this.toast(t('Chart created — it updates live with the table'))
   }
 
+  /** Snaps the element's own on-slide box to exactly the bounds `fit:
+   *  contain` is already showing (letterboxed — smaller than the full
+   *  box whenever the image's own aspect doesn't match the box's) BEFORE
+   *  entering crop or mask mode. Both tools always fill their frame
+   *  completely (crop stretches a chosen source rectangle to fill it;
+   *  mask paints directly onto the rendered pixels) — starting from the
+   *  box as-is would jump to a view that looks nothing like what's
+   *  currently on screen. Snapping first means there's nothing left to
+   *  reconcile: the tool's own frame already matches the visible image
+   *  exactly. No-op for 'fill' (already fills the whole box, nothing
+   *  smaller to snap to) or if the probe image fails to load. */
+  private async snapFrameToContainBounds(elId: string, img: ImageElement) {
+    if (img.fit !== 'contain') return
+    const el = this.store.element(elId) as ImageElement | undefined
+    if (!el) return
+    const probe = await new Promise<HTMLImageElement | null>((resolve) => {
+      const im = new Image()
+      im.onload = () => resolve(im)
+      im.onerror = () => resolve(null)
+      im.src = resolveAsset(this.store.doc, img.src)
+    })
+    if (!probe || !probe.naturalWidth || !probe.naturalHeight) return
+    const scale = Math.min(el.w / probe.naturalWidth, el.h / probe.naturalHeight)
+    const w = probe.naturalWidth * scale
+    const h = probe.naturalHeight * scale
+    this.mutate(elId, (e) => {
+      const ie = e as ImageElement
+      ie.x = el.x + (el.w - w) / 2
+      ie.y = el.y + (el.h - h) / 2
+      ie.w = w
+      ie.h = h
+    }, true)
+  }
+
   private buildImageProps(el: SlideElement) {
     const img = el as ImageElement
     this.section(t('Fit & corners'))
@@ -2129,34 +2163,7 @@ export class PropsPanel {
       cropBtn.textContent = img.crop ? t('Edit crop…') : t('Crop image…')
       cropBtn.addEventListener('click', async () => {
         if (img.mask && !window.confirm(t('Der Zuschnitt zu ändern entfernt die bestehende Freistellung dieses Bildes (sie passt sonst nicht mehr zum neuen Ausschnitt). Fortfahren?'))) return
-        if (!img.crop && img.fit === 'contain') {
-          // 'contain' can leave the box bigger than what's actually shown
-          // (letterboxed) — crop always fills the frame completely, so
-          // starting from the box AS-IS would jump to a "cover"-style view
-          // that looks nothing like what's currently on screen. Snapping
-          // the frame to the image's own visible bounds FIRST (the same
-          // rect object-fit:contain itself would compute) means crop then
-          // starts from exactly what's already showing — no jump, because
-          // there's nothing left to reconcile.
-          const probe = await new Promise<HTMLImageElement | null>((resolve) => {
-            const im = new Image()
-            im.onload = () => resolve(im)
-            im.onerror = () => resolve(null)
-            im.src = resolveAsset(this.store.doc, img.src)
-          })
-          if (probe && probe.naturalWidth && probe.naturalHeight) {
-            const scale = Math.min(el.w / probe.naturalWidth, el.h / probe.naturalHeight)
-            const w = probe.naturalWidth * scale
-            const h = probe.naturalHeight * scale
-            this.mutate(el.id, (e) => {
-              const ie = e as ImageElement
-              ie.x = el.x + (el.w - w) / 2
-              ie.y = el.y + (el.h - h) / 2
-              ie.w = w
-              ie.h = h
-            }, true)
-          }
-        }
+        if (!img.crop) await this.snapFrameToContainBounds(el.id, img)
         this.cropElId = el.id
         this.canvas.startCrop(el.id)
         this.rebuild(true)
@@ -2265,7 +2272,8 @@ export class PropsPanel {
       const maskBtn = document.createElement('button')
       maskBtn.className = 'ed-btn ed-btn-block'
       maskBtn.textContent = img.mask ? t('Freistellen bearbeiten…') : t('Freistellen…')
-      maskBtn.addEventListener('click', () => {
+      maskBtn.addEventListener('click', async () => {
+        if (!img.mask) await this.snapFrameToContainBounds(el.id, img)
         this.maskElId = el.id
         this.maskTool = 'eraser'
         this.canvas.setMaskTool('eraser')

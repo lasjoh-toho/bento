@@ -1577,30 +1577,44 @@ export function startPresentation(
     }
   }
 
-  /** Parses `<<Referenz:Wort|Erklärung>>` markers out of plain text —
-   *  self-contained (the explanation lives right in the marker, no
-   *  separate lookup table) — into inline, clickable highlighted text.
-   *  `refs` collects every reference found, in encounter order, for the
-   *  numbered list renderLongRead adds at the end of the reading view. */
+  /** Parses `<<Referenz:Wort|Erklärung>>` and `<<Link:Text|URL>>` markers
+   *  out of plain text — both self-contained (everything needed lives
+   *  right in the marker, no separate lookup table). References become
+   *  inline, clickable highlighted text with a bubble; links become
+   *  actual navigable hyperlinks. `refs` collects every REFERENCE found
+   *  (not links), in encounter order, for the numbered list renderLongRead
+   *  adds at the end of the reading view. */
   function appendTextWithRefs(host: HTMLElement, text: string, refs: string[]) {
-    const re = /<<Referenz:([^|>]+)\|([^>]+)>>/g
+    const re = /<<(Referenz|Link):([^|>]+)\|([^>]+)>>/g
     let last = 0
     let m: RegExpExecArray | null
     while ((m = re.exec(text))) {
       if (m.index > last) host.appendChild(document.createTextNode(text.slice(last, m.index)))
-      const word = m[1].trim()
-      const explanation = m[2].trim()
-      refs.push(explanation)
-      const ref = document.createElement('button')
-      ref.className = 'bento-longread-ref'
-      ref.type = 'button'
-      ref.textContent = word
-      ref.title = explanation // native tooltip on hover — desktop
-      ref.addEventListener('click', (ev) => {
-        ev.stopPropagation()
-        showRefPopover(ref, explanation) // tap-friendly version — touch, and click-anywhere-else-closes on desktop too
-      })
-      host.appendChild(ref)
+      const kind = m[1]
+      const word = m[2].trim()
+      const payload = m[3].trim()
+      if (kind === 'Link') {
+        const a = document.createElement('a')
+        a.className = 'bento-longread-link'
+        a.href = payload
+        a.target = '_blank'
+        a.rel = 'noopener noreferrer'
+        a.textContent = word
+        a.addEventListener('click', (ev) => ev.stopPropagation())
+        host.appendChild(a)
+      } else {
+        refs.push(payload)
+        const ref = document.createElement('button')
+        ref.className = 'bento-longread-ref'
+        ref.type = 'button'
+        ref.textContent = word
+        ref.title = payload // native tooltip on hover — desktop
+        ref.addEventListener('click', (ev) => {
+          ev.stopPropagation()
+          showRefPopover(ref, payload) // tap-friendly version — touch, and click-anywhere-else-closes on desktop too
+        })
+        host.appendChild(ref)
+      }
       last = m.index + m[0].length
     }
     if (last < text.length) host.appendChild(document.createTextNode(text.slice(last)))

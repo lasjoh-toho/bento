@@ -82,10 +82,14 @@ export class LongReadEditor {
 
     const titleWrap = document.createElement('div')
     titleWrap.className = 'ed-lr-titlewrap'
+    const titleCaption = document.createElement('p')
+    titleCaption.className = 'ed-lr-titlecaption'
+    titleCaption.textContent = t('Linktext für den Button, der diese Seite öffnet (leer = nur „^“)')
+    titleWrap.appendChild(titleCaption)
     const titleInput = document.createElement('input')
     titleInput.type = 'text'
     titleInput.className = 'ed-lr-titlefield'
-    titleInput.placeholder = t('Linktext für den Button (leer = nur „^“)')
+    titleInput.placeholder = '^'
     titleInput.value = s.longRead?.title ?? ''
     titleInput.addEventListener('input', () => {
       this.edit(() => { const live = this.findSlide(); if (live?.longRead) live.longRead.title = titleInput.value || undefined }, false)
@@ -290,6 +294,14 @@ export class LongReadEditor {
       this.insertFootnote(blockIndex, ta.selectionStart, ta.selectionEnd)
     })
     this.toolbar.appendChild(fnBtn)
+    const linkBtn = document.createElement('button')
+    linkBtn.className = 'ed-lr-linkbtn'
+    linkBtn.textContent = t('Link')
+    linkBtn.addEventListener('mousedown', (ev) => {
+      ev.preventDefault()
+      this.insertLink(blockIndex, ta.selectionStart, ta.selectionEnd)
+    })
+    this.toolbar.appendChild(linkBtn)
   }
 
   /** The core split: the selected substring becomes its own new block of
@@ -325,6 +337,23 @@ export class LongReadEditor {
       if (!block) return
       const selected = block.text.slice(selStart, selEnd)
       block.text = block.text.slice(0, selStart) + `<<Referenz:${selected}|${noteText}>>` + block.text.slice(selEnd)
+    })
+    this.toolbar.hidden = true
+    this.rebuildBlocks()
+  }
+
+  /** Wraps the selected text into `<<Link:Text|URL>>` — same self-
+   *  contained inline-marker convention as the reference syntax above,
+   *  but rendered as an actual navigable hyperlink (present.ts) rather
+   *  than a click-for-explanation bubble. */
+  private insertLink(blockIndex: number, selStart: number, selEnd: number) {
+    const url = window.prompt(t('Ziel-URL für den markierten Text:'))?.trim()
+    if (!url) { this.toolbar.hidden = true; return }
+    this.store.commit(() => {
+      const block = this.findSlide()?.longRead?.blocks[blockIndex]
+      if (!block) return
+      const selected = block.text.slice(selStart, selEnd)
+      block.text = block.text.slice(0, selStart) + `<<Link:${selected}|${url}>>` + block.text.slice(selEnd)
     })
     this.toolbar.hidden = true
     this.rebuildBlocks()
