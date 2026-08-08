@@ -1333,6 +1333,7 @@ export function startPresentation(
     if (termInput && document.activeElement === termInput) return
     if (ev.key === 'Escape') {
       if (longReadOpen) { ev.preventDefault(); ev.stopPropagation(); closeLongRead(); return }
+      if (imgZoomOpen) { ev.preventDefault(); ev.stopPropagation(); closeImgZoom(); return }
       if (deck.isOverview()) return // let Reveal close its overview first
       ev.preventDefault()
       ev.stopPropagation()
@@ -1712,6 +1713,175 @@ export function startPresentation(
       deck.slide(idx, 0)
     }
   })
+
+  // ——— image zoom — click any image to enlarge it full-screen; wheel to
+  // zoom (desktop, centred on the cursor) and drag to pan once zoomed in,
+  // pinch to zoom and one-finger drag to pan on touch. Self-contained, same
+  // spirit as the long-read module above: nothing outside this block
+  // depends on it, and a slide with no images is completely unaffected.
+  let imgZoomOpen = false
+  let imgZoomScale = 1
+  let imgZoomX = 0
+  let imgZoomY = 0
+  const IMG_ZOOM_MIN = 1
+  const IMG_ZOOM_MAX = 6
+
+  const imgZoomOverlay = document.createElement('div')
+  imgZoomOverlay.className = 'bento-imgzoom'
+  imgZoomOverlay.hidden = true
+  overlay.appendChild(imgZoomOverlay)
+  const imgZoomImg = document.createElement('img')
+  imgZoomImg.className = 'bento-imgzoom-img'
+  imgZoomImg.draggable = false
+  imgZoomImg.alt = ''
+  imgZoomOverlay.appendChild(imgZoomImg)
+  const imgZoomClose = document.createElement('button')
+  imgZoomClose.className = 'bento-imgzoom-close'
+  imgZoomClose.setAttribute('aria-label', 'Close')
+  imgZoomClose.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>'
+  imgZoomClose.hidden = true
+  imgZoomClose.addEventListener('click', () => closeImgZoom())
+  overlay.appendChild(imgZoomClose)
+
+  function applyImgZoomTransform() {
+    imgZoomImg.style.transform = `translate(${imgZoomX}px, ${imgZoomY}px) scale(${imgZoomScale})`
+  }
+
+  /** Keeps the image from drifting so far that its edge leaves the
+   *  viewport with empty space showing — clamps translate to how far the
+   *  SCALED image actually overhangs the container on each axis. At
+   *  scale===1 this always clamps to exactly 0 (no overhang, no pan). */
+  function clampImgZoomPan() {
+    const rect = imgZoomImg.getBoundingClientRect()
+    const naturalW = rect.width / imgZoomScale
+    const naturalH = rect.height / imgZoomScale
+    const overhangX = Math.max(0, (naturalW * imgZoomScale - window.innerWidth) / 2)
+    const overhangY = Math.max(0, (naturalH * imgZoomScale - window.innerHeight) / 2)
+    imgZoomX = Math.max(-overhangX, Math.min(overhangX, imgZoomX))
+    imgZoomY = Math.max(-overhangY, Math.min(overhangY, imgZoomY))
+  }
+
+  function openImgZoom(src: string) {
+    imgZoomImg.src = src
+    imgZoomScale = 1
+    imgZoomX = 0
+    imgZoomY = 0
+    applyImgZoomTransform()
+    imgZoomOverlay.hidden = false
+    imgZoomClose.hidden = false
+    imgZoomOpen = true
+    chevronHint.hidden = true
+  }
+
+  function closeImgZoom() {
+    imgZoomOverlay.hidden = true
+    imgZoomClose.hidden = true
+    imgZoomOpen = false
+    updateLongReadHint(deck.getIndices().h)
+  }
+
+  // open: click any rendered <img> that belongs to a slide element (not
+  // this overlay's own <img>, and not one already inside a data-link
+  // element, which handled its own click above and shouldn't ALSO zoom).
+  slidesEl.addEventListener('click', (ev) => {
+    if (imgZoomOpen) return
+    const img = (ev.target as HTMLElement).closest('img')
+    if (!img || !img.closest('[data-el-id]')) return
+    if ((ev.target as HTMLElement).closest('[data-link]')) return
+    ev.preventDefault()
+    ev.stopPropagation()
+    openImgZoom(img.src)
+  })
+
+  // close: click the dimmed backdrop outside the image itself
+  let imgZoomDidDrag = false
+  imgZoomOverlay.addEventListener('click', (ev) => {
+    if (imgZoomDidDrag) { imgZoomDidDrag = false; return }
+    if (ev.target === imgZoomOverlay) closeImgZoom()
+  })
+
+  // zoom: wheel, centred on the cursor — the pointer position stays over
+  // the same point in the image before and after, standard "zoom toward
+  // cursor" math (scale about the cursor, not the image centre).
+  imgZoomOverlay.addEventListener('wheel', (ev) => {
+    if (!imgZoomOpen) return
+    ev.preventDefault()
+    const rect = imgZoomImg.getBoundingClientRect()
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    const prevScale = imgZoomScale
+    const factor = Math.exp(-ev.deltaY * 0.0016)
+    imgZoomScale = Math.max(IMG_ZOOM_MIN, Math.min(IMG_ZOOM_MAX, imgZoomScale * factor))
+    // keep the point under the cursor fixed: solve for the new translate
+    // that maps the cursor's position in image-space to the same screen
+    // point at the new scale.
+    const k = imgZoomScale / prevScale
+    imgZoomX = ev.clientX - cx - (ev.clientX - cx - imgZoomX) * k
+    imgZoomY = ev.clientY - cy - (ev.clientY - cy - imgZoomY) * k
+    clampImgZoomPan()
+    applyImgZoomTransform()
+  }, { passive: false })
+
+  // pan: mouse drag (desktop)
+  let imgZoomDragging = false
+  let imgZoomDragStartX = 0
+  let imgZoomDragStartY = 0
+  let imgZoomPanStartX = 0
+  let imgZoomPanStartY = 0
+  imgZoomOverlay.addEventListener('mousedown', (ev) => {
+    if (!imgZoomOpen) return
+    imgZoomDragging = true
+    imgZoomDragStartX = ev.clientX
+    imgZoomDragStartY = ev.clientY
+    imgZoomPanStartX = imgZoomX
+    imgZoomPanStartY = imgZoomY
+  })
+  window.addEventListener('mousemove', (ev) => {
+    if (!imgZoomDragging) return
+    if (Math.abs(ev.clientX - imgZoomDragStartX) > 3 || Math.abs(ev.clientY - imgZoomDragStartY) > 3) imgZoomDidDrag = true
+    imgZoomX = imgZoomPanStartX + (ev.clientX - imgZoomDragStartX)
+    imgZoomY = imgZoomPanStartY + (ev.clientY - imgZoomDragStartY)
+    clampImgZoomPan()
+    applyImgZoomTransform()
+  })
+  window.addEventListener('mouseup', () => { imgZoomDragging = false })
+
+  // pinch-zoom + one-finger pan (touch)
+  let imgZoomPinchDist = 0
+  let imgZoomPinchScale = 1
+  let imgZoomTouchPanStartX = 0
+  let imgZoomTouchPanStartY = 0
+  let imgZoomTouchStartX = 0
+  let imgZoomTouchStartY = 0
+  const touchDist = (a: Touch, b: Touch) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+  imgZoomOverlay.addEventListener('touchstart', (ev) => {
+    if (!imgZoomOpen) return
+    if (ev.touches.length === 2) {
+      imgZoomPinchDist = touchDist(ev.touches[0], ev.touches[1])
+      imgZoomPinchScale = imgZoomScale
+    } else if (ev.touches.length === 1) {
+      imgZoomTouchStartX = ev.touches[0].clientX
+      imgZoomTouchStartY = ev.touches[0].clientY
+      imgZoomTouchPanStartX = imgZoomX
+      imgZoomTouchPanStartY = imgZoomY
+    }
+  }, { passive: true })
+  imgZoomOverlay.addEventListener('touchmove', (ev) => {
+    if (!imgZoomOpen) return
+    if (ev.touches.length === 2) {
+      ev.preventDefault()
+      const dist = touchDist(ev.touches[0], ev.touches[1])
+      imgZoomScale = Math.max(IMG_ZOOM_MIN, Math.min(IMG_ZOOM_MAX, imgZoomPinchScale * (dist / imgZoomPinchDist)))
+      clampImgZoomPan()
+      applyImgZoomTransform()
+    } else if (ev.touches.length === 1 && imgZoomScale > 1) {
+      ev.preventDefault()
+      imgZoomX = imgZoomTouchPanStartX + (ev.touches[0].clientX - imgZoomTouchStartX)
+      imgZoomY = imgZoomTouchPanStartY + (ev.touches[0].clientY - imgZoomTouchStartY)
+      clampImgZoomPan()
+      applyImgZoomTransform()
+    }
+  }, { passive: false })
 
   deck.initialize().then(() => {
     deckReady = true

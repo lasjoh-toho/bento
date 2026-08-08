@@ -1907,6 +1907,45 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   cursor: pointer;
 }
 .bento-longread-close:hover { background: rgb(0 0 0 / 0.1); }
+
+/* ————— image zoom (present.ts) ————— */
+.bento-imgzoom {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgb(10 10 10 / 0.94);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+.bento-imgzoom:active { cursor: grabbing; }
+.bento-imgzoom-img {
+  max-width: 92vw;
+  max-height: 92vh;
+  object-fit: contain;
+  user-select: none;
+  will-change: transform;
+}
+.bento-imgzoom-close {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 101;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 0.25);
+  background: rgb(255 255 255 / 0.12);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.bento-imgzoom-close:hover { background: rgb(255 255 255 / 0.22); }
 /* the discoverability cue swipe-up needs — otherwise nothing on screen
    hints that there's more to read, and a mouse/keyboard user has no swipe
    gesture at all to fall back on. */
