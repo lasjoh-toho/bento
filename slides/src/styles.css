@@ -269,6 +269,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   border-bottom: 1px solid var(--line);
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
 }
+.ed-multiselect-bar[hidden] { display: none; }
 .ed-multiselect-count {
   font-size: 12px;
   font-weight: 600;
@@ -452,6 +453,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   border-radius: 8px;
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.3);
 }
+.ed-lr-floattoolbar[hidden] { display: none; }
 .ed-lr-floattoolbar button {
   border: none;
   background: rgb(255 255 255 / 0.1);
@@ -1921,6 +1923,7 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   cursor: grab;
   touch-action: none;
 }
+.bento-imgzoom[hidden] { display: none; }
 .bento-imgzoom:active { cursor: grabbing; }
 .bento-imgzoom-img {
   max-width: 92vw;
@@ -1946,6 +1949,7 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   cursor: pointer;
 }
 .bento-imgzoom-close:hover { background: rgb(255 255 255 / 0.22); }
+.bento-imgzoom-close[hidden] { display: none; }
 /* the discoverability cue swipe-up needs — otherwise nothing on screen
    hints that there's more to read, and a mouse/keyboard user has no swipe
    gesture at all to fall back on. */
@@ -1974,6 +1978,7 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   font: 600 13px system-ui, -apple-system, sans-serif;
   white-space: nowrap;
 }
+.bento-longread-hint[hidden] { display: none; }
 @keyframes bento-longread-hint-bob {
   0%, 100% { transform: translateX(-50%) translateY(0); }
   50% { transform: translateX(-50%) translateY(-4px); }
@@ -2035,6 +2040,7 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   transition: background 0.15s ease, transform 0.1s ease;
 }
 .bento-ink-toggle svg { width: 24px; height: 24px; }
+.bento-ink-toggle[hidden] { display: none; }
 .bento-ink-toggle:hover { background: rgb(255 255 255 / 0.85); }
 .bento-ink-toggle.active { background: var(--bento-accent, #ED8266); color: #14161c; border-color: transparent; }
 .bento-ink-toggle:active { transform: scale(0.94); }
