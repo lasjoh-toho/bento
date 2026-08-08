@@ -2102,7 +2102,7 @@ export class PropsPanel {
     if (this.cropElId === el.id) {
       const hint = document.createElement('p')
       hint.className = 'ed-hint'
-      hint.textContent = t('Drag the photo on the slide to reposition it, use the slider to zoom.')
+      hint.textContent = t('Rahmen an den Ecken/Kanten ziehen, um den Ausschnitt zu ändern (das Bild bleibt dabei gleich groß) — oder innerhalb des Rahmens ziehen, um den Bildausschnitt zu verschieben.')
       this.host.appendChild(hint)
       const actions = document.createElement('div')
       actions.className = 'ed-crop-actions'
@@ -2134,6 +2134,12 @@ export class PropsPanel {
         this.rebuild(true)
       })
       this.host.appendChild(cropBtn)
+      if (!img.crop && img.fit !== 'cover') {
+        const fitNote = document.createElement('p')
+        fitNote.className = 'ed-hint'
+        fitNote.textContent = t('Zuschneiden zeigt zunächst den größtmöglichen Bildausschnitt (wie bei „cover“) — bei „contain“/„fill“ sieht das anders aus als die aktuelle Darstellung, das ist normal.')
+        this.host.appendChild(fitNote)
+      }
       if (img.crop) {
         const reset = document.createElement('button')
         reset.className = 'ed-btn ed-btn-block'

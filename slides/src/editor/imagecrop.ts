@@ -84,12 +84,14 @@ export class ImageCropEditor {
   }
 
   /** Enter crop mode for an image element. Idempotent for the same element;
-   *  switching to a different one tears down and reloads. Building the
-   *  overlay waits on the image's natural size (needed for the aspect math),
-   *  so there's a brief gap between calling this and `active` becoming true —
-   *  callers that need to know when it's ready can poll `active`, mirroring
-   *  how the rest of the editor treats async image loads. */
-  start(elId: string) {
+   *  switching to a different one tears down and reloads. Returns once the
+   *  overlay is actually built and showing — callers (canvas.ts) must await
+   *  this before hiding the underlying element's own render, or there's a
+   *  visible gap where NEITHER the original image nor this overlay is
+   *  showing (this used to be a fire-and-forget call, which is exactly
+   *  what caused that gap — imagemask.ts's start() already avoided it by
+   *  being properly async/awaited from the start). */
+  async start(elId: string): Promise<void> {
     if (this.overlay && this.elId === elId) return
     this.teardown()
     const el = this.store.element(elId) as ImageElement | undefined
@@ -98,26 +100,35 @@ export class ImageCropEditor {
     this.dirty = false
     this.frame = { x: el.x, y: el.y, w: el.w, h: el.h }
     const probe = new Image()
-    probe.onload = () => {
-      if (this.elId !== elId) return // cancelled or replaced while this was loading
-      this.naturalW = probe.naturalWidth || el.w
-      this.naturalH = probe.naturalHeight || el.h
-      const targetAR = el.w / (el.h || 1)
-      const c = el.crop
-      if (c && c.w > 0 && c.h > 0) {
-        this.box = { x: c.x * this.naturalW, y: c.y * this.naturalH, w: c.w * this.naturalW, h: c.h * this.naturalH }
-      } else {
-        // Largest centred box at the required aspect — identical to what
-        // `fit: cover` already shows, so entering crop mode isn't a jump.
-        const imgAR = this.naturalW / this.naturalH
-        if (imgAR > targetAR) { this.box.h = this.naturalH; this.box.w = this.naturalH * targetAR }
-        else { this.box.w = this.naturalW; this.box.h = this.naturalW / targetAR }
-        this.box.x = (this.naturalW - this.box.w) / 2
-        this.box.y = (this.naturalH - this.box.h) / 2
-      }
-      this.buildDom(el)
+    await new Promise<void>((resolve) => {
+      probe.onload = () => resolve()
+      probe.onerror = () => resolve() // fails closed below (naturalW/H stay 0, buildDom still runs but draw() no-ops safely)
+      probe.src = resolveAsset(this.store.doc, el.src)
+    })
+    if (this.elId !== elId) return // cancelled or replaced while this was loading
+    this.naturalW = probe.naturalWidth || el.w
+    this.naturalH = probe.naturalHeight || el.h
+    const targetAR = el.w / (el.h || 1)
+    const c = el.crop
+    if (c && c.w > 0 && c.h > 0) {
+      this.box = { x: c.x * this.naturalW, y: c.y * this.naturalH, w: c.w * this.naturalW, h: c.h * this.naturalH }
+    } else {
+      // Largest centred box at the required aspect — matches what `fit:
+      // cover` already shows exactly (same "largest box at this aspect,
+      // centred" rule cover itself uses), so entering crop isn't a jump
+      // FOR that fit specifically. `contain` (letterboxed) and `fill`
+      // (non-uniform stretch) have no equivalent in the crop model at all
+      // — crop always uniformly fills the frame, never letterboxes or
+      // distorts — so switching away from either of those to crop
+      // necessarily changes what's visible; there's no view of the source
+      // image that would make that transition seamless, unlike cover.
+      const imgAR = this.naturalW / this.naturalH
+      if (imgAR > targetAR) { this.box.h = this.naturalH; this.box.w = this.naturalH * targetAR }
+      else { this.box.w = this.naturalW; this.box.h = this.naturalW / targetAR }
+      this.box.x = (this.naturalW - this.box.w) / 2
+      this.box.y = (this.naturalH - this.box.h) / 2
     }
-    probe.src = resolveAsset(this.store.doc, el.src)
+    this.buildDom(el)
   }
 
   /** Persist the crop (and, if a handle-drag changed it, the element's own

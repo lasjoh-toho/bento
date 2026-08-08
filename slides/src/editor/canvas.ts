@@ -604,9 +604,9 @@ export class SlideCanvas {
     if (node) node.style.visibility = hidden ? 'hidden' : ''
   }
 
-  startCrop(elId: string) {
+  async startCrop(elId: string) {
     this.commitTextEdit()
-    this.imageCropEditor.start(elId)
+    await this.imageCropEditor.start(elId)
     this.setNodeHidden(elId, true)
     this.syncTargets()
   }
