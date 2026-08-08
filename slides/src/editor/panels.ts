@@ -2135,10 +2135,10 @@ export class PropsPanel {
       })
       this.host.appendChild(cropBtn)
       if (!img.crop && img.fit !== 'cover') {
-        const fitNote = document.createElement('p')
-        fitNote.className = 'ed-hint'
-        fitNote.textContent = t('Zuschneiden zeigt zunächst den größtmöglichen Bildausschnitt (wie bei „cover“) — bei „contain“/„fill“ sieht das anders aus als die aktuelle Darstellung, das ist normal.')
-        this.host.appendChild(fitNote)
+        const note = document.createElement('p')
+        note.className = 'ed-hint'
+        note.textContent = t('Zuschneiden zeigt zunächst den größtmöglichen Bildausschnitt (wie bei „cover“) — bei „contain“/„fill“ sieht das je nach Rahmenform deutlich anders aus als die aktuelle Darstellung (mal an der Breite, mal an der Höhe orientiert). Das ist eine begriffliche Grenze von Zuschnitt selbst, kein Fehler: Zuschnitt füllt den Rahmen immer ganz aus, „contain“/„fill“ tun das nicht.')
+        this.host.appendChild(note)
       }
       if (img.crop) {
         const reset = document.createElement('button')
