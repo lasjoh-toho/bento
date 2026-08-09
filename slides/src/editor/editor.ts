@@ -2164,6 +2164,7 @@ export class Editor {
 
     document.addEventListener('paste', (ev: ClipboardEvent) => {
       if (this.presenting) return
+      if (this.longReadEditor.active) return // the longRead overlay's own textareas own any paste while it's open — never the slide canvas underneath
       const a = document.activeElement as HTMLElement | null
       if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return // text edit owns it
       const dt = ev.clipboardData

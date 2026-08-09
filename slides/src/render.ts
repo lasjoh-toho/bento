@@ -638,17 +638,24 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
         visualRoot.style.setProperty('-webkit-mask', maskCss)
         visualRoot.style.setProperty('mask', maskCss)
       }
-      // Author/first-publication-location only — sourceUrl/retrievedAt are
-      // deliberately NEVER shown here (see model.ts's own doc comment on
-      // `citation`), only ever aggregated into a References block instead.
-      // Positioned just OUTSIDE the element's own box (top:100%), so it
-      // never eats into the image's own visible area.
-      if (el.citation && (el.citation.author?.trim() || el.citation.publishedAt?.trim())) {
-        const caption = document.createElement('div')
-        caption.className = 'bento-image-citation'
-        caption.style.cssText = 'position:absolute;top:100%;left:0;width:100%;margin-top:4px;font-size:11px;line-height:1.3;color:inherit;opacity:0.65;text-align:left'
-        caption.textContent = [el.citation.author?.trim(), el.citation.publishedAt?.trim()].filter(Boolean).join(' · ')
-        node.appendChild(caption)
+      // Author/first-publication-year+place only — sourceUrl/retrievedAt
+      // are deliberately NEVER shown here (see model.ts's own doc comment
+      // on `citation`), only ever aggregated into a References block
+      // instead. Rendered as an overlay INSIDE the image's own box (not
+      // extending below it): .bento-slide itself has overflow:hidden, so
+      // anything positioned to extend PAST the image's own bottom edge
+      // gets silently clipped the moment the image sits anywhere near the
+      // bottom of the slide — which is common — rather than actually
+      // showing.
+      if (el.citation && el.citation.showCaption !== false) {
+        const citationText = [el.citation.author?.trim(), [el.citation.publishedYear?.trim(), el.citation.publishedPlace?.trim()].filter(Boolean).join(', ')].filter(Boolean).join(' · ')
+        if (citationText) {
+          const caption = document.createElement('div')
+          caption.className = 'bento-image-citation'
+          caption.style.cssText = 'position:absolute;left:0;right:0;bottom:0;padding:4px 8px;font-size:11px;line-height:1.3;color:#fff;background:linear-gradient(to top, rgb(0 0 0 / 0.55), rgb(0 0 0 / 0));text-align:left;pointer-events:none'
+          caption.textContent = citationText
+          node.appendChild(caption)
+        }
       }
       break
     }

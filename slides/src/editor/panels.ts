@@ -336,7 +336,7 @@ export class PropsPanel {
       const lines: string[] = []
       for (const s of this.store.doc.slides) {
         for (const e of s.elements) {
-          if (e.type !== 'image' || !e.citation?.sourceUrl) continue
+          if (e.type !== 'image' || !e.citation?.sourceUrl || e.citation.collectInReferences === false) continue
           const parts = [e.citation.author?.trim(), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
           lines.push(parts.filter(Boolean).join(', '))
         }
@@ -2409,16 +2409,38 @@ export class PropsPanel {
     authorInput.addEventListener('change', () => setCitation({ author: authorInput.value || undefined }))
     this.row(t('Autor'), authorInput)
 
-    const publishedInput = document.createElement('input')
-    publishedInput.type = 'text'
-    publishedInput.placeholder = t('z. B. Verlagsname, Zeitschrift…')
-    publishedInput.value = c.publishedAt ?? ''
-    publishedInput.addEventListener('change', () => setCitation({ publishedAt: publishedInput.value || undefined }))
-    this.row(t('Erstveröffentlichungsort'), publishedInput)
+    // Two fields, no individual labels of their own — the row label
+    // "Erstveröffentlichung" already makes "Jahr"/"Ort" as bare
+    // placeholders self-explanatory, without needing a second layer of
+    // labelling for each one individually.
+    const publishedWrap = document.createElement('div')
+    publishedWrap.style.cssText = 'display:flex;gap:6px'
+    const yearInput = document.createElement('input')
+    yearInput.type = 'text'
+    yearInput.placeholder = t('Jahr')
+    yearInput.style.width = '5em'
+    yearInput.value = c.publishedYear ?? ''
+    yearInput.addEventListener('change', () => setCitation({ publishedYear: yearInput.value || undefined }))
+    const placeInput = document.createElement('input')
+    placeInput.type = 'text'
+    placeInput.placeholder = t('Ort')
+    placeInput.value = c.publishedPlace ?? ''
+    placeInput.addEventListener('change', () => setCitation({ publishedPlace: placeInput.value || undefined }))
+    publishedWrap.append(yearInput, placeInput)
+    this.row(t('Erstveröffentlichung'), publishedWrap)
+
+    this.row(t('Angaben unter dem Bild zeigen'), this.toggle(
+      c.showCaption !== false,
+      (v) => setCitation({ showCaption: v }),
+    ))
+    this.row(t('Im Quellenverzeichnis sammeln'), this.toggle(
+      c.collectInReferences !== false,
+      (v) => setCitation({ collectInReferences: v }),
+    ))
 
     const hint = document.createElement('p')
     hint.className = 'ed-hint'
-    hint.textContent = t('Autor und Erstveröffentlichungsort erscheinen als kleine Unterschrift direkt unter dem Bild auf der Folie. Quelle und Abrufdatum bleiben dort unsichtbar und werden stattdessen im Quellennachweise-Block gesammelt.')
+    hint.textContent = t('Autor und Erstveröffentlichung erscheinen als kleine Unterschrift direkt unter dem Bild auf der Folie. Quelle und Abrufdatum bleiben dort unsichtbar und werden stattdessen im Quellennachweise-Block gesammelt.')
     this.host.appendChild(hint)
 
     this.row(t('Quelle'), (() => {

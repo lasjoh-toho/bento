@@ -121,6 +121,23 @@ export class LongReadEditor {
     this.toolbar.hidden = true
     overlay.appendChild(this.toolbar)
 
+    // Pasting anywhere in the overlay that ISN'T already a block's own
+    // textarea (which handles its own paste natively — typing into that
+    // specific block) creates a new Erklärtext block from the pasted text,
+    // rather than the paste falling through to nothing — or, before the
+    // fix alongside this one (editor.ts's global paste listener), leaking
+    // through to the slide canvas underneath instead.
+    overlay.addEventListener('paste', (ev) => {
+      if ((ev.target as HTMLElement)?.tagName === 'TEXTAREA') return // that block's own handler owns it
+      const text = ev.clipboardData?.getData('text/plain')?.trim()
+      if (!text) return
+      ev.preventDefault()
+      this.store.commit(() => {
+        this.findSlide()?.longRead?.blocks.push({ id: uid('lr'), type: 'explain', text })
+      })
+      this.rebuildBlocks()
+    })
+
     this.host.appendChild(overlay)
     this.overlay = overlay
     this.rebuildBlocks()
