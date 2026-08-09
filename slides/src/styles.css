@@ -1044,6 +1044,19 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   outline-offset: 3px;
   border-radius: 999px;
 }
+/* dynamic table of contents (render.ts's renderTocHtml, TextElement.toc) —
+   each entry is its own [data-link], not the outer .bento-el, so it needs
+   its own interactive styling rather than the rule just above. */
+.bento-toc-entry {
+  cursor: pointer;
+  padding: 6px 4px;
+  border-radius: 6px;
+  transition: background-color 0.12s ease, padding-inline-start 0.12s ease;
+}
+.bento-present-overlay .bento-toc-entry:hover {
+  background: rgb(247 166 0 / 0.12);
+  padding-inline-start: 10px;
+}
 
 /* chart option JSON editor */
 .ed-chart-json {

@@ -7,7 +7,7 @@
 import type { Store } from '../store'
 import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type GradientFill, type ImageElement, type LineEnding, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type GradientFill, type ImageElement, type LineEnding, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement } from '../measure'
 import { isMacOS } from '../screens'
@@ -312,6 +312,21 @@ export class PropsPanel {
         this.host.appendChild(hiddenHint)
       }
     }
+    const tocBtn = document.createElement('button')
+    tocBtn.className = 'ed-btn ed-btn-block'
+    tocBtn.textContent = t('Inhaltsverzeichnis einfügen')
+    tocBtn.title = t('Fügt ein dynamisches Inhaltsverzeichnis ein, das alle Folien mit Titel aufführt — bleibt automatisch aktuell, auch wenn Folien später hinzukommen, umbenannt oder entfernt werden.')
+    tocBtn.addEventListener('click', () => {
+      this.edit(() => {
+        this.store.slide.elements.push(defaultText({
+          x: 300, y: 160, w: 680, h: 400,
+          fontSize: 26, align: 'left', valign: 'top', lineHeight: 1.7,
+          toc: true, html: '', placeholder: t('Inhaltsverzeichnis (noch keine benannten Folien)'),
+        }))
+      }, true)
+      this.rebuild(true)
+    })
+    this.host.appendChild(tocBtn)
     // deck-wide page size: presets + custom. Elements keep their absolute
     // positions — a size change reframes the canvas, it never rescales art.
     const { width: dw, height: dh } = this.store.doc.size
@@ -1114,7 +1129,12 @@ export class PropsPanel {
     }
     this.row('Count up', this.select(
       ['off', 'on'], el.fx?.countUp ? 'on' : 'off',
-      (v) => setFx({ countUp: v === 'on' ? true : undefined })))
+      (v) => setFx({ countUp: v === 'on' ? true : undefined, countFrom: v === 'on' ? el.fx?.countFrom : undefined })))
+    if (el.fx?.countUp) {
+      this.row('von:', this.number(
+        el.fx.countFrom ?? 0, 1,
+        (v) => setFx({ countFrom: v })))
+    }
     this.row('Ambient', this.select(
       ['none', 'kenburns'], el.fx?.ambient ?? 'none',
       (v) => setFx(v === 'none' ? { ambient: undefined, ken: undefined } : { ambient: 'kenburns' })))

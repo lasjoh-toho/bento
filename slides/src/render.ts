@@ -3,7 +3,7 @@
 // Shared model → DOM renderer. One code path draws slides everywhere:
 // editor canvas, sidebar thumbnails, and Reveal.js sections.
 
-import type { BentoDoc, ShapeElement, Slide, SlideElement, SvgElement, TableElement } from './model'
+import type { BentoDoc, ShapeElement, Slide, SlideElement, SvgElement, TableElement, TextElement } from './model'
 import { morphKey } from './model'
 import { chartSnapshotSvg } from './charts'
 import temml from 'temml'
@@ -499,6 +499,35 @@ export function renderTableHtml(el: TableElement, doc: BentoDoc): string {
  * element's `morphId` when set, else its `id` — so morph pairing can be
  * re-targeted without disturbing the stable identity used everywhere else.
  */
+/** Computed fresh every render — never stored, never goes stale. One entry
+ *  per slide that has a discoverable title: Slide.name if the author set
+ *  one explicitly, else the slide's own largest-fontSize text element's
+ *  plain text (a reasonable "this is probably the title" heuristic,
+ *  without requiring every slide to name itself); a slide with neither is
+ *  skipped rather than shown with a placeholder. Each entry uses the same
+ *  data-link convention an authored element link already uses, so the
+ *  existing present-mode click-to-navigate handling picks it up for free. */
+function renderTocHtml(doc: BentoDoc): string {
+  const entries: string[] = []
+  for (const slide of doc.slides) {
+    if (slide.stateOf) continue // a state variant isn't a destination of its own
+    let title = slide.name?.trim()
+    if (!title) {
+      let best: TextElement | null = null
+      for (const el of slide.elements) {
+        if (el.type !== 'text') continue
+        const text = el.html.replace(/<[^>]+>/g, '').trim()
+        if (!text) continue
+        if (!best || el.fontSize > best.fontSize) best = el
+      }
+      title = best ? best.html.replace(/<[^>]+>/g, '').trim() : ''
+    }
+    if (!title) continue
+    entries.push(`<div class="bento-toc-entry" data-link="${escapeFieldText(slide.id)}">${escapeFieldText(title)}</div>`)
+  }
+  return entries.join('')
+}
+
 export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts = {}): HTMLElement {
   const node = document.createElement('div')
   node.className = `bento-el bento-el-${el.type}`
@@ -546,7 +575,7 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
       inner.style.lineHeight = String(el.lineHeight)
       if (el.letterSpacing) inner.style.letterSpacing = `${el.letterSpacing}px`
       inner.style.width = '100%'
-      inner.innerHTML = resolveMath(sanitizeHtml(resolveFields(el.html, opts.fields)))
+      inner.innerHTML = el.toc ? renderTocHtml(doc) : resolveMath(sanitizeHtml(resolveFields(el.html, opts.fields)))
       // layout placeholder: prompt while empty (editor), gone while presenting
       const isEmpty = !inner.textContent?.trim() && !el.html.includes('<img')
       if (el.placeholder && isEmpty) {

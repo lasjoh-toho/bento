@@ -55,8 +55,15 @@ export interface ElementBase {
     enterDur?: number
     /** stagger step within the entrance sequence; equal values enter together */
     order?: number
-    /** animate numeric parts of the text from 0 to their final value */
+    /** animate numeric parts of the text from `countFrom` (default 0,
+     *  negative allowed — counts up toward zero or down from it) to their
+     *  final value written in the text itself. */
     countUp?: boolean
+    /** starting value for countUp — omitted means 0. Negative counts up
+     *  toward the target from below zero; a value ABOVE the target counts
+     *  down instead (the animation always runs start→target, whichever
+     *  direction that implies). */
+    countFrom?: number
     /** continuous ambient motion (slow zoom, for full-bleed photos) */
     ambient?: 'kenburns'
     /**
@@ -139,6 +146,18 @@ export interface TextElement extends ElementBase {
    * element entirely. Cleared content brings the prompt back.
    */
   placeholder?: string
+  /**
+   * Dynamic table of contents — when true, `html` is ignored entirely at
+   * render time (editor preview AND present mode): the content is instead
+   * computed fresh from the CURRENT doc.slides every time, one entry per
+   * slide that has a discoverable title (Slide.name if set, else the
+   * slide's own largest text element — a slide with neither is skipped,
+   * not shown with a placeholder). Every entry is a clickable link to
+   * that slide, same [data-link] convention as an authored element link.
+   * Stays current automatically as slides are added/renamed/reordered/
+   * removed — never needs manual regeneration.
+   */
+  toc?: boolean
 }
 
 export type ShapeKind = 'rect' | 'ellipse' | 'triangle' | 'arrow' | 'line' | 'path'

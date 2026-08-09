@@ -2054,7 +2054,7 @@ function runEnterFx(slide: Slide, section: HTMLElement) {
         },
       )
     }
-    if (fx.countUp) runCountUp(node)
+    if (fx.countUp) runCountUp(node, fx.countFrom ?? 0)
   })
   settleGuarantee(entering.map(([el, node]) => [node, el]))
 }
@@ -2078,7 +2078,7 @@ function runMorphArrivalCountUps(from: Slide | undefined, to: Slide, section: HT
   const carried = new Set((from?.elements ?? []).map((el) => el.morphId || el.id))
   for (const [el, node] of fxNodes(to, section)) {
     if (!el.fx!.countUp || el.showOnHover) continue
-    if (!carried.has(el.morphId || el.id)) runCountUp(node)
+    if (!carried.has(el.morphId || el.id)) runCountUp(node, el.fx!.countFrom ?? 0)
   }
 }
 
@@ -2162,7 +2162,7 @@ function writeNumber(value: number, shape: NumberShape): string {
   return frac ? whole + shape.point + frac : whole
 }
 
-function runCountUp(node: HTMLElement) {
+function runCountUp(node: HTMLElement, from = 0) {
   const inner = node.querySelector<HTMLElement>('.bento-text-inner') ?? node
   const final = inner.textContent ?? ''
   // Separators only count BETWEEN digits, so a sentence ending in a number
@@ -2182,7 +2182,7 @@ function runCountUp(node: HTMLElement) {
       let last = 0
       tokens.forEach((m, i) => {
         out += final.slice(last, m.index)
-        out += writeNumber(shapes[i].value * state.p, shapes[i])
+        out += writeNumber(from + (shapes[i].value - from) * state.p, shapes[i])
         last = m.index! + m[0].length
       })
       inner.textContent = out + final.slice(last)
