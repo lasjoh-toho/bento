@@ -244,6 +244,32 @@ export interface ImageElement extends ElementBase {
    * as `src`.
    */
   mask?: string
+  /**
+   * Source-citation metadata — set automatically when an image comes
+   * through a proxy fetch (bentopaste.js's paste-and-split flow), editable
+   * afterward in the properties panel, or added by hand for any image.
+   * `author`/`publishedAt` render as a small caption directly under the
+   * image ON the slide — visible to whoever's viewing the presentation,
+   * matching a "who made this, where was it first published" citation
+   * norm. `sourceUrl`/`retrievedAt` stay technical and are never shown on
+   * the slide itself; they're only ever aggregated into a References
+   * ("Quellennachweise") longRead block instead — see
+   * collectImageCitations() in present.ts's companion editor tooling.
+   */
+  citation?: {
+    /** Shown in the on-slide caption. Empty/undefined shows nothing there. */
+    author?: string
+    /** "Erstveröffentlichungsort" — where this was first published, if
+     *  known (a site name, a publication, etc.) — shown in the on-slide
+     *  caption alongside author, but never required. */
+    publishedAt?: string
+    /** The image's own URL at the time it was fetched — never shown on
+     *  the slide, only in the aggregated references list. */
+    sourceUrl: string
+    /** ISO date (YYYY-MM-DD) the image was actually retrieved — never
+     *  shown on the slide, only in the aggregated references list. */
+    retrievedAt: string
+  }
 }
 
 export interface SvgElement extends ElementBase {

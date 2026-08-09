@@ -638,6 +638,18 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
         visualRoot.style.setProperty('-webkit-mask', maskCss)
         visualRoot.style.setProperty('mask', maskCss)
       }
+      // Author/first-publication-location only — sourceUrl/retrievedAt are
+      // deliberately NEVER shown here (see model.ts's own doc comment on
+      // `citation`), only ever aggregated into a References block instead.
+      // Positioned just OUTSIDE the element's own box (top:100%), so it
+      // never eats into the image's own visible area.
+      if (el.citation && (el.citation.author?.trim() || el.citation.publishedAt?.trim())) {
+        const caption = document.createElement('div')
+        caption.className = 'bento-image-citation'
+        caption.style.cssText = 'position:absolute;top:100%;left:0;width:100%;margin-top:4px;font-size:11px;line-height:1.3;color:inherit;opacity:0.65;text-align:left'
+        caption.textContent = [el.citation.author?.trim(), el.citation.publishedAt?.trim()].filter(Boolean).join(' · ')
+        node.appendChild(caption)
+      }
       break
     }
     case 'media': {

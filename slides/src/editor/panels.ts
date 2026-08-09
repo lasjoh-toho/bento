@@ -7,7 +7,7 @@
 import type { Store } from '../store'
 import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type GradientFill, type ImageElement, type LineEnding, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement } from '../measure'
 import { isMacOS } from '../screens'
@@ -327,6 +327,41 @@ export class PropsPanel {
       this.rebuild(true)
     })
     this.host.appendChild(tocBtn)
+
+    const citeBtn = document.createElement('button')
+    citeBtn.className = 'ed-btn ed-btn-block'
+    citeBtn.textContent = t('Quellenverzeichnis aktualisieren')
+    citeBtn.title = t('Sammelt die Quellenangaben aller Bilder im gesamten Deck (Quelle + Abrufdatum, unabhängig davon, ob Autor/Ort gesetzt sind) in einem Quellennachweise-Block auf der letzten Folie. Erneutes Ausführen ersetzt die zuvor gesammelte Liste, statt sie zu verdoppeln.')
+    citeBtn.addEventListener('click', () => {
+      const lines: string[] = []
+      for (const s of this.store.doc.slides) {
+        for (const e of s.elements) {
+          if (e.type !== 'image' || !e.citation?.sourceUrl) continue
+          const parts = [e.citation.author?.trim(), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
+          lines.push(parts.filter(Boolean).join(', '))
+        }
+      }
+      if (!lines.length) {
+        window.alert(t('Keine Bilder mit Quellenangabe im Deck gefunden.'))
+        return
+      }
+      this.edit(() => {
+        const slides = this.store.doc.slides
+        const last = slides[slides.length - 1]
+        if (!last.longRead) last.longRead = { blocks: [] }
+        // A stable id (not a fresh uid() each time) marks this as the
+        // auto-generated block specifically, so running this again UPDATES
+        // it in place rather than appending a second, stale copy.
+        const AUTO_ID = 'lr-auto-citations'
+        const idx = last.longRead.blocks.findIndex((b) => b.id === AUTO_ID)
+        const block: LongReadBlock = { id: AUTO_ID, type: 'references', text: lines.join('\n') }
+        if (idx >= 0) last.longRead.blocks[idx] = block
+        else last.longRead.blocks.push(block)
+      }, true)
+      this.rebuild(true)
+      window.alert(t('{n} Quellenangabe(n) in den Quellennachweise-Block der letzten Folie übernommen.', { n: String(lines.length) }))
+    })
+    this.host.appendChild(citeBtn)
     // deck-wide page size: presets + custom. Elements keep their absolute
     // positions — a size change reframes the canvas, it never rescales art.
     const { width: dw, height: dh } = this.store.doc.size
@@ -2334,8 +2369,80 @@ export class PropsPanel {
       })
       this.host.appendChild(bakeBtn)
     }
+
+    this.buildCitationProps(img)
   }
 
+  /** Author/Erstveröffentlichungsort are freely editable (they're the
+   *  visible part, on the slide itself); sourceUrl/retrievedAt are shown
+   *  read-only — they came from an actual fetch (or were set once
+   *  manually) and are only ever meant to feed the aggregated References
+   *  list, not to be hand-edited into something that no longer matches
+   *  what was actually retrieved. */
+  private buildCitationProps(img: ImageElement) {
+    this.section(t('Quellenangabe'))
+    if (!img.citation) {
+      const addBtn = document.createElement('button')
+      addBtn.className = 'ed-btn ed-btn-block'
+      addBtn.textContent = t('Quellenangabe hinzufügen')
+      addBtn.addEventListener('click', () => {
+        this.mutate(img.id, (e) => {
+          (e as ImageElement).citation = { sourceUrl: '', retrievedAt: new Date().toISOString().slice(0, 10) }
+        }, true)
+        this.rebuild(true)
+      })
+      this.host.appendChild(addBtn)
+      return
+    }
+
+    const c = img.citation
+    const setCitation = (patch: Partial<NonNullable<ImageElement['citation']>>) =>
+      this.mutate(img.id, (e) => {
+        const ie = e as ImageElement
+        ie.citation = { ...(ie.citation as NonNullable<ImageElement['citation']>), ...patch }
+      }, true)
+
+    const authorInput = document.createElement('input')
+    authorInput.type = 'text'
+    authorInput.placeholder = t('Autor')
+    authorInput.value = c.author ?? ''
+    authorInput.addEventListener('change', () => setCitation({ author: authorInput.value || undefined }))
+    this.row(t('Autor'), authorInput)
+
+    const publishedInput = document.createElement('input')
+    publishedInput.type = 'text'
+    publishedInput.placeholder = t('z. B. Verlagsname, Zeitschrift…')
+    publishedInput.value = c.publishedAt ?? ''
+    publishedInput.addEventListener('change', () => setCitation({ publishedAt: publishedInput.value || undefined }))
+    this.row(t('Erstveröffentlichungsort'), publishedInput)
+
+    const hint = document.createElement('p')
+    hint.className = 'ed-hint'
+    hint.textContent = t('Autor und Erstveröffentlichungsort erscheinen als kleine Unterschrift direkt unter dem Bild auf der Folie. Quelle und Abrufdatum bleiben dort unsichtbar und werden stattdessen im Quellennachweise-Block gesammelt.')
+    this.host.appendChild(hint)
+
+    this.row(t('Quelle'), (() => {
+      const span = document.createElement('span')
+      span.className = 'ed-hint'
+      span.style.wordBreak = 'break-all'
+      span.textContent = c.sourceUrl || t('(unbekannt)')
+      return span
+    })())
+    this.row(t('Abgerufen am'), (() => {
+      const span = document.createElement('span')
+      span.textContent = c.retrievedAt
+      return span
+    })())
+
+    const removeBtn = document.createElement('button')
+    removeBtn.className = 'ed-btn ed-btn-block ed-btn-danger'
+    removeBtn.textContent = t('Quellenangabe entfernen')
+    removeBtn.addEventListener('click', () => {
+      this.mutate(img.id, (e) => { delete (e as ImageElement).citation }, true)
+      this.rebuild(true)
+    })
+    this.host.appendChild(removeBtn)
+  }
 
   private buildMediaProps(el: MediaElement) {
     this.section(t('Source & playback'))
