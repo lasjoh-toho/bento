@@ -30,6 +30,7 @@ export class LongReadEditor {
   private slideId = ''
   private blocksHost!: HTMLElement
   private toolbar!: HTMLElement
+  private typePickerCloser: ((ev: MouseEvent) => void) | null = null
   /** Coalesces rapid keystrokes into one undo checkpoint — same pattern
    *  PropsPanel.edit() already uses for text inputs there. */
   private burst = false
@@ -167,9 +168,15 @@ export class LongReadEditor {
 
     const head = document.createElement('div')
     head.className = 'ed-lr-block-head'
-    const typeLabel = document.createElement('span')
+    const typeLabel = document.createElement('button')
+    typeLabel.type = 'button'
     typeLabel.className = 'ed-lr-typelabel'
-    typeLabel.textContent = TYPE_LABELS[block.type]
+    typeLabel.textContent = TYPE_LABELS[block.type] + ' \u25be'
+    typeLabel.title = t('Blocktyp ändern')
+    typeLabel.addEventListener('click', (ev) => {
+      ev.stopPropagation()
+      this.showTypePickerFor(typeLabel, i)
+    })
     head.appendChild(typeLabel)
     const upBtn = document.createElement('button')
     upBtn.className = 'ed-lr-move'
@@ -268,11 +275,66 @@ export class LongReadEditor {
   private maybeShowToolbar(ta: HTMLTextAreaElement, blockIndex: number) {
     if (ta.selectionStart === ta.selectionEnd) { this.toolbar.hidden = true; return }
     this.buildToolbarContents(ta, blockIndex)
+    this.toolbar.hidden = false // needs to be visible/laid out before measuring its own size below
     const rowRect = ta.getBoundingClientRect()
     const hostRect = this.overlay!.getBoundingClientRect()
-    this.toolbar.style.left = `${rowRect.left - hostRect.left}px`
-    this.toolbar.style.top = `${rowRect.top - hostRect.top - 40}px`
+    const toolbarRect = this.toolbar.getBoundingClientRect()
+    const left = Math.max(0, Math.min(rowRect.left - hostRect.left, hostRect.width - toolbarRect.width - 4))
+    // Prefer just above the block; if that would go off the TOP of the
+    // overlay (a block near the very top of the reading view), flip to
+    // just BELOW it instead of letting it clip off-screen.
+    let top = rowRect.top - hostRect.top - toolbarRect.height - 8
+    if (top < 0) top = rowRect.bottom - hostRect.top + 8
+    this.toolbar.style.left = `${left}px`
+    this.toolbar.style.top = `${top}px`
+  }
+
+  /** Reuses the same floating toolbar element the selection-based flow
+   *  uses, just filled with ONLY the type buttons (no Referenz/Link,
+   *  those need an actual text selection to attach to) and anchored to
+   *  the clicked label instead of a selection rect. Clicking a type here
+   *  changes the WHOLE block's type directly, no selection needed at all —
+   *  the whole point of this picker existing alongside the selection-based
+   *  toolbar. */
+  private showTypePickerFor(anchor: HTMLElement, blockIndex: number) {
+    this.toolbar.innerHTML = ''
+    for (const ty of Object.keys(TYPE_LABELS) as Array<LongReadBlock['type']>) {
+      const btn = document.createElement('button')
+      btn.textContent = TYPE_LABELS[ty]
+      btn.addEventListener('mousedown', (ev) => {
+        ev.preventDefault()
+        this.edit(() => {
+          const b = this.findSlide()?.longRead?.blocks[blockIndex]
+          if (b) b.type = ty
+        }, true)
+        this.toolbar.hidden = true
+        this.rebuildBlocks()
+      })
+      this.toolbar.appendChild(btn)
+    }
     this.toolbar.hidden = false
+    const anchorRect = anchor.getBoundingClientRect()
+    const hostRect = this.overlay!.getBoundingClientRect()
+    const toolbarRect = this.toolbar.getBoundingClientRect()
+    const left = Math.max(0, Math.min(anchorRect.left - hostRect.left, hostRect.width - toolbarRect.width - 4))
+    let top = anchorRect.top - hostRect.top - toolbarRect.height - 8
+    if (top < 0) top = anchorRect.bottom - hostRect.top + 8
+    this.toolbar.style.left = `${left}px`
+    this.toolbar.style.top = `${top}px`
+    // A plain click anywhere else closes it — mousedown above (not click)
+    // on the type buttons themselves so this document-level listener
+    // firing first doesn't hide the toolbar before the button's own
+    // handler gets a chance to run.
+    if (this.typePickerCloser) document.removeEventListener('mousedown', this.typePickerCloser, true)
+    const closeOnce = (ev: MouseEvent) => {
+      if (ev.target !== anchor && !this.toolbar.contains(ev.target as Node)) {
+        this.toolbar.hidden = true
+        document.removeEventListener('mousedown', closeOnce, true)
+        this.typePickerCloser = null
+      }
+    }
+    this.typePickerCloser = closeOnce
+    document.addEventListener('mousedown', closeOnce, true)
   }
 
   private buildToolbarContents(ta: HTMLTextAreaElement, blockIndex: number) {

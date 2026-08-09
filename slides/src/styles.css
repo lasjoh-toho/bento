@@ -1995,14 +1995,13 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   width: 40px;
   height: 40px;
   border-radius: 999px;
-  border: 1px solid rgb(255 255 255 / 0.35);
-  background: rgb(255 255 255 / 0.14);
+  border: 1px solid rgb(255 255 255 / 0.25);
+  background: rgb(20 22 28 / 0.78);
   backdrop-filter: blur(16px);
   color: #fff;
   display: grid;
   place-items: center;
   cursor: pointer;
-  animation: bento-longread-hint-bob 1.8s ease-in-out infinite;
 }
 .bento-longread-hint-labeled {
   width: auto;
@@ -2012,10 +2011,6 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   white-space: nowrap;
 }
 .bento-longread-hint[hidden] { display: none; }
-@keyframes bento-longread-hint-bob {
-  0%, 100% { transform: translateX(-50%) translateY(0); }
-  50% { transform: translateX(-50%) translateY(-4px); }
-}
 
 /* ————— long-press/long-click exit zone, bottom-right corner — no visible button ————— */
 .bento-exit-zone {
@@ -2390,6 +2385,22 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   z-index: 11;
 }
 .ed-corner-br .ed-zoombar { position: static; }
+.ed-lr-trigger {
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgb(20 30 45 / 0.10);
+}
+.ed-lr-trigger:hover { background: var(--chrome, #f2f4f8); }
 .ed-present-pill {
   display: inline-flex;
   align-items: stretch;
