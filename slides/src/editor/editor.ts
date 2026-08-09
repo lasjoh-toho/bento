@@ -420,7 +420,7 @@ export class Editor {
     longReadBtn.className = 'ed-lr-trigger'
     const updateLongReadBtn = () => {
       const title = this.store.slide.longRead?.title?.trim()
-      longReadBtn.textContent = title || '^'
+      longReadBtn.textContent = title || t('Erklärungen und Quellen')
       longReadBtn.title = title
         ? t('Erklärung, Quellen, Arbeitsaufträge bearbeiten: {title}', { title })
         : t('Erklärung, Quellen, Arbeitsaufträge hinzufügen/bearbeiten')
