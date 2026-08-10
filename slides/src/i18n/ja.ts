@@ -737,4 +737,7 @@ export const ja: Catalog = {
   "Zoom in and out": "拡大・縮小",
   "Space-drag": "スペース+ドラッグ",
   "Pan as well, if your mouse has a middle button": "中ボタンのあるマウスでも移動できます",
+  "Appearance": "外観",
+  "Match my system": "システムに合わせる",
+  "Dark": "ダーク",
 }

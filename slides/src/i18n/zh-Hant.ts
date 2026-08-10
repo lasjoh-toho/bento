@@ -737,4 +737,7 @@ export const zhHant: Catalog = {
   "Zoom in and out": "放大與縮小",
   "Space-drag": "空白鍵+拖曳",
   "Pan as well, if your mouse has a middle button": "如果滑鼠有中鍵，也可以平移",
+  "Appearance": "外觀",
+  "Match my system": "跟隨系統",
+  "Dark": "深色",
 }

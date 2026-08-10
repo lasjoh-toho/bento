@@ -737,4 +737,7 @@ export const zhHans: Catalog = {
   "Zoom in and out": "放大与缩小",
   "Space-drag": "空格键+拖动",
   "Pan as well, if your mouse has a middle button": "如果鼠标有中键，也可以平移",
+  "Appearance": "外观",
+  "Match my system": "跟随系统",
+  "Dark": "深色",
 }

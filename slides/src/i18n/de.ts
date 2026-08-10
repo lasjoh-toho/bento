@@ -138,7 +138,7 @@ export const de: Catalog = {
   "Language": "Sprache",
   "Launch check couldn't reach the release server ({m}). Check manually below.": "Startprüfung konnte den Release-Server nicht erreichen ({m}). Unten manuell prüfen.",
   "Layout": "Layout",
-  "Light": "Leicht",
+  "Light": "Hell",
   "Line": "Linie",
   "Line height": "Zeilenhöhe",
   "Line style": "Linienstil",
@@ -737,4 +737,7 @@ export const de: Catalog = {
   "Zoom in and out": "Vergrößern und verkleinern",
   "Space-drag": "Leertaste + ziehen",
   "Pan as well, if your mouse has a middle button": "Verschiebt ebenfalls, wenn die Maus eine mittlere Taste hat",
+  "Appearance": "Darstellung",
+  "Match my system": "Systemeinstellung folgen",
+  "Dark": "Dunkel",
 }

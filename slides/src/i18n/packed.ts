@@ -149,7 +149,7 @@ export const PACKED: Record<string, ReadonlyArray<string | 0>> = {
   "Language": ["言語","语言","語言","Idioma","Langue","Sprache","Lingua","Idioma"],
   "Launch check couldn't reach the release server ({m}). Check manually below.": ["起動時の確認でリリースサーバーに接続できませんでした ({m})。下から手動で確認してください。","启动检查无法连接发布服务器 ({m})。请在下方手动检查。","啟動檢查無法連線發佈伺服器 ({m})。請在下方手動檢查。","La comprobación inicial no alcanzó el servidor ({m}). Comprueba manualmente abajo.","La vérification au démarrage n'a pas atteint le serveur ({m}). Vérifiez manuellement ci-dessous.","Startprüfung konnte den Release-Server nicht erreichen ({m}). Unten manuell prüfen.","La verifica all'avvio non ha raggiunto il server ({m}). Verifica manualmente qui sotto.","A verificação ao abrir não alcançou o servidor de versões ({m}). Verifique manualmente abaixo."],
   "Layout": ["レイアウト","版式","版面配置","Diseño","Disposition","Layout","Layout","Layout"],
-  "Light": ["ライト","细体","細體","Fina","Fin","Leicht","Leggero","Fino"],
+  "Light": ["ライト","细体","細體","Fina","Fin","Hell","Leggero","Fino"],
   "Line": ["直線","直线","直線","Línea","Ligne","Linie","Linea","Linha"],
   "Line height": ["行間","行高","行高","Interlineado","Interligne","Zeilenhöhe","Interlinea","Altura da linha"],
   "Line style": ["線種","线型","線條樣式","Estilo de línea","Style de ligne","Linienstil","Stile linea","Estilo da linha"],
@@ -743,4 +743,7 @@ export const PACKED: Record<string, ReadonlyArray<string | 0>> = {
   "Zoom in and out": ["拡大・縮小","放大与缩小","放大與縮小","Acercar y alejar","Zoomer et dézoomer","Vergrößern und verkleinern","Ingrandisci e riduci","Ampliar e reduzir"],
   "Space-drag": ["スペース+ドラッグ","空格键+拖动","空白鍵+拖曳","Espacio + arrastrar","Espace + glisser","Leertaste + ziehen","Spazio + trascina","Espaço + arrastar"],
   "Pan as well, if your mouse has a middle button": ["中ボタンのあるマウスでも移動できます","如果鼠标有中键，也可以平移","如果滑鼠有中鍵，也可以平移","También desplaza, si tu ratón tiene botón central","Déplace aussi, si votre souris a un bouton du milieu","Verschiebt ebenfalls, wenn die Maus eine mittlere Taste hat","Sposta anche, se il mouse ha il tasto centrale","Também desloca, se o rato tiver botão do meio"],
+  "Appearance": ["外観","外观","外觀","Apariencia","Apparence","Darstellung","Aspetto","Aspeto"],
+  "Match my system": ["システムに合わせる","跟随系统","跟隨系統","Según el sistema","Comme le système","Systemeinstellung folgen","Come il sistema","Acompanhar o sistema"],
+  "Dark": ["ダーク","深色","深色","Oscuro","Sombre","Dunkel","Scuro","Escuro"],
 }

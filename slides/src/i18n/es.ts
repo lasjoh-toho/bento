@@ -737,4 +737,7 @@ export const es: Catalog = {
   "Zoom in and out": "Acercar y alejar",
   "Space-drag": "Espacio + arrastrar",
   "Pan as well, if your mouse has a middle button": "También desplaza, si tu ratón tiene botón central",
+  "Appearance": "Apariencia",
+  "Match my system": "Según el sistema",
+  "Dark": "Oscuro",
 }

@@ -735,4 +735,7 @@ export const pt: Catalog = {
   "Zoom in and out": "Ampliar e reduzir",
   "Space-drag": "Espaço + arrastar",
   "Pan as well, if your mouse has a middle button": "Também desloca, se o rato tiver botão do meio",
+  "Appearance": "Aspeto",
+  "Match my system": "Acompanhar o sistema",
+  "Dark": "Escuro",
 }

@@ -737,4 +737,7 @@ export const fr: Catalog = {
   "Zoom in and out": "Zoomer et dézoomer",
   "Space-drag": "Espace + glisser",
   "Pan as well, if your mouse has a middle button": "Déplace aussi, si votre souris a un bouton du milieu",
+  "Appearance": "Apparence",
+  "Match my system": "Comme le système",
+  "Dark": "Sombre",
 }
