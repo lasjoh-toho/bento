@@ -16,6 +16,11 @@ export interface MoodleConfig {
   cmid: number
   sesskey: string
   wwwroot: string
+  /** Present only when editing a DRAFT deck (bento_decks) rather than the
+   *  published bento.document — see mod/bento/edit.php's own ?deckid=
+   *  param, which is what this meta tag ultimately reflects. Absent means
+   *  "save to the published document", same as before this field existed. */
+  deckid?: number
 }
 
 function readMoodleConfig(): MoodleConfig | null {
@@ -61,9 +66,11 @@ export const moodleConfig: MoodleConfig | null = readMoodleConfig()
  */
 export async function saveToMoodle(doc: unknown): Promise<void> {
   if (!moodleConfig) throw new Error('Not running inside a Moodle mod/bento activity')
-  const { cmid, sesskey, wwwroot } = moodleConfig
+  const { cmid, sesskey, wwwroot, deckid } = moodleConfig
   const url = `${wwwroot}/lib/ajax/service.php?sesskey=${encodeURIComponent(sesskey)}&info=mod_bento_save_document`
-  const body = [{ index: 0, methodname: 'mod_bento_save_document', args: { cmid, document: JSON.stringify(doc) } }]
+  const args: Record<string, unknown> = { cmid, document: JSON.stringify(doc) }
+  if (deckid) args.deckid = deckid
+  const body = [{ index: 0, methodname: 'mod_bento_save_document', args }]
 
   const res = await fetch(url, {
     method: 'POST',
