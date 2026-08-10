@@ -64,6 +64,10 @@ export interface ElementBase {
      *  down instead (the animation always runs start→target, whichever
      *  direction that implies). */
     countFrom?: number
+    /** how long the count-up animation itself takes, in seconds —
+     *  omitted means the default (1.15s). Lower = snappier, higher =
+     *  more languid, same convention as enterDur. */
+    countDuration?: number
     /** continuous ambient motion (slow zoom, for full-bleed photos) */
     ambient?: 'kenburns'
     /**
@@ -523,6 +527,15 @@ export interface LongReadBlock {
    *  list (term + translation) and a plain glossary of terminology
    *  (term + explanation); which one it is is just how it's written. */
   translation?: string
+  /** Only meaningful for type 'heading' — makes this heading a valid link
+   *  TARGET: gets a stable id in the rendered reading view (present.ts),
+   *  and can then be jumped to from a <<Link:Text|#anchor>> reference
+   *  anywhere else in this same longRead (scrolls smoothly within the
+   *  reading view rather than navigating the page, since the reading
+   *  view is its own scrollable overlay). Off by default — every heading
+   *  becoming a jump target whether anyone actually links to it or not
+   *  would be pure clutter in the block editor. */
+  anchored?: boolean
 }
 
 /** One draggable term-label placed on a slide in Present mode — see

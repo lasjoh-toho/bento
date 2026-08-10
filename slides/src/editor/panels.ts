@@ -1169,6 +1169,9 @@ export class PropsPanel {
       this.row('von:', this.number(
         el.fx.countFrom ?? 0, 1,
         (v) => setFx({ countFrom: v })))
+      this.row('Sekunden', this.number(
+        el.fx.countDuration ?? 1.15, 0.05,
+        (v, fin) => { if (fin) setFx({ countDuration: Math.max(v, 0.05) }) }))
     }
     this.row('Ambient', this.select(
       ['none', 'kenburns'], el.fx?.ambient ?? 'none',

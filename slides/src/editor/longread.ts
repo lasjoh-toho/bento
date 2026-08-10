@@ -195,6 +195,22 @@ export class LongReadEditor {
       this.showTypePickerFor(typeLabel, i)
     })
     head.appendChild(typeLabel)
+    if (block.type === 'heading') {
+      const anchorLabel = document.createElement('label')
+      anchorLabel.className = 'ed-lr-anchortoggle'
+      anchorLabel.title = t('Diese Überschrift als Sprungziel für einen Link verfügbar machen')
+      const anchorCb = document.createElement('input')
+      anchorCb.type = 'checkbox'
+      anchorCb.checked = !!block.anchored
+      anchorCb.addEventListener('change', () => {
+        this.store.commit(() => {
+          const b = this.findSlide()?.longRead?.blocks[i]
+          if (b) b.anchored = anchorCb.checked || undefined
+        })
+      })
+      anchorLabel.append(anchorCb, document.createTextNode(' ' + t('(Link)')))
+      head.appendChild(anchorLabel)
+    }
     const upBtn = document.createElement('button')
     upBtn.className = 'ed-lr-move'
     upBtn.textContent = '↑'
@@ -426,7 +442,25 @@ export class LongReadEditor {
    *  but rendered as an actual navigable hyperlink (present.ts) rather
    *  than a click-for-explanation bubble. */
   private insertLink(blockIndex: number, selStart: number, selEnd: number) {
-    const url = window.prompt(t('Ziel-URL für den markierten Text:'))?.trim()
+    const anchored = (this.findSlide()?.longRead?.blocks ?? []).filter((b) => b.type === 'heading' && b.anchored)
+    if (!anchored.length) {
+      this.insertLinkWithUrl(blockIndex, selStart, selEnd, window.prompt(t('Ziel-URL für den markierten Text:'))?.trim())
+      return
+    }
+    // At least one heading in this longRead is set up as a link target —
+    // offer picking one directly (no need to know/type its internal
+    // anchor id by hand) alongside the plain external-URL option.
+    const choice = window.prompt(
+      t('Zu welcher Überschrift springen? Zahl eingeben, oder eine externe URL:') + '\n'
+      + anchored.map((b, i) => `${i + 1}. ${b.text.slice(0, 60)}`).join('\n'),
+    )?.trim()
+    if (!choice) { this.toolbar.hidden = true; return }
+    const asIndex = /^\d+$/.test(choice) ? parseInt(choice, 10) - 1 : -1
+    const url = (asIndex >= 0 && asIndex < anchored.length) ? '#lr-anchor-' + anchored[asIndex].id : choice
+    this.insertLinkWithUrl(blockIndex, selStart, selEnd, url)
+  }
+
+  private insertLinkWithUrl(blockIndex: number, selStart: number, selEnd: number, url: string | undefined) {
     if (!url) { this.toolbar.hidden = true; return }
     this.store.commit(() => {
       const block = this.findSlide()?.longRead?.blocks[blockIndex]

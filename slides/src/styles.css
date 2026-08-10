@@ -435,6 +435,8 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   background: var(--chrome-2);
 }
 .ed-lr-typelabel { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); flex: 1; }
+.ed-lr-anchortoggle { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); white-space: nowrap; cursor: pointer; }
+.ed-lr-anchortoggle input { margin: 0; cursor: pointer; }
 .ed-lr-overlay-text {
   width: 100%;
   border: none;
@@ -1854,7 +1856,7 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   padding: 64px 24px 96px;
   font: 400 19px/1.65 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
-.bento-longread-heading { font-size: 1.5em; font-weight: 700; line-height: 1.25; margin: 1.2em 0 0.5em; }
+.bento-longread-heading { font-size: 1.5em; font-weight: 700; line-height: 1.25; margin: 1.2em 0 0.5em; scroll-margin-top: 24px; }
 .bento-longread-heading:first-child { margin-top: 0; }
 .bento-longread-explain { margin: 0 0 1em; }
 .bento-longread-quote {

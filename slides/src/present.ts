@@ -1597,10 +1597,25 @@ export function startPresentation(
         const a = document.createElement('a')
         a.className = 'bento-longread-link'
         a.href = payload
-        a.target = '_blank'
-        a.rel = 'noopener noreferrer'
         a.textContent = word
-        a.addEventListener('click', (ev) => ev.stopPropagation())
+        if (payload.startsWith('#')) {
+          // An internal jump to an anchored heading elsewhere in THIS
+          // longRead — never a new tab, and a smooth scroll within the
+          // reading view's own scrollable container rather than the
+          // browser's default anchor-jump, which inside a present-mode
+          // overlay wouldn't reliably land in the right scroll context
+          // (or could try to navigate the whole page instead).
+          a.addEventListener('click', (ev) => {
+            ev.preventDefault()
+            ev.stopPropagation()
+            const target = longReadInner.querySelector('#' + CSS.escape(payload.slice(1)))
+            target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          })
+        } else {
+          a.target = '_blank'
+          a.rel = 'noopener noreferrer'
+          a.addEventListener('click', (ev) => ev.stopPropagation())
+        }
         host.appendChild(a)
       } else {
         refs.push(payload)
@@ -1675,6 +1690,7 @@ export function startPresentation(
       }
       const el = document.createElement(block.type === 'heading' ? 'h2' : block.type === 'quote' ? 'blockquote' : 'p')
       el.className = `bento-longread-${block.type}`
+      if (block.type === 'heading' && block.anchored) el.id = 'lr-anchor-' + block.id
       appendTextWithRefs(el, block.text, refs)
       longReadInner.appendChild(el)
       if (block.type === 'quote' && block.source) {
@@ -2054,7 +2070,7 @@ function runEnterFx(slide: Slide, section: HTMLElement) {
         },
       )
     }
-    if (fx.countUp) runCountUp(node, fx.countFrom ?? 0)
+    if (fx.countUp) runCountUp(node, fx.countFrom ?? 0, fx.countDuration ?? 1.15)
   })
   settleGuarantee(entering.map(([el, node]) => [node, el]))
 }
@@ -2078,7 +2094,7 @@ function runMorphArrivalCountUps(from: Slide | undefined, to: Slide, section: HT
   const carried = new Set((from?.elements ?? []).map((el) => el.morphId || el.id))
   for (const [el, node] of fxNodes(to, section)) {
     if (!el.fx!.countUp || el.showOnHover) continue
-    if (!carried.has(el.morphId || el.id)) runCountUp(node, el.fx!.countFrom ?? 0)
+    if (!carried.has(el.morphId || el.id)) runCountUp(node, el.fx!.countFrom ?? 0, el.fx!.countDuration ?? 1.15)
   }
 }
 
@@ -2162,7 +2178,7 @@ function writeNumber(value: number, shape: NumberShape): string {
   return frac ? whole + shape.point + frac : whole
 }
 
-function runCountUp(node: HTMLElement, from = 0) {
+function runCountUp(node: HTMLElement, from = 0, duration = 1.15) {
   const inner = node.querySelector<HTMLElement>('.bento-text-inner') ?? node
   const final = inner.textContent ?? ''
   // Separators only count BETWEEN digits, so a sentence ending in a number
@@ -2174,7 +2190,7 @@ function runCountUp(node: HTMLElement, from = 0) {
   const state = { p: 0 }
   anim.to(state, {
     p: 1,
-    duration: 1.15,
+    duration,
     delay: 0.15,
     ease: 'power2.out',
     onUpdate() {
