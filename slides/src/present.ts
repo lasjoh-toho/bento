@@ -1732,7 +1732,10 @@ export function startPresentation(
     updateLongReadHint(deck.getIndices().h)
   }
 
-  // Clicking an element with a link jumps to its target slide.
+  // Clicking an element with a link jumps to its target slide — and, if
+  // it also carries data-link-anchor (a TOC sub-entry for an anchored
+  // heading — see renderTocHtml), opens that slide's longRead and
+  // smooth-scrolls to the matching heading once it's rendered.
   slidesEl.addEventListener('click', (ev) => {
     const target = (ev.target as HTMLElement).closest<HTMLElement>('[data-link]')
     if (!target) return
@@ -1741,6 +1744,12 @@ export function startPresentation(
       ev.preventDefault()
       ev.stopPropagation()
       deck.slide(idx, 0)
+      const anchorBlockId = target.dataset.linkAnchor
+      if (anchorBlockId) {
+        openLongRead(idx)
+        const heading = longReadInner.querySelector('#lr-anchor-' + CSS.escape(anchorBlockId))
+        heading?.scrollIntoView({ block: 'start' }) // no smooth behavior here — the reading view has JUST opened, an animated scroll on top of its own open transition reads as janky rather than helpful
+      }
     }
   })
 

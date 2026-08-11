@@ -1059,6 +1059,12 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   background: rgb(247 166 0 / 0.12);
   padding-inline-start: 10px;
 }
+.bento-toc-subentry {
+  padding-inline-start: 22px;
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+.bento-present-overlay .bento-toc-subentry:hover { padding-inline-start: 26px; }
 
 /* chart option JSON editor */
 .ed-chart-json {

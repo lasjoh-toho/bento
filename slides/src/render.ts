@@ -524,6 +524,22 @@ function renderTocHtml(doc: BentoDoc): string {
     }
     if (!title) continue
     entries.push(`<div class="bento-toc-entry" data-link="${escapeFieldText(slide.id)}">${escapeFieldText(title)}</div>`)
+    // Any heading in this slide's own Zusatztext marked as a link target
+    // (see LongReadBlock.anchored) gets its own indented sub-entry —
+    // discoverable straight from the table of contents, rather than only
+    // reachable via a manually-placed <<Link:...>> reference somewhere
+    // else in the reading text. data-link-anchor is a SEPARATE attribute
+    // from data-link (which still does the slide navigation itself) —
+    // present.ts's click handler opens the longRead and scrolls to the
+    // matching heading id afterward when it's present.
+    for (const block of slide.longRead?.blocks ?? []) {
+      if (block.type !== 'heading' || !block.anchored) continue
+      const headingText = block.text.trim()
+      if (!headingText) continue
+      entries.push(
+        `<div class="bento-toc-entry bento-toc-subentry" data-link="${escapeFieldText(slide.id)}" data-link-anchor="${escapeFieldText(block.id)}">${escapeFieldText(headingText)}</div>`,
+      )
+    }
   }
   return entries.join('')
 }
