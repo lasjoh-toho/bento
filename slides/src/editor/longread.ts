@@ -78,7 +78,11 @@ export class LongReadEditor {
       this.store.commit(() => { const s = this.findSlide(); if (s) delete s.longRead })
       this.close()
     })
-    header.append(title, removeAllBtn, closeBtn)
+    const moveAllBtn = document.createElement('button')
+    moveAllBtn.className = 'ed-lr-removeall'
+    moveAllBtn.textContent = t('Zu anderer Folie verschieben')
+    moveAllBtn.addEventListener('click', () => this.moveWholeLongReadToAnotherSlide())
+    header.append(title, moveAllBtn, removeAllBtn, closeBtn)
     overlay.appendChild(header)
 
     const titleWrap = document.createElement('div')
@@ -146,6 +150,53 @@ export class LongReadEditor {
   close() {
     this.teardown()
     this.onClose()
+  }
+
+  /** Moves this ENTIRE slide's Zusatztext to a different slide, per
+   *  feedback that dragging every block over one at a time is tedious for
+   *  a long-distance move. Target has no Zusatztext of its own yet -> the
+   *  whole thing (title included) becomes its Zusatztext directly. Target
+   *  already has one -> a new heading block, using the moved title (or a
+   *  generic label if none was set) and marked `anchored: true`, gets
+   *  appended along with every moved block right after it — the heading
+   *  becomes that section's own entry point/label, exactly the same
+   *  anchored-heading convention the table of contents already surfaces
+   *  (see render.ts's renderTocHtml), rather than the moved content
+   *  silently blending into the target's existing blocks with no way to
+   *  tell where one ends and the other begins. */
+  private moveWholeLongReadToAnotherSlide() {
+    const slides = this.store.doc.slides
+    const currentIdx = slides.findIndex((s) => s.id === this.slideId)
+    if (currentIdx < 0) return
+    const others = slides
+      .map((s, i) => ({ s, i }))
+      .filter(({ s, i }) => i !== currentIdx && !s.stateOf) // a state variant isn't a destination of its own, same convention renderTocHtml uses
+    if (!others.length) { window.alert(t('Keine andere Folie vorhanden.')); return }
+    const choice = window.prompt(
+      t('Auf welche Folie verschieben? Zahl eingeben:') + '\n'
+      + others.map(({ s, i }, idx) => `${idx + 1}. ` + t('Folie {n}', { n: i + 1 }) + (s.name ? ` — ${s.name}` : '')).join('\n'),
+    )?.trim()
+    if (!choice) return
+    const pickIdx = /^\d+$/.test(choice) ? parseInt(choice, 10) - 1 : -1
+    if (pickIdx < 0 || pickIdx >= others.length) return
+    const targetId = others[pickIdx].s.id
+
+    this.store.commit(() => {
+      const source = this.store.doc.slides.find((s) => s.id === this.slideId)
+      const target = this.store.doc.slides.find((s) => s.id === targetId)
+      if (!source?.longRead || !target) return
+      const moved = source.longRead
+      if (!target.longRead || !target.longRead.blocks.length) {
+        target.longRead = moved
+      } else {
+        target.longRead.blocks.push(
+          { id: uid('lr'), type: 'heading', text: moved.title?.trim() || t('Verschobener Abschnitt'), anchored: true },
+          ...moved.blocks,
+        )
+      }
+      delete source.longRead
+    })
+    this.close()
   }
 
   private teardown() {
