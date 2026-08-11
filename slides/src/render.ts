@@ -603,6 +603,24 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
         }
       }
       node.appendChild(inner)
+      // Same author/first-publication-year+place convention as images (see
+      // model.ts's Citation doc comment) — sourceUrl/retrievedAt stay out
+      // of the on-slide caption, only ever aggregated into a References
+      // block. Rendered as a plain flex sibling below the text content
+      // rather than an absolute overlay (which is how images do it): a
+      // dark gradient bar makes sense over a photo, but would clash with
+      // arbitrary text styling here — this way it just naturally stacks
+      // within the box's own flex layout, no overflow-clipping risk at all.
+      if (el.citation && el.citation.showCaption !== false) {
+        const citationText = [el.citation.author?.trim(), [el.citation.publishedYear?.trim(), el.citation.publishedPlace?.trim()].filter(Boolean).join(', ')].filter(Boolean).join(' · ')
+        if (citationText) {
+          const caption = document.createElement('div')
+          caption.className = 'bento-text-citation'
+          caption.style.cssText = 'font-size:0.55em;opacity:0.6;margin-top:0.4em;text-align:inherit'
+          caption.textContent = citationText
+          node.appendChild(caption)
+        }
+      }
       break
     }
     case 'shape':

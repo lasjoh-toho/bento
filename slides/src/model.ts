@@ -162,6 +162,13 @@ export interface TextElement extends ElementBase {
    * removed — never needs manual regeneration.
    */
   toc?: boolean
+  /**
+   * Source-citation metadata for a text element — same shared shape and
+   * conventions as ImageElement.citation (see that type's own doc
+   * comment). A quoted passage or a paraphrased claim can carry its own
+   * attribution/reference this way, the same as a sourced image can.
+   */
+  citation?: Citation
 }
 
 export type ShapeKind = 'rect' | 'ellipse' | 'triangle' | 'arrow' | 'line' | 'path'
@@ -252,39 +259,46 @@ export interface ImageElement extends ElementBase {
    * Source-citation metadata — set automatically when an image comes
    * through a proxy fetch (bentopaste.js's paste-and-split flow), editable
    * afterward in the properties panel, or added by hand for any image.
-   * `author`/`publishedYear`/`publishedPlace` render as a small caption
-   * directly under the image ON the slide (when `showCaption` isn't
-   * explicitly false) — visible to whoever's viewing the presentation,
-   * matching a "who made this, where/when was it first published" citation
-   * norm. `sourceUrl`/`retrievedAt` stay technical and are never shown on
-   * the slide itself; they're only ever aggregated into a References
-   * ("Quellennachweise") longRead block instead (when `collectInReferences`
-   * isn't explicitly false) — see the "Quellenverzeichnis aktualisieren"
-   * button in the slide panel.
+   * See the shared `Citation` type's own doc comment for what each field
+   * does and how it's used (on-slide caption vs. references list).
    */
-  citation?: {
-    /** Shown in the on-slide caption. Empty/undefined shows nothing there. */
-    author?: string
-    /** "Erstveröffentlichung" — year first published, if known. */
-    publishedYear?: string
-    /** "Erstveröffentlichung" — place/publication first published in, if known. */
-    publishedPlace?: string
-    /** The image's own URL at the time it was fetched — never shown on
-     *  the slide, only in the aggregated references list. */
-    sourceUrl: string
-    /** ISO date (YYYY-MM-DD) the image was actually retrieved — never
-     *  shown on the slide, only in the aggregated references list. */
-    retrievedAt: string
-    /** Show the author/publication caption under the image on the slide.
-     *  Undefined means true (on by default) — an explicit false is what
-     *  turns it off, so older documents without this field keep behaving
-     *  exactly as before it existed. */
-    showCaption?: boolean
-    /** Include this image's sourceUrl/retrievedAt when "Quellenverzeichnis
-     *  aktualisieren" collects references. Undefined means true, same
-     *  default-on convention as showCaption. */
-    collectInReferences?: boolean
-  }
+  citation?: Citation
+}
+
+/**
+ * Shared source-citation shape — used by both ImageElement and
+ * TextElement.citation. `author`/`publishedYear`/`publishedPlace` render
+ * as a small caption directly under the element ON the slide (when
+ * `showCaption` isn't explicitly false) — visible to whoever's viewing the
+ * presentation, matching a "who made this, where/when was it first
+ * published" citation norm. `sourceUrl`/`retrievedAt` stay technical and
+ * are never shown on the slide itself; they're only ever aggregated into a
+ * References ("Quellennachweise") longRead block instead (when
+ * `collectInReferences` isn't explicitly false) — see the
+ * "Quellenverzeichnis aktualisieren" button in the slide panel.
+ */
+export interface Citation {
+  /** Shown in the on-slide caption. Empty/undefined shows nothing there. */
+  author?: string
+  /** "Erstveröffentlichung" — year first published, if known. */
+  publishedYear?: string
+  /** "Erstveröffentlichung" — place/publication first published in, if known. */
+  publishedPlace?: string
+  /** The element's own source URL, if it came from a traceable fetch —
+   *  never shown on the slide, only in the aggregated references list. */
+  sourceUrl: string
+  /** ISO date (YYYY-MM-DD) the source was actually retrieved — never
+   *  shown on the slide, only in the aggregated references list. */
+  retrievedAt: string
+  /** Show the author/publication caption under the element on the slide.
+   *  Undefined means true (on by default) — an explicit false is what
+   *  turns it off, so older documents without this field keep behaving
+   *  exactly as before it existed. */
+  showCaption?: boolean
+  /** Include this element's sourceUrl/retrievedAt when "Quellenverzeichnis
+   *  aktualisieren" collects references. Undefined means true, same
+   *  default-on convention as showCaption. */
+  collectInReferences?: boolean
 }
 
 export interface SvgElement extends ElementBase {

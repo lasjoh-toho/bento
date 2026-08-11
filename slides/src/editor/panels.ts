@@ -7,7 +7,7 @@
 import type { Store } from '../store'
 import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement } from '../measure'
 import { isMacOS } from '../screens'
@@ -336,13 +336,14 @@ export class PropsPanel {
       const lines: string[] = []
       for (const s of this.store.doc.slides) {
         for (const e of s.elements) {
-          if (e.type !== 'image' || !e.citation?.sourceUrl || e.citation.collectInReferences === false) continue
+          if (e.type !== 'image' && e.type !== 'text') continue
+          if (!e.citation?.sourceUrl || e.citation.collectInReferences === false) continue
           const parts = [e.citation.author?.trim(), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
           lines.push(parts.filter(Boolean).join(', '))
         }
       }
       if (!lines.length) {
-        window.alert(t('Keine Bilder mit Quellenangabe im Deck gefunden.'))
+        window.alert(t('Keine Bilder oder Texte mit Quellenangabe im Deck gefunden.'))
         return
       }
       this.edit(() => {
@@ -1022,6 +1023,8 @@ export class PropsPanel {
 
     this.buildPresentingProps(el)
     this.buildMorphProps(el)
+
+    if (el.type === 'image' || el.type === 'text') this.buildCitationProps(el)
   }
 
   /**
@@ -2372,8 +2375,6 @@ export class PropsPanel {
       })
       this.host.appendChild(bakeBtn)
     }
-
-    this.buildCitationProps(img)
   }
 
   /** Author/Erstveröffentlichungsort are freely editable (they're the
@@ -2381,16 +2382,17 @@ export class PropsPanel {
    *  read-only — they came from an actual fetch (or were set once
    *  manually) and are only ever meant to feed the aggregated References
    *  list, not to be hand-edited into something that no longer matches
-   *  what was actually retrieved. */
-  private buildCitationProps(img: ImageElement) {
+   *  what was actually retrieved. Works for both images and text — same
+   *  shared Citation type either way, just a different host element. */
+  private buildCitationProps(host: ImageElement | TextElement) {
     this.section(t('Quellenangabe'))
-    if (!img.citation) {
+    if (!host.citation) {
       const addBtn = document.createElement('button')
       addBtn.className = 'ed-btn ed-btn-block'
       addBtn.textContent = t('Quellenangabe hinzufügen')
       addBtn.addEventListener('click', () => {
-        this.mutate(img.id, (e) => {
-          (e as ImageElement).citation = { sourceUrl: '', retrievedAt: new Date().toISOString().slice(0, 10) }
+        this.mutate(host.id, (e) => {
+          (e as ImageElement | TextElement).citation = { sourceUrl: '', retrievedAt: new Date().toISOString().slice(0, 10) }
         }, true)
         this.rebuild(true)
       })
@@ -2398,11 +2400,11 @@ export class PropsPanel {
       return
     }
 
-    const c = img.citation
-    const setCitation = (patch: Partial<NonNullable<ImageElement['citation']>>) =>
-      this.mutate(img.id, (e) => {
-        const ie = e as ImageElement
-        ie.citation = { ...(ie.citation as NonNullable<ImageElement['citation']>), ...patch }
+    const c = host.citation
+    const setCitation = (patch: Partial<Citation>) =>
+      this.mutate(host.id, (e) => {
+        const ie = e as ImageElement | TextElement
+        ie.citation = { ...(ie.citation as Citation), ...patch }
       }, true)
 
     const authorInput = document.createElement('input')
@@ -2432,7 +2434,7 @@ export class PropsPanel {
     publishedWrap.append(yearInput, placeInput)
     this.row(t('Erstveröffentlichung'), publishedWrap)
 
-    this.row(t('Angaben unter dem Bild zeigen'), this.toggle(
+    this.row(t(host.type === 'text' ? 'Angaben unter dem Text zeigen' : 'Angaben unter dem Bild zeigen'), this.toggle(
       c.showCaption !== false,
       (v) => setCitation({ showCaption: v }),
     ))
@@ -2443,7 +2445,9 @@ export class PropsPanel {
 
     const hint = document.createElement('p')
     hint.className = 'ed-hint'
-    hint.textContent = t('Autor und Erstveröffentlichung erscheinen als kleine Unterschrift direkt unter dem Bild auf der Folie. Quelle und Abrufdatum bleiben dort unsichtbar und werden stattdessen im Quellennachweise-Block gesammelt.')
+    hint.textContent = t(host.type === 'text'
+      ? 'Autor und Erstveröffentlichung erscheinen als kleine Unterschrift direkt unter dem Text auf der Folie. Quelle und Abrufdatum bleiben dort unsichtbar und werden stattdessen im Quellennachweise-Block gesammelt.'
+      : 'Autor und Erstveröffentlichung erscheinen als kleine Unterschrift direkt unter dem Bild auf der Folie. Quelle und Abrufdatum bleiben dort unsichtbar und werden stattdessen im Quellennachweise-Block gesammelt.')
     this.host.appendChild(hint)
 
     this.row(t('Quelle'), (() => {
@@ -2463,7 +2467,7 @@ export class PropsPanel {
     removeBtn.className = 'ed-btn ed-btn-block ed-btn-danger'
     removeBtn.textContent = t('Quellenangabe entfernen')
     removeBtn.addEventListener('click', () => {
-      this.mutate(img.id, (e) => { delete (e as ImageElement).citation }, true)
+      this.mutate(host.id, (e) => { delete (e as ImageElement | TextElement).citation }, true)
       this.rebuild(true)
     })
     this.host.appendChild(removeBtn)
