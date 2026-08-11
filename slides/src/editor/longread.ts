@@ -16,7 +16,7 @@
 
 import type { Store } from '../store'
 import type { LongReadBlock, Slide } from '../model'
-import { uid } from '../model'
+import { defaultText, uid } from '../model'
 import { t } from '../i18n'
 
 const TYPE_LABELS: Record<LongReadBlock['type'], string> = {
@@ -258,9 +258,29 @@ export class LongReadEditor {
           const b = this.findSlide()?.longRead?.blocks[i]
           if (b) b.anchored = anchorCb.checked || undefined
         })
+        insertChipBtn.hidden = !anchorCb.checked
       })
       anchorLabel.append(anchorCb, document.createTextNode(' ' + t('(Link)')))
       head.appendChild(anchorLabel)
+      const insertChipBtn = document.createElement('button')
+      insertChipBtn.type = 'button'
+      insertChipBtn.className = 'ed-lr-anchorchipbtn'
+      insertChipBtn.textContent = '+ ' + t('Block')
+      insertChipBtn.title = t('Diesen Link als eigenen, frei platzierbaren Block auf die Folie legen')
+      insertChipBtn.hidden = !block.anchored
+      insertChipBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation()
+        this.store.commit(() => {
+          const s = this.findSlide()
+          if (!s) return
+          s.elements.push(defaultText({
+            w: 260, h: 64, x: (this.store.doc.size.width - 260) / 2, y: (this.store.doc.size.height - 64) / 2,
+            fontSize: 20,
+            anchorLink: { slideId: s.id, blockId: block.id },
+          }))
+        })
+      })
+      head.appendChild(insertChipBtn)
     }
     const upBtn = document.createElement('button')
     upBtn.className = 'ed-lr-move'

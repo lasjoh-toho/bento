@@ -437,6 +437,11 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 .ed-lr-typelabel { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); flex: 1; }
 .ed-lr-anchortoggle { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); white-space: nowrap; cursor: pointer; }
 .ed-lr-anchortoggle input { margin: 0; cursor: pointer; }
+.ed-lr-anchorchipbtn {
+  font-size: 10.5px; font-weight: 600; color: var(--accent, #ff9e5e); background: none;
+  border: 1px solid currentColor; border-radius: 999px; padding: 2px 8px; cursor: pointer; white-space: nowrap;
+}
+.ed-lr-anchorchipbtn:hover { background: rgb(247 166 0 / 0.12); }
 .ed-lr-overlay-text {
   width: 100%;
   border: none;
@@ -1065,6 +1070,22 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   opacity: 0.75;
 }
 .bento-present-overlay .bento-toc-subentry:hover { padding-inline-start: 26px; }
+
+/* standalone anchor-link chip (TextElement.anchorLink) — a freely
+   positioned single link to one anchored heading, distinct from the
+   dynamic toc:true table of contents. Fills its own element box (sized/
+   positioned like any element) with a pill-shaped clickable look. */
+.bento-anchor-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 999px;
+  background: rgb(20 22 28 / 0.06);
+  transition: background-color 0.12s ease;
+}
+.bento-anchor-chip:hover { background: rgb(247 166 0 / 0.14); }
+.bento-anchor-chip .bento-text-inner { text-align: center; }
 
 /* chart option JSON editor */
 .ed-chart-json {

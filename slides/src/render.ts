@@ -591,7 +591,16 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
       inner.style.lineHeight = String(el.lineHeight)
       if (el.letterSpacing) inner.style.letterSpacing = `${el.letterSpacing}px`
       inner.style.width = '100%'
-      inner.innerHTML = el.toc ? renderTocHtml(doc) : resolveMath(sanitizeHtml(resolveFields(el.html, opts.fields)))
+      if (el.anchorLink) {
+        const targetSlide = doc.slides.find((s) => s.id === el.anchorLink!.slideId)
+        const targetBlock = targetSlide?.longRead?.blocks.find((b) => b.id === el.anchorLink!.blockId)
+        inner.textContent = targetBlock?.text.trim() || '(Ziel-Überschrift nicht gefunden)'
+        node.classList.add('bento-anchor-chip')
+        node.dataset.link = el.anchorLink.slideId
+        node.dataset.linkAnchor = el.anchorLink.blockId
+      } else {
+        inner.innerHTML = el.toc ? renderTocHtml(doc) : resolveMath(sanitizeHtml(resolveFields(el.html, opts.fields)))
+      }
       // layout placeholder: prompt while empty (editor), gone while presenting
       const isEmpty = !inner.textContent?.trim() && !el.html.includes('<img')
       if (el.placeholder && isEmpty) {

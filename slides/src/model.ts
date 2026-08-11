@@ -163,6 +163,20 @@ export interface TextElement extends ElementBase {
    */
   toc?: boolean
   /**
+   * Turns this text element into a single clickable link chip targeting
+   * one specific anchored heading (see LongReadBlock.anchored) — freely
+   * positioned/resized like any other element, unlike a toc:true element
+   * (which computes an entry for EVERY anchored heading across the whole
+   * deck). `html` is ignored entirely at render time while this is set —
+   * same convention toc uses — and always shows the target heading's OWN
+   * current text, so it can never drift out of sync with a heading that
+   * gets renamed later. Renders using the exact same [data-link]/
+   * [data-link-anchor] convention renderTocHtml's own sub-entries use, so
+   * present.ts's existing click-to-navigate-and-scroll handling picks it
+   * up for free — nothing anchorLink-specific needed there at all.
+   */
+  anchorLink?: { slideId: string; blockId: string }
+  /**
    * Source-citation metadata for a text element — same shared shape and
    * conventions as ImageElement.citation (see that type's own doc
    * comment). A quoted passage or a paraphrased claim can carry its own
