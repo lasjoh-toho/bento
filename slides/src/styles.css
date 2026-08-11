@@ -2041,6 +2041,20 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
 }
 .bento-longread-hint[hidden] { display: none; }
 
+.bento-toc-hotspot {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 61;
+  width: 160px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.bento-toc-hotspot[hidden] { display: none; }
+
 /* ————— long-press/long-click exit zone, bottom-right corner — no visible button ————— */
 .bento-exit-zone {
   position: fixed;

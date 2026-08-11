@@ -151,7 +151,7 @@ export interface TextElement extends ElementBase {
    */
   placeholder?: string
   /**
-   * Dynamic table of contents — when true, `html` is ignored entirely at
+   * Dynamic table of contents — when truthy, `html` is ignored entirely at
    * render time (editor preview AND present mode): the content is instead
    * computed fresh from the CURRENT doc.slides every time, one entry per
    * slide that has a discoverable title (Slide.name if set, else the
@@ -160,8 +160,20 @@ export interface TextElement extends ElementBase {
    * that slide, same [data-link] convention as an authored element link.
    * Stays current automatically as slides are added/renamed/reordered/
    * removed — never needs manual regeneration.
+   *
+   * `toc: 0` specifically marks the slide this element sits on as a
+   * hidden "before slide 1" table-of-contents page: automatically
+   * excluded from normal Next/Prev stepping and the slide count (same
+   * treatment Slide.hidden already gets — no need to ALSO set that
+   * separately), but reachable two ways present.ts wires up on its own:
+   * pressing Prev/swiping right while already on the first normal slide
+   * (rather than being a no-op there, as it otherwise would be), and a
+   * small always-present hotspot at the top-center of every other slide.
+   * Any other number (or `true`) behaves exactly like the plain boolean
+   * always did — a completely normal slide in the linear flow that just
+   * happens to hold a table of contents.
    */
-  toc?: boolean
+  toc?: boolean | number
   /**
    * Turns this text element into a single clickable link chip targeting
    * one specific anchored heading (see LongReadBlock.anchored) — freely

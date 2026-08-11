@@ -71,7 +71,13 @@ export function startPresentation(
   // slide already was. Both share the same "don't stop here while walking
   // through the deck" treatment below.
   const isState = (i: number) => !!doc.slides[i]?.stateOf
-  const isSkipped = (i: number) => isState(i) || !!doc.slides[i]?.hidden
+  // A toc:0 element automatically hides ITS OWN slide from normal linear
+  // flow (see model.ts's own doc comment on TextElement.toc) — no need to
+  // ALSO set Slide.hidden by hand, it's implied purely by holding one of
+  // these.
+  const hasHiddenToc = (i: number) => !!doc.slides[i]?.elements.some((e) => e.type === 'text' && e.toc === 0)
+  const isSkipped = (i: number) => isState(i) || !!doc.slides[i]?.hidden || hasHiddenToc(i)
+  const hiddenTocIndex = doc.slides.findIndex((_, i) => hasHiddenToc(i))
   const anchorOf = (i: number) => {
     const pid = doc.slides[i]?.stateOf
     const p = doc.slides.findIndex((s) => s.id === pid)
@@ -89,6 +95,7 @@ export function startPresentation(
     for (let i = cur - 1; i >= 0; i--) {
       if (!isSkipped(i)) return deck.slide(i, 0)
     }
+    if (hiddenTocIndex >= 0 && hiddenTocIndex !== cur) deck.slide(hiddenTocIndex, 0)
   }
   const hasNext = () => {
     const cur = deck.getIndices().h
@@ -103,7 +110,7 @@ export function startPresentation(
     for (let i = cur - 1; i >= 0; i--) {
       if (!isSkipped(i)) return true
     }
-    return false
+    return hiddenTocIndex >= 0 && hiddenTocIndex !== cur
   }
   const visibleIndex = (i: number) => doc.slides.slice(0, i + 1).filter((_, j) => !isSkipped(j)).length
   const visibleTotal = doc.slides.filter((_, i) => !isSkipped(i)).length
@@ -1563,6 +1570,18 @@ export function startPresentation(
   chevronHint.addEventListener('click', () => openLongRead(deck.getIndices().h))
   overlay.appendChild(chevronHint)
 
+  // Invisible hotspot, top-center of every slide but the hidden toc:0
+  // page itself — the second of the two ways there (besides Prev/swipe-
+  // right at the very start of the deck, see goPrev's own fallback
+  // above). No visual styling at all per feedback that this is enough
+  // for now — a swipe-up gesture may follow later.
+  const tocHotspot = document.createElement('button')
+  tocHotspot.className = 'bento-toc-hotspot'
+  tocHotspot.setAttribute('aria-label', 'Inhaltsverzeichnis')
+  tocHotspot.hidden = true
+  tocHotspot.addEventListener('click', () => { if (hiddenTocIndex >= 0) deck.slide(hiddenTocIndex, 0) })
+  overlay.appendChild(tocHotspot)
+
   function updateLongReadHint(idx: number) {
     const lr = doc.slides[idx]?.longRead
     const has = !!lr?.blocks.length
@@ -1575,6 +1594,10 @@ export function startPresentation(
       chevronHint.classList.remove('bento-longread-hint-labeled')
       chevronHint.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 15l-6-6-6 6"/></svg>'
     }
+    // Piggybacks on this same function — called at every relevant slide-
+    // change site already, simplest way to keep this in sync too without
+    // touching each of those call sites individually.
+    tocHotspot.hidden = hiddenTocIndex < 0 || idx === hiddenTocIndex
   }
 
   /** Parses `<<Referenz:Wort|Erklärung>>` and `<<Link:Text|URL>>` markers

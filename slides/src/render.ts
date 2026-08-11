@@ -599,7 +599,7 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
         node.dataset.link = el.anchorLink.slideId
         node.dataset.linkAnchor = el.anchorLink.blockId
       } else {
-        inner.innerHTML = el.toc ? renderTocHtml(doc) : resolveMath(sanitizeHtml(resolveFields(el.html, opts.fields)))
+        inner.innerHTML = (el.toc || el.toc === 0) ? renderTocHtml(doc) : resolveMath(sanitizeHtml(resolveFields(el.html, opts.fields)))
       }
       // layout placeholder: prompt while empty (editor), gone while presenting
       const isEmpty = !inner.textContent?.trim() && !el.html.includes('<img')

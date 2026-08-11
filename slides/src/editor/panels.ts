@@ -328,6 +328,22 @@ export class PropsPanel {
     })
     this.host.appendChild(tocBtn)
 
+    const tocHiddenBtn = document.createElement('button')
+    tocHiddenBtn.className = 'ed-btn ed-btn-block'
+    tocHiddenBtn.textContent = t('Verstecktes Inhaltsverzeichnis einfügen (vor Folie 1)')
+    tocHiddenBtn.title = t('Wie oben, aber diese Folie wird dabei automatisch aus dem normalen Weiter/Zurück-Durchlauf ausgeblendet — erreichbar nur über Zurück direkt an Folie 1, oder den unsichtbaren Knopf oben in der Mitte jeder anderen Folie.')
+    tocHiddenBtn.addEventListener('click', () => {
+      this.edit(() => {
+        this.store.slide.elements.push(defaultText({
+          x: 300, y: 160, w: 680, h: 400,
+          fontSize: 26, align: 'left', valign: 'top', lineHeight: 1.7,
+          toc: 0, html: '', placeholder: t('Inhaltsverzeichnis (noch keine benannten Folien)'),
+        }))
+      }, true)
+      this.rebuild(true)
+    })
+    this.host.appendChild(tocHiddenBtn)
+
     const citeBtn = document.createElement('button')
     citeBtn.className = 'ed-btn ed-btn-block'
     citeBtn.textContent = t('Quellenverzeichnis aktualisieren')
