@@ -2036,6 +2036,7 @@ export class Editor {
     item('Video or audio file…', () => this.pickMedia())
     item('Video from a link…', () => this.promptMediaUrl('video'))
     item('Audio from a link…', () => this.promptMediaUrl('audio'))
+    item('Camera (live, in present mode)…', () => this.insertCamera())
     wrap.append(trigger, menu)
     document.addEventListener('pointerdown', (ev) => {
       if (!wrap.contains(ev.target as Node)) wrap.classList.remove('open')
@@ -2076,6 +2077,16 @@ export class Editor {
   }
 
   /** Insert a media element, sizing video to its intrinsic aspect when known. */
+  /** Camera elements have no src at all — the actual stream is requested
+   *  fresh in present mode (present.ts), never in the editor canvas, which
+   *  has no reason to prompt for camera permission on every edit session. */
+  private insertCamera() {
+    const { width: dw, height: dh } = this.store.doc.size
+    const w = Math.min(dw * 0.4, 480)
+    const h = w * 9 / 16
+    this.canvas.insert(defaultMedia('camera', '', { w: Math.round(w), h: Math.round(h), x: (dw - w) / 2, y: (dh - h) / 2, muted: true }))
+  }
+
   private insertMedia(kind: 'video' | 'audio', src: string) {
     const { width: dw, height: dh } = this.store.doc.size
     if (kind === 'audio' || !src) {

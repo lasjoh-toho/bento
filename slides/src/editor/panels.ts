@@ -903,7 +903,7 @@ export class PropsPanel {
     if (el.type === 'svg') return t('Diagramm')
     if (el.type === 'chart') return t('Chart')
     if (el.type === 'table') return t('Tabelle')
-    if (el.type === 'media') return el.kind === 'audio' ? t('Audio') : t('Video')
+    if (el.type === 'media') return el.kind === 'audio' ? t('Audio') : el.kind === 'camera' ? t('Kamera') : t('Video')
     return ''
   }
 
@@ -923,7 +923,7 @@ export class PropsPanel {
   }
 
   private buildElementPanel(el: SlideElement) {
-    this.section(t({ text: 'Text', shape: 'Shape', image: 'Image', svg: 'Diagram', chart: 'Chart', table: 'Table', media: el.type === 'media' && el.kind === 'audio' ? 'Audio' : 'Video' }[el.type]))
+    this.section(t({ text: 'Text', shape: 'Shape', image: 'Image', svg: 'Diagram', chart: 'Chart', table: 'Table', media: el.type === 'media' && el.kind === 'audio' ? 'Audio' : el.type === 'media' && el.kind === 'camera' ? 'Kamera' : 'Video' }[el.type]))
     this.opsRow([el])
 
     // Lead with the element's OWN controls — the reason it was selected —
@@ -2470,6 +2470,23 @@ export class PropsPanel {
   }
 
   private buildMediaProps(el: MediaElement) {
+    if (el.kind === 'camera') {
+      this.section(t('Camera'))
+      const note = document.createElement('p')
+      note.className = 'ed-hint'
+      note.textContent = t('Live camera feed, requested only while presenting — nothing to upload or link.')
+      this.host.appendChild(note)
+      this.row('Facing', this.select(['user', 'environment'], el.facing ?? 'user', (v) =>
+        this.mutate(el.id, (e) => { (e as MediaElement).facing = v as MediaElement['facing'] }, true)))
+      this.row('Fit', this.select(['contain', 'cover', 'fill'], el.fit ?? 'cover', (v) =>
+        this.mutate(el.id, (e) => { (e as MediaElement).fit = v as MediaElement['fit'] }, true)))
+      const toggle = (label: string, on: boolean, set: (v: boolean) => void) =>
+        this.row(label, this.select(['off', 'on'], on ? 'on' : 'off', (v) => set(v === 'on')))
+      toggle('Muted', el.muted !== false, (v) => this.mutate(el.id, (e) => { (e as MediaElement).muted = v || undefined }, true))
+      this.row('Corner radius', this.number(el.radius ?? 0, 1, (v, fin) =>
+        this.mutate(el.id, (e) => { (e as MediaElement).radius = Math.max(v, 0) }, fin)))
+      return
+    }
     this.section(t('Source & playback'))
 
     // source status: embedded (with size) / linked / none

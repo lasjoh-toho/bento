@@ -681,21 +681,64 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
         // thumbnails: a cheap still — poster (video) or an icon chip, never a
         // live media element.
         const still = document.createElement('div')
-        still.style.cssText = `width:100%;height:100%;border-radius:${radius}px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:${el.kind === 'video' ? '#0b0f14' : '#e7edf4'}`
+        still.style.cssText = `width:100%;height:100%;border-radius:${radius}px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:${el.kind === 'video' || el.kind === 'camera' ? '#0b0f14' : '#e7edf4'}`
         if (el.kind === 'video' && el.poster) {
           const img = document.createElement('img')
           img.src = resolveAsset(doc, el.poster)
           img.style.cssText = `width:100%;height:100%;object-fit:${el.fit ?? 'contain'};display:block`
           still.appendChild(img)
         } else {
-          still.style.color = el.kind === 'video' ? '#ffffff' : '#5e7699'
+          still.style.color = el.kind === 'video' || el.kind === 'camera' ? '#ffffff' : '#5e7699'
           still.style.fontSize = '24px'
-          still.textContent = el.kind === 'video' ? '▶' : '♪'
+          still.textContent = el.kind === 'video' ? '\u25b6' : el.kind === 'camera' ? '\u25c9' : '\u266a'
         }
         node.appendChild(still)
         break
       }
       const inert = opts.liveMedia ? '' : ';pointer-events:none'
+      if (el.kind === 'camera') {
+        if (!opts.liveMedia) {
+          // Editor canvas — no reason to prompt for camera permission on
+          // every edit-session page load. Actual stream request happens
+          // only in present mode, right below.
+          const ph = document.createElement('div')
+          ph.style.cssText = `width:100%;height:100%;border-radius:${radius}px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:#0b0f14;color:#8fa0b6;font-size:13px`
+          ph.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>'
+          const label = document.createElement('span')
+          label.textContent = 'Kamera (live in der Präsentation)'
+          ph.appendChild(label)
+          node.appendChild(ph)
+          break
+        }
+        const camVideo = document.createElement('video')
+        camVideo.autoplay = true
+        camVideo.muted = el.muted !== false
+        camVideo.playsInline = true
+        camVideo.style.cssText = `width:100%;height:100%;object-fit:${el.fit ?? 'cover'};border-radius:${radius}px;display:block;background:#0b0f14` + (el.facing === 'environment' ? '' : ';transform:scaleX(-1)') + inert
+        node.appendChild(camVideo)
+        const facingMode = el.facing ?? 'user'
+        navigator.mediaDevices?.getUserMedia?.({ video: { facingMode } })
+          .then((stream) => {
+            camVideo.srcObject = stream
+            // Stopped when this specific <video> node leaves the document
+            // (slide navigated away, deck torn down) — never left running
+            // in the background once its element is gone.
+            const stopWhenGone = new MutationObserver(() => {
+              if (!document.contains(camVideo)) {
+                stream.getTracks().forEach((tr) => tr.stop())
+                stopWhenGone.disconnect()
+              }
+            })
+            stopWhenGone.observe(document.body, { childList: true, subtree: true })
+          })
+          .catch(() => {
+            camVideo.replaceWith(Object.assign(document.createElement('div'), {
+              style: `width:100%;height:100%;border-radius:${radius}px;display:flex;align-items:center;justify-content:center;background:#0b0f14;color:#8fa0b6;font-size:13px;text-align:center;padding:12px`,
+              textContent: 'Kein Kamerazugriff',
+            }))
+          })
+        break
+      }
       if (el.kind === 'audio') {
         // Render the browser's native <audio controls> AS-IS: it's already a
         // self-contained pill with its own surface. We add nothing behind it

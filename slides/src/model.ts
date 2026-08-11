@@ -373,7 +373,14 @@ export interface TableElement extends ElementBase {
  */
 export interface MediaElement extends ElementBase {
   type: 'media'
-  kind: 'video' | 'audio'
+  /** 'camera' is a LIVE getUserMedia() stream, not a stored file — no
+   *  `src` at all, requested fresh in present mode only (never in the
+   *  editor canvas, which shows a placeholder instead — no reason to
+   *  prompt for camera access on every edit-session page load). Free
+   *  positioning/resizing/rotation and cross-slide morphing come for
+   *  free from the same shared element-transform system every other
+   *  element type already uses — nothing camera-specific needed there. */
+  kind: 'video' | 'audio' | 'camera'
   src: string
   /** video only: a still shown before playback (data:/asset:/URL) */
   poster?: string
@@ -384,6 +391,10 @@ export interface MediaElement extends ElementBase {
   loop?: boolean
   muted?: boolean
   controls?: boolean
+  /** camera only: which physical camera to prefer, when the device has
+   *  more than one — 'user' (front/selfie) or 'environment' (rear).
+   *  Omitted lets the browser pick its own default. */
+  facing?: 'user' | 'environment'
 }
 
 export type SlideElement =
@@ -990,7 +1001,7 @@ export const MEDIA_EMBED_BUDGET = 8 * 1024 * 1024 // 8 MB
 export const PREVIEW_BUDGET = 64 * 1024 // 64 KB
 
 export function defaultMedia(
-  kind: 'video' | 'audio',
+  kind: 'video' | 'audio' | 'camera',
   src: string,
   partial: Partial<MediaElement> = {},
 ): MediaElement {
@@ -1005,7 +1016,7 @@ export function defaultMedia(
     src,
     fit: 'contain',
     radius: audio ? 12 : 8,
-    controls: true,
+    controls: kind !== 'camera',
     // video defaults muted so present-mode autoplay is permitted by browsers
     muted: !audio,
     loop: false,
