@@ -699,7 +699,7 @@ export class SlideCanvas {
     if (this.imageCropEditor?.active) { this.imageCropEditor.cancel(); this.syncTargets() } // ditto
     if (this.imageMaskEditor?.active) { this.imageMaskEditor.cancel(); this.syncTargets() } // ditto
     const slide = this.store.slide
-    const next = renderSlide(slide, this.store.doc)
+    const next = renderSlide(slide, this.store.doc, { liveCamera: true })
     // hover-reveal slides: preview one set at a time; hidden sets are
     // display:none so they don't block selection
     const sets = [...new Set(slide.elements.map((e) => e.showOnHover).filter(Boolean))] as string[]

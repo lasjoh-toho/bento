@@ -10,6 +10,43 @@ import temml from 'temml'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
+/**
+ * Camera streams, shared across every <video>/<canvas> that wants a given
+ * facing mode — keyed by facingMode ('user'/'environment'). Exists purely
+ * because the editor canvas tears down and rebuilds its ENTIRE slide
+ * surface on every single edit (canvas.ts's own render() calls
+ * surface.replaceWith(next) unconditionally, no per-element diffing at
+ * all) — without a cache, making the camera live in the editor too would
+ * mean re-requesting getUserMedia() and restarting the physical camera on
+ * every click, moved element, or keystroke elsewhere on the slide.
+ * Multiple <video> elements can share the exact same MediaStream object
+ * as their srcObject simultaneously, so reuse here is just "look it up,
+ * don't request a fresh one" — no cloning needed. Cleared explicitly by
+ * present.ts on exiting present mode (stopAllCameraStreams); the editor
+ * itself never needs to, since navigating away from the page releases
+ * everything through the browser's own teardown regardless.
+ */
+const cameraStreamCache = new Map<string, MediaStream>()
+
+function getOrCreateCameraStream(facingMode: string): Promise<MediaStream> {
+  const cached = cameraStreamCache.get(facingMode)
+  if (cached && cached.getVideoTracks().some((t) => t.readyState === 'live')) return Promise.resolve(cached)
+  return navigator.mediaDevices.getUserMedia({ video: { facingMode } }).then((stream) => {
+    cameraStreamCache.set(facingMode, stream)
+    return stream
+  })
+}
+
+/** Stops every cached camera stream outright — called when leaving present
+ *  mode, so a camera used while presenting doesn't keep running (and the
+ *  device's own camera-in-use indicator lit) indefinitely afterward. Not
+ *  called from the editor side; see cameraStreamCache's own doc comment
+ *  for why that's fine. */
+export function stopAllCameraStreams() {
+  for (const stream of cameraStreamCache.values()) stream.getTracks().forEach((tr) => tr.stop())
+  cameraStreamCache.clear()
+}
+
 export interface RenderOpts {
   /** render svg elements as <img> (cheap DOM) — used by thumbnails */
   svgAsImage?: boolean
@@ -18,6 +55,12 @@ export interface RenderOpts {
   /** media (video/audio) accepts pointer input — PRESENT only. On the editor
    *  canvas it stays inert so its native controls don't swallow selection. */
   liveMedia?: boolean
+  /** camera elements show their actual live stream — separate from
+   *  liveMedia (which only ever governs video/audio's pointer-
+   *  interactivity): a camera element never has native controls to
+   *  swallow clicks, so it can safely go live in the EDITOR canvas too,
+   *  without also making video/audio interactive there. */
+  liveCamera?: boolean
   /** dynamic-field values ({{page}} etc.) for this slide; auto-filled by renderSlide */
   fields?: FieldContext
 }
@@ -725,15 +768,15 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
       const inert = opts.liveMedia ? '' : ';pointer-events:none'
       if (el.kind === 'camera') {
         const clipPath = el.maskShape === 'circle' ? 'circle(50% at 50% 50%)' : ''
-        if (!opts.liveMedia) {
-          // Editor canvas — no reason to prompt for camera permission on
-          // every edit-session page load. Actual stream request happens
-          // only in present mode, right below.
+        if (!opts.liveCamera) {
+          // Neither editor nor present mode asked for a live stream here
+          // (e.g. thumbnails, print/PDF export) — a plain placeholder,
+          // no permission prompt.
           const ph = document.createElement('div')
           ph.style.cssText = `width:100%;height:100%;border-radius:${radius}px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:#0b0f14;color:#8fa0b6;font-size:13px` + (clipPath ? `;clip-path:${clipPath}` : '')
           ph.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>'
           const label = document.createElement('span')
-          label.textContent = el.chromaKeyEnabled ? 'Kamera mit Greenscreen (live in der Präsentation)' : 'Kamera (live in der Präsentation)'
+          label.textContent = el.chromaKeyEnabled ? 'Kamera mit Greenscreen' : 'Kamera'
           ph.appendChild(label)
           node.appendChild(ph)
           break
@@ -753,28 +796,30 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
         // needs an attached element) but visually replaced by that canvas.
         camVideo.style.cssText = useMask
           ? 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none'
-          : `width:100%;height:100%;object-fit:${el.fit ?? 'cover'};border-radius:${radius}px;display:block;background:#0b0f14;transform:${frameTransform}` + (clipPath ? `;clip-path:${clipPath}` : '') + inert
+          : `width:100%;height:100%;object-fit:${el.fit ?? 'cover'};border-radius:${radius}px;display:block;background:#0b0f14;transform:${frameTransform};pointer-events:none` + (clipPath ? `;clip-path:${clipPath}` : '')
         node.appendChild(camVideo)
         let maskCanvas: HTMLCanvasElement | null = null
         if (useMask) {
           maskCanvas = document.createElement('canvas')
-          maskCanvas.style.cssText = `width:100%;height:100%;object-fit:${el.fit ?? 'cover'};border-radius:${radius}px;display:block;transform:${frameTransform}` + (clipPath ? `;clip-path:${clipPath}` : '') + inert
+          maskCanvas.style.cssText = `width:100%;height:100%;object-fit:${el.fit ?? 'cover'};border-radius:${radius}px;display:block;transform:${frameTransform};pointer-events:none` + (clipPath ? `;clip-path:${clipPath}` : '')
           node.appendChild(maskCanvas)
         }
         const facingMode = el.facing ?? 'user'
-        navigator.mediaDevices?.getUserMedia?.({ video: { facingMode } })
+        getOrCreateCameraStream(facingMode)
           .then((stream) => {
             camVideo.srcObject = stream
             let rafId = 0
             if (maskCanvas && doc.cameraCalibration) {
               rafId = startCameraMaskLoop(camVideo, maskCanvas, resolveAsset(doc, doc.cameraCalibration.mask))
             }
-            // Stopped when this specific <video> node leaves the document
-            // (slide navigated away, deck torn down) — never left running
-            // in the background once its element is gone.
+            // Only the per-frame mask-compositing loop (if any) stops here
+            // when this specific <video> node leaves the document — the
+            // STREAM itself is shared/cached (see cameraStreamCache) and
+            // stays alive for whatever re-render creates the next <video>
+            // that wants it, rather than restarting the physical camera
+            // on every edit.
             const stopWhenGone = new MutationObserver(() => {
               if (!document.contains(camVideo)) {
-                stream.getTracks().forEach((tr) => tr.stop())
                 if (rafId) cancelAnimationFrame(rafId)
                 stopWhenGone.disconnect()
               }

@@ -10,7 +10,7 @@ import { anim, resetXform } from './anim'
 import { chartSnapshotSvg, mountChart } from './charts'
 import type { BentoDoc, DragTerm, GradientFill, PresentInkStroke, ShapeElement, Slide, SlideElement } from './model'
 import { morphKey, uid } from './model'
-import { applyElementFrame, gradientLineCoords, renderSlide } from './render'
+import { applyElementFrame, gradientLineCoords, renderSlide, stopAllCameraStreams } from './render'
 import { paintSpeaker, setSpeakerWindow, speakerIdleBody, speakerWindow } from './screens'
 import { t } from './i18n'
 import { lsGet, lsSet } from '../../kernel/src/storage.ts'
@@ -47,7 +47,7 @@ export function startPresentation(
     // Morph slides swap instantly; the Flip animation supplies the motion.
     section.dataset.transition = slide.transition === 'morph' ? 'none' : slide.transition
     if (slide.stateOf) section.dataset.bentoState = '1' // dimmed in overview
-    const surface = renderSlide(slide, doc, { hidePlaceholders: true, liveMedia: true })
+    const surface = renderSlide(slide, doc, { hidePlaceholders: true, liveMedia: true, liveCamera: true })
     // reveal slides start with only the default hover set visible
     if (slide.hover?.type === 'reveal') applyRevealSet(surface, slide.hover.default ?? null, slide.hover.default)
     section.appendChild(surface)
@@ -1298,6 +1298,7 @@ export function startPresentation(
     // show if the deck was edited in between — never carry them across
     symCache.clear()
     pauseMediaIn(slidesEl) // stop any playing clip before teardown
+    stopAllCameraStreams()
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
     const last = deck.getIndices().h
     try {

@@ -2575,6 +2575,26 @@ export class PropsPanel {
     this.host.appendChild(removeBtn)
   }
 
+  /** Creates a full copy of a camera element on another slide, keeping
+   *  every setting (facing, fit, zoom/pan, maskShape, chromaKeyEnabled,
+   *  size/position) but with a FRESH id — morphId is set to point at the
+   *  SOURCE element's own id instead, which is enough on its own for
+   *  morphKey to match them (morphKey falls back to el.id when morphId is
+   *  unset, so the untouched source's own key already IS its id). Doesn't
+   *  copy doc.cameraCalibration by reference or value at all — it's
+   *  already shared at the document level, so the copy automatically
+   *  uses the exact same one the moment chromaKeyEnabled is on. */
+  private copyCameraToSlide(source: MediaElement, targetSlideId: string) {
+    const target = this.store.doc.slides.find((s) => s.id === targetSlideId)
+    if (!target) return
+    if (target.elements.some((e) => morphKey(e) === source.id)) {
+      window.alert(t('Auf dieser Folie existiert bereits ein Element mit derselben Morph-Kennung.'))
+      return
+    }
+    const copy: MediaElement = { ...source, id: uid('m'), morphId: source.id }
+    this.edit(() => { target.elements.push(copy) }, true)
+  }
+
   private buildMediaProps(el: MediaElement) {
     if (el.kind === 'camera') {
       this.section(t('Camera'))
@@ -2602,6 +2622,40 @@ export class PropsPanel {
           this.mutate(el.id, (e) => { (e as MediaElement).panX = Math.max(-0.5, Math.min(0.5, v)) }, fin)))
         this.row(t('Verschieben Y'), this.number(el.panY ?? 0, 0.02, (v, fin) =>
           this.mutate(el.id, (e) => { (e as MediaElement).panY = Math.max(-0.5, Math.min(0.5, v)) }, fin)))
+      }
+
+      this.section(t('Auf andere Folie kopieren'))
+      const copyHint = document.createElement('p')
+      copyHint.className = 'ed-hint'
+      copyHint.textContent = t('Legt eine Kopie mit denselben Einstellungen auf der Zielfolie an, verbunden über eine Morph-Kennung mit dieser Kamera — dieselbe Kalibrierung gilt dort automatisch mit, und die Kamera kann beim Folienwechsel nahtlos an ihre neue Position/Größe wandern statt neu zu erscheinen.')
+      this.host.appendChild(copyHint)
+      const otherSlides = this.store.doc.slides
+        .map((s, i) => ({ id: s.id, label: `${t('Folie')} ${i + 1}${s.name ? ' — ' + s.name : ''}` }))
+        .filter((s) => s.id !== this.store.slide.id)
+      if (otherSlides.length) {
+        const copySel = document.createElement('select')
+        const placeholder = document.createElement('option')
+        placeholder.value = ''
+        placeholder.textContent = t('Zielfolie wählen…')
+        copySel.appendChild(placeholder)
+        for (const s of otherSlides) {
+          const o = document.createElement('option')
+          o.value = s.id
+          o.textContent = s.label
+          copySel.appendChild(o)
+        }
+        copySel.addEventListener('change', () => {
+          const targetId = copySel.value
+          if (!targetId) return
+          this.copyCameraToSlide(el, targetId)
+          copySel.value = ''
+        })
+        this.host.appendChild(copySel)
+      } else {
+        const noneHint = document.createElement('p')
+        noneHint.className = 'ed-hint'
+        noneHint.textContent = t('Keine weitere Folie vorhanden.')
+        this.host.appendChild(noneHint)
       }
 
       this.section(t('Greenscreen'))
