@@ -443,24 +443,14 @@ export interface MediaElement extends ElementBase {
    *  more than one — 'user' (front/selfie) or 'environment' (rear).
    *  Omitted lets the browser pick its own default. */
   facing?: 'user' | 'environment'
-  /**
-   * camera only: turns on green/blue-screen removal for THIS element,
-   * using the ONE shared BentoDoc.cameraCalibration (see that field's own
-   * doc comment) — never a per-element color/tolerance. A presentation
-   * only has one physical camera+backdrop setup at a time, calibrated
-   * once right before recording; every camera element in the deck that
-   * turns this on shares that exact same removal, regardless of how each
-   * one is individually zoomed/positioned within its own box.
-   */
-  chromaKeyEnabled?: boolean
-  /** camera only: 1 = the raw calibrated frame shown as-is (same as
-   *  `fit` alone would give); higher zooms into the CENTER of that frame
+  /** camera only: 1 = the raw camera frame shown as-is (same as `fit`
+   *  alone would give); higher zooms into the CENTER of the live view
    *  before the box's own fit/crop applies — a simple way to reframe
-   *  without needing a full interactive crop tool, since the shared mask
-   *  itself must stay in the camera's own raw coordinate space (not
-   *  something each element could crop independently without breaking
-   *  alignment). Applied via CSS transform: scale(), cheap, no per-frame
-   *  cost of its own. */
+   *  without needing a full interactive crop tool. Applied via a
+   *  canvas source-rect crop (render.ts's cameraSourceRect), not a CSS
+   *  transform on the displayed element — that stays safely within the
+   *  canvas's own fixed pixel buffer regardless of zoom level, rather
+   *  than risking the scaled content visually overflowing its own box. */
   zoom?: number
   /** camera only: pans the zoomed view — fractions of the element's own
    *  box (-0.5..0.5 each), same convention as a percentage offset.
@@ -690,52 +680,6 @@ export interface BentoDoc {
   }
   /** shared assets (raw SVG markup or data URIs), referenced by key */
   assets?: Record<string, string>
-  /**
-   * ONE shared green/blue-screen calibration for the whole presentation —
-   * every camera element with `chromaKeyEnabled: true` (see MediaElement)
-   * uses this same removal, never a per-element one. A presentation only
-   * has one physical camera+backdrop setup at a time, and it needs
-   * recalibrating fresh right before each recording anyway (lighting
-   * changes, the backdrop gets bumped, etc.) — sharing it here means
-   * doing that once updates every camera element in the deck at once,
-   * rather than needing to redo it per element/per slide.
-   *
-   * Removal is DYNAMIC — computed fresh every frame from `color`/
-   * `similarity`/`smoothness`, not a fixed spatial mask. A static mask
-   * captured once from a snapshot fundamentally can't handle a person
-   * actually moving in front of the camera: parts of them constantly move
-   * into positions the snapshot recorded as "background" (now wrongly
-   * kept transparent, cutting into the subject) or the reverse (now
-   * wrongly kept opaque, leaving a background patch visible) — dynamic,
-   * per-pixel colour comparison against every live frame is the only way
-   * that keeps working as the subject moves.
-   *
-   * `touchUpMask` is an OPTIONAL supplementary correction for spots color
-   * comparison alone can't fix — a fixed prop or backdrop seam that
-   * happens to share a similar hue to the subject, say — multiplied
-   * (never replacing) into the dynamic result. Same authoring tools/
-   * storage format as a static image's own cutout mask (editor/
-   * imagemask.ts's ImageMaskEditor): "asset:<key>" or a data: URI.
-   *
-   * The calibration flow (editor/panels.ts's "Greenscreen kalibrieren")
-   * captures one frame, has the person click the backdrop directly to
-   * sample `color` (reads that one pixel — no mask-editor tool needed for
-   * this part), then optionally opens the mask editor on that same
-   * snapshot for eraser/box/ellipse touch-up only, saving whatever
-   * resulted into `touchUpMask`.
-   */
-  cameraCalibration?: {
-    color: string
-    /** 0-100 — how close a pixel's colour must be to `color` to be
-     *  removed. Higher = more colours count as "close enough" (more
-     *  aggressive removal, more risk of eating into the subject).
-     *  Defaults to 38 when unset. */
-    similarity?: number
-    /** 0-100 — width of the soft edge between "kept" and "removed"
-     *  pixels, avoiding a hard, aliased cutout edge. Defaults to 12. */
-    smoothness?: number
-    touchUpMask?: string
-  }
   /**
    * Live-collab blob references for LARGE assets (docs/blob-offload.md).
    *

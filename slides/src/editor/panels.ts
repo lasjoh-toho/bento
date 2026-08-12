@@ -7,7 +7,7 @@
 import type { Store } from '../store'
 import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultImage, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement } from '../measure'
 import { isMacOS } from '../screens'
@@ -124,19 +124,6 @@ export class PropsPanel {
   private cropElId: string | null = null
   /** Same idea as cropElId, for the "Freistellen…" (cutout/erase) mode. */
   private maskElId: string | null = null
-  /** Set alongside maskElId specifically when the element being mask-
-   *  edited is a THROWAWAY snapshot image created by the camera panel's
-   *  "Greenscreen kalibrieren" flow, not a real document image — holds
-   *  the CAMERA element's own id (to return to once done) and the colour
-   *  already sampled from the backdrop (via EyeDropper, BEFORE the mask
-   *  editor even opens — see startCameraCalibration). The Apply/Cancel
-   *  handlers, in addition to their normal behaviour, run
-   *  finishCameraCalibration: on Apply, combine this colour with
-   *  whatever touch-up mask resulted into the shared doc.
-   *  cameraCalibration; either way, remove the temporary snapshot
-   *  element and reselect the camera element the person actually
-   *  started from. */
-  private cameraCalibration: { cameraElId: string; color: string } | null = null
   private maskTool: 'wand' | 'eraser' | 'box' | 'ellipse' = 'eraser'
   private maskBrushSize = 40
   private maskTolerance = 2
@@ -239,122 +226,6 @@ export class PropsPanel {
     mutate()
     this.store.touch()
     if (final) this.burst = false
-  }
-
-  /** Runs right after the normal Apply/Cancel handling for whatever mask
-   *  edit was active — a no-op unless that edit was actually a camera
-   *  calibration snapshot (see cameraCalibration). On Apply, lifts the
-   *  snapshot's own just-committed mask into the shared doc.
-   *  cameraCalibration; either way, removes the throwaway snapshot
-   *  element and its asset, then reselects the camera element the
-   *  person actually started from. */
-  private finishCameraCalibration(applied: boolean) {
-    const cal = this.cameraCalibration
-    if (!cal || !this.maskElId) return
-    this.cameraCalibration = null
-    const snapshotId = this.maskElId
-    this.edit(() => {
-      const snapshot = this.store.element(snapshotId) as ImageElement | undefined
-      if (applied) {
-        const prev = this.store.doc.cameraCalibration
-        this.store.doc.cameraCalibration = {
-          color: cal.color,
-          similarity: prev?.similarity,
-          smoothness: prev?.smoothness,
-          touchUpMask: snapshot?.mask,
-        }
-      }
-      const idx = this.store.slide.elements.findIndex((e) => e.id === snapshotId)
-      if (idx >= 0) this.store.slide.elements.splice(idx, 1)
-    }, true)
-    this.store.select([cal.cameraElId])
-  }
-
-  /** Requests the camera just long enough to grab ONE frame, stops that
-   *  temporary stream immediately (this is a calibration snapshot, not a
-   *  live preview), then:
-   *  1. Samples the backdrop colour directly via the EyeDropper API
-   *     (click anywhere on screen, including the snapshot now showing as
-   *     a real element) — falls back to a hex-code prompt in browsers
-   *     without EyeDropper support (Firefox, Safari as of this writing).
-   *  2. Hands the snapshot to the SAME mask editor (canvas.startMask ->
-   *     imagemask.ts's ImageMaskEditor) a normal image's own
-   *     "Freistellen…" button uses, defaulting to the eraser tool — this
-   *     step is OPTIONAL touch-up only now (spot-correction for whatever
-   *     colour comparison alone can't fix), not how the colour itself
-   *     gets picked.
-   *  Apply/Cancel (buildImageProps' own existing handlers) then call
-   *  finishCameraCalibration to combine the sampled colour with whatever
-   *  touch-up mask resulted into doc.cameraCalibration, and clean up the
-   *  temporary snapshot element. */
-  private async startCameraCalibration(cameraElId: string) {
-    let stream: MediaStream
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: {} })
-    } catch {
-      window.alert(t('Kein Kamerazugriff — Kalibrieren nicht möglich.'))
-      return
-    }
-    const video = document.createElement('video')
-    video.srcObject = stream
-    video.muted = true
-    video.playsInline = true
-    await video.play().catch(() => {})
-    await new Promise((resolve) => {
-      if (video.videoWidth) resolve(null)
-      else video.addEventListener('loadedmetadata', () => resolve(null), { once: true })
-    })
-    const cap = document.createElement('canvas')
-    cap.width = video.videoWidth
-    cap.height = video.videoHeight
-    cap.getContext('2d')!.drawImage(video, 0, 0)
-    stream.getTracks().forEach((tr) => tr.stop())
-    const dataUrl = cap.toDataURL('image/png')
-
-    const snapshot = defaultImage(dataUrl, {
-      w: this.store.doc.size.width, h: this.store.doc.size.height, x: 0, y: 0,
-    })
-    this.edit(() => { this.store.slide.elements.push(snapshot) }, true)
-    this.store.select([snapshot.id])
-    this.rebuild(true)
-
-    const abortCalibration = () => {
-      this.edit(() => {
-        const idx = this.store.slide.elements.findIndex((e) => e.id === snapshot.id)
-        if (idx >= 0) this.store.slide.elements.splice(idx, 1)
-      }, true)
-      this.rebuild(true)
-    }
-
-    let sampledColor: string
-    const EyeDropperCtor = (window as unknown as { EyeDropper?: new () => { open(): Promise<{ sRGBHex: string }> } }).EyeDropper
-    if (EyeDropperCtor) {
-      try {
-        const result = await new EyeDropperCtor().open()
-        sampledColor = result.sRGBHex
-      } catch {
-        abortCalibration() // person pressed Escape / cancelled the picker
-        return
-      }
-    } else {
-      const input = window.prompt(
-        t('Dieser Browser unterstützt kein direktes Farbabtupfen. Hex-Code der Hintergrundfarbe eingeben (z. B. #00b140):'),
-        '#00b140',
-      )?.trim()
-      if (!input) { abortCalibration(); return }
-      sampledColor = input
-    }
-
-    this.cameraCalibration = { cameraElId, color: sampledColor }
-    this.maskElId = snapshot.id
-    this.maskTool = 'eraser'
-    this.canvas.setMaskTool('eraser')
-    this.canvas.setMaskBrushSize(this.maskBrushSize)
-    this.canvas.setMaskTolerance(this.maskTolerance)
-    this.canvas.setMaskFeather(this.maskFeather)
-    this.canvas.setMaskExpand(this.maskExpand)
-    this.canvas.startMask(snapshot.id).then(() => this.rebuild(true))
-    this.rebuild(true)
   }
 
   rebuild(force = false) {
@@ -2466,13 +2337,11 @@ export class PropsPanel {
       this.host.appendChild(actions)
       actions.querySelector('.ed-mask-cancel')!.addEventListener('click', () => {
         this.canvas.cancelMask()
-        this.finishCameraCalibration(false)
         this.maskElId = null
         this.rebuild(true)
       })
       actions.querySelector('.ed-mask-apply')!.addEventListener('click', () => {
         this.canvas.commitMask()
-        this.finishCameraCalibration(true)
         this.maskElId = null
         this.rebuild(true)
       })
@@ -2621,14 +2490,11 @@ export class PropsPanel {
   }
 
   /** Creates a full copy of a camera element on another slide, keeping
-   *  every setting (facing, fit, zoom/pan, maskShape, chromaKeyEnabled,
-   *  size/position) but with a FRESH id — morphId is set to point at the
-   *  SOURCE element's own id instead, which is enough on its own for
-   *  morphKey to match them (morphKey falls back to el.id when morphId is
-   *  unset, so the untouched source's own key already IS its id). Doesn't
-   *  copy doc.cameraCalibration by reference or value at all — it's
-   *  already shared at the document level, so the copy automatically
-   *  uses the exact same one the moment chromaKeyEnabled is on. */
+   *  every setting (facing, fit, zoom/pan, maskShape, size/position) but
+   *  with a FRESH id — morphId is set to point at the SOURCE element's
+   *  own id instead, which is enough on its own for morphKey to match
+   *  them (morphKey falls back to el.id when morphId is unset, so the
+   *  untouched source's own key already IS its id). */
   private copyCameraToSlide(source: MediaElement, targetSlideId: string) {
     const target = this.store.doc.slides.find((s) => s.id === targetSlideId)
     if (!target) return
@@ -2672,7 +2538,7 @@ export class PropsPanel {
       this.section(t('Auf andere Folie kopieren'))
       const copyHint = document.createElement('p')
       copyHint.className = 'ed-hint'
-      copyHint.textContent = t('Legt eine Kopie mit denselben Einstellungen auf der Zielfolie an, verbunden über eine Morph-Kennung mit dieser Kamera — dieselbe Kalibrierung gilt dort automatisch mit, und die Kamera kann beim Folienwechsel nahtlos an ihre neue Position/Größe wandern statt neu zu erscheinen.')
+      copyHint.textContent = t('Legt eine Kopie mit denselben Einstellungen auf der Zielfolie an, verbunden über eine Morph-Kennung mit dieser Kamera — sie kann beim Folienwechsel nahtlos an ihre neue Position/Größe wandern statt neu zu erscheinen.')
       this.host.appendChild(copyHint)
       const otherSlides = this.store.doc.slides
         .map((s, i) => ({ id: s.id, label: `${t('Folie')} ${i + 1}${s.name ? ' — ' + s.name : ''}` }))
@@ -2703,35 +2569,6 @@ export class PropsPanel {
         this.host.appendChild(noneHint)
       }
 
-      this.section(t('Greenscreen'))
-      const hasCalibration = !!this.store.doc.cameraCalibration
-      toggle('Aktiv', !!el.chromaKeyEnabled, (v) => this.mutate(el.id, (e) => { (e as MediaElement).chromaKeyEnabled = v || undefined }, true))
-      const calHint = document.createElement('p')
-      calHint.className = 'ed-hint'
-      calHint.textContent = hasCalibration
-        ? t('Eine Kalibrierung ist hinterlegt und gilt für alle Kamera-Elemente mit aktiviertem Greenscreen im ganzen Deck. Vor jeder Aufnahme neu kalibrieren, falls sich Licht oder Hintergrund verändert haben.')
-        : t('Noch keine Kalibrierung hinterlegt — „Aktiv“ zeigt bis dahin das unbearbeitete Kamerabild.')
-      this.host.appendChild(calHint)
-      const calBtn = document.createElement('button')
-      calBtn.className = 'ed-btn ed-btn-block'
-      calBtn.textContent = hasCalibration ? t('Greenscreen neu kalibrieren…') : t('Greenscreen kalibrieren…')
-      calBtn.addEventListener('click', () => this.startCameraCalibration(el.id))
-      this.host.appendChild(calBtn)
-      if (hasCalibration) {
-        const cal = this.store.doc.cameraCalibration!
-        this.row(t('Farbtoleranz'), this.number(cal.similarity ?? 38, 2, (v, fin) =>
-          this.edit(() => { this.store.doc.cameraCalibration!.similarity = Math.max(0, Math.min(100, v)) }, fin)))
-        this.row(t('Weiche Kante'), this.number(cal.smoothness ?? 12, 1, (v, fin) =>
-          this.edit(() => { this.store.doc.cameraCalibration!.smoothness = Math.max(1, Math.min(100, v)) }, fin)))
-        const clearCalBtn = document.createElement('button')
-        clearCalBtn.className = 'ed-btn ed-btn-block ed-btn-danger'
-        clearCalBtn.textContent = t('Kalibrierung entfernen')
-        clearCalBtn.addEventListener('click', () => {
-          this.edit(() => { delete this.store.doc.cameraCalibration }, true)
-          this.rebuild(true)
-        })
-        this.host.appendChild(clearCalBtn)
-      }
       return
     }
     this.section(t('Source & playback'))

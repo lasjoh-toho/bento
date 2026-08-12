@@ -786,7 +786,7 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
           ph.style.cssText = `width:100%;height:100%;border-radius:${radius}px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:#0b0f14;color:#8fa0b6;font-size:13px` + (clipPath ? `;clip-path:${clipPath}` : '')
           ph.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>'
           const label = document.createElement('span')
-          label.textContent = el.chromaKeyEnabled ? 'Kamera mit Greenscreen' : 'Kamera'
+          label.textContent = 'Kamera'
           ph.appendChild(label)
           node.appendChild(ph)
           break
@@ -813,9 +813,7 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
         getOrCreateCameraStream(facingMode)
           .then((stream) => {
             camVideo.srcObject = stream
-            const chromaKey = el.chromaKeyEnabled ? doc.cameraCalibration : undefined
-            const chroma = chromaKey ? { ...chromaKey, touchUpMaskUrl: chromaKey.touchUpMask ? resolveAsset(doc, chromaKey.touchUpMask) : undefined } : undefined
-            startCameraCanvasLoop(camVideo, camCanvas, { mirror, zoom, panX, panY, fit: el.fit ?? 'cover', chroma })
+            startCameraCanvasLoop(camVideo, camCanvas, { mirror, zoom, panX, panY, fit: el.fit ?? 'cover' })
           })
           .catch(() => {
             camVideo.replaceWith(Object.assign(document.createElement('div'), {
@@ -943,7 +941,6 @@ interface CameraLoopOpts {
   panX: number
   panY: number
   fit: 'contain' | 'cover' | 'fill'
-  chroma?: { color: string; similarity?: number; smoothness?: number; touchUpMaskUrl?: string }
 }
 
 /** Which rectangle of the SOURCE video to read from, for a given fit mode
@@ -979,69 +976,50 @@ function cameraSourceRect(videoW: number, videoH: number, canvasW: number, canva
   return { sx, sy, sw, sh }
 }
 
-function hexToRgb(hex: string): [number, number, number] {
-  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim())
-  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [0, 177, 64]
-}
-
-/** Per-pixel colour-distance removal, run fresh on every frame — see
- *  BentoDoc.cameraCalibration's own doc comment for why this has to be
- *  dynamic rather than a fixed spatial mask (a moving subject constantly
- *  moves into positions a static snapshot recorded as "background"). */
-function applyChromaKey(imageData: ImageData, color: string, similarity: number, smoothness: number) {
-  const [kr, kg, kb] = hexToRgb(color)
-  const threshold = similarity / 100
-  const edge = Math.max(smoothness, 1) / 100
-  const data = imageData.data
-  const MAX_DIST = 441.6729559300637 // sqrt(255^2 * 3) — the largest possible RGB distance, normalizes dist to 0..1
-  for (let i = 0; i < data.length; i += 4) {
-    const dr = data[i] - kr
-    const dg = data[i + 1] - kg
-    const db = data[i + 2] - kb
-    const dist = Math.sqrt(dr * dr + dg * dg + db * db) / MAX_DIST
-    let alpha: number
-    if (dist < threshold - edge) alpha = 0
-    else if (dist > threshold + edge) alpha = 1
-    else alpha = (dist - (threshold - edge)) / (2 * edge)
-    data[i + 3] = Math.round(data[i + 3] * alpha)
-  }
-}
-
 /** Draws the live camera into `canvas` every requestAnimationFrame tick —
  *  cropped/zoomed/panned/mirrored entirely via drawImage's own source-rect
  *  and a context-level transform (never a CSS transform on the displayed
  *  element, which could overflow its box — see cameraSourceRect's own
- *  comment), with dynamic per-pixel chroma removal layered on when
- *  `opts.chroma` is set, plus an optional static touch-up mask multiplied
- *  in on top of that for spot-correction. Self-terminates by checking
- *  document.contains(canvas) at the START of every frame — no separate
- *  MutationObserver needed (and no risk of accumulating many simultaneous
- *  subtree-wide ones across rapid editor re-renders, a likely contributor
- *  to earlier reported instability). */
+ *  comment).
+ *
+ *  The canvas's own pixel buffer tracks its CSS box size via a
+ *  ResizeObserver rather than a one-time measurement — a single
+ *  getBoundingClientRect() read on the very first frame could easily
+ *  come back 0×0 (or otherwise wrong) before layout has actually settled
+ *  on a freshly-inserted subtree, permanently baking in a mismatched
+ *  aspect ratio with no way to correct it afterward, which read as
+ *  visible distortion (the wrong-ratio buffer stretched by CSS
+ *  width/height:100% to fill the ACTUAL box).
+ *
+ *  Self-terminates by checking document.contains(canvas), but tolerates
+ *  a short grace period of the node being briefly missing before
+ *  actually stopping — Reveal's own morph-transition mechanics can move/
+ *  reattach DOM nodes as part of a slide change, and treating that
+ *  MOMENTARY absence as "gone for good" on the very first missed frame
+ *  is what left the feed visibly frozen after switching slides. */
 function startCameraCanvasLoop(video: HTMLVideoElement, canvas: HTMLCanvasElement, opts: CameraLoopOpts) {
-  const ctx = canvas.getContext('2d', { willReadFrequently: !!opts.chroma })!
-  let touchUpImg: HTMLImageElement | null = null
-  if (opts.chroma?.touchUpMaskUrl) {
-    touchUpImg = new Image()
-    touchUpImg.src = opts.chroma.touchUpMaskUrl
-  }
-  let sized = false
-  function draw() {
-    if (!document.contains(canvas)) return // this element's own node left the document — stop, nothing else to clean up (the stream itself stays cached for reuse)
-    if (!sized && video.videoWidth) {
-      // Canvas's own pixel buffer matches the ELEMENT's own box size —
-      // never the raw video resolution — so CSS width:100%;height:100%
-      // scaling below never distorts proportions regardless of the
-      // camera's own native aspect ratio.
-      const box = canvas.getBoundingClientRect()
-      canvas.width = Math.max(1, Math.round(box.width || video.videoWidth))
-      canvas.height = Math.max(1, Math.round(box.height || video.videoHeight))
-      sized = true
+  const ctx = canvas.getContext('2d')!
+  const resizeObs = new ResizeObserver((entries) => {
+    const box = entries[0]?.contentRect
+    if (box && box.width > 0 && box.height > 0) {
+      canvas.width = Math.max(1, Math.round(box.width))
+      canvas.height = Math.max(1, Math.round(box.height))
     }
-    if (sized && video.videoWidth) {
+  })
+  resizeObs.observe(canvas)
+  let missingFrames = 0
+  const GRACE_FRAMES = 45 // ~0.75s at 60fps — long enough to survive a morph transition's own brief DOM shuffling, short enough to actually stop once the element is genuinely gone
+  function draw() {
+    if (!document.contains(canvas)) {
+      missingFrames++
+      if (missingFrames > GRACE_FRAMES) { resizeObs.disconnect(); return }
+      requestAnimationFrame(draw)
+      return
+    }
+    missingFrames = 0
+    if (canvas.width && canvas.height && video.videoWidth) {
       const { sx, sy, sw, sh } = cameraSourceRect(video.videoWidth, video.videoHeight, canvas.width, canvas.height, opts.fit, opts.zoom, opts.panX, opts.panY)
       ctx.save()
-      ctx.globalCompositeOperation = 'source-over'
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       if (opts.mirror) {
         ctx.translate(canvas.width, 0)
@@ -1049,15 +1027,6 @@ function startCameraCanvasLoop(video: HTMLVideoElement, canvas: HTMLCanvasElemen
       }
       ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
       ctx.restore()
-      if (opts.chroma) {
-        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        applyChromaKey(frame, opts.chroma.color, opts.chroma.similarity ?? 38, opts.chroma.smoothness ?? 12)
-        ctx.putImageData(frame, 0, 0)
-        if (touchUpImg?.complete && touchUpImg.naturalWidth) {
-          ctx.globalCompositeOperation = 'destination-in'
-          ctx.drawImage(touchUpImg, 0, 0, canvas.width, canvas.height)
-        }
-      }
     }
     requestAnimationFrame(draw)
   }
