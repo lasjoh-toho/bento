@@ -700,23 +700,42 @@ export interface BentoDoc {
    * doing that once updates every camera element in the deck at once,
    * rather than needing to redo it per element/per slide.
    *
-   * `mask` is authored via the SAME magic-wand/eraser/box/ellipse tools
-   * (editor/imagemask.ts's ImageMaskEditor) a static image's own cutout
-   * mask uses — same storage format too (a grayscale PNG, "asset:<key>"
-   * or a data: URI). The calibration flow captures one frame from the
-   * live camera, runs the mask editor on THAT as a normal (temporary,
-   * throwaway) image element, then lifts the resulting mask out here
-   * once the person's done and discards the temporary element — see
-   * editor/panels.ts's own "Greenscreen kalibrieren" trigger.
+   * Removal is DYNAMIC — computed fresh every frame from `color`/
+   * `similarity`/`smoothness`, not a fixed spatial mask. A static mask
+   * captured once from a snapshot fundamentally can't handle a person
+   * actually moving in front of the camera: parts of them constantly move
+   * into positions the snapshot recorded as "background" (now wrongly
+   * kept transparent, cutting into the subject) or the reverse (now
+   * wrongly kept opaque, leaving a background patch visible) — dynamic,
+   * per-pixel colour comparison against every live frame is the only way
+   * that keeps working as the subject moves.
    *
-   * Applied identically to every live frame after that: composite the
-   * video frame with this mask's alpha channel (destination-in), no
-   * per-frame color-distance computation at all — cheap, and exactly
-   * matches what "the wand selected this hue at this tolerance, then a
-   * few remaining spots got erased by hand" produces, once, rather than
-   * approximating that same result at every single frame.
+   * `touchUpMask` is an OPTIONAL supplementary correction for spots color
+   * comparison alone can't fix — a fixed prop or backdrop seam that
+   * happens to share a similar hue to the subject, say — multiplied
+   * (never replacing) into the dynamic result. Same authoring tools/
+   * storage format as a static image's own cutout mask (editor/
+   * imagemask.ts's ImageMaskEditor): "asset:<key>" or a data: URI.
+   *
+   * The calibration flow (editor/panels.ts's "Greenscreen kalibrieren")
+   * captures one frame, has the person click the backdrop directly to
+   * sample `color` (reads that one pixel — no mask-editor tool needed for
+   * this part), then optionally opens the mask editor on that same
+   * snapshot for eraser/box/ellipse touch-up only, saving whatever
+   * resulted into `touchUpMask`.
    */
-  cameraCalibration?: { mask: string }
+  cameraCalibration?: {
+    color: string
+    /** 0-100 — how close a pixel's colour must be to `color` to be
+     *  removed. Higher = more colours count as "close enough" (more
+     *  aggressive removal, more risk of eating into the subject).
+     *  Defaults to 38 when unset. */
+    similarity?: number
+    /** 0-100 — width of the soft edge between "kept" and "removed"
+     *  pixels, avoiding a hard, aliased cutout edge. Defaults to 12. */
+    smoothness?: number
+    touchUpMask?: string
+  }
   /**
    * Live-collab blob references for LARGE assets (docs/blob-offload.md).
    *

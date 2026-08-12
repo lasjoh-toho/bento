@@ -27,14 +27,23 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
  * everything through the browser's own teardown regardless.
  */
 const cameraStreamCache = new Map<string, MediaStream>()
+const cameraStreamPending = new Map<string, Promise<MediaStream>>()
 
 function getOrCreateCameraStream(facingMode: string): Promise<MediaStream> {
   const cached = cameraStreamCache.get(facingMode)
   if (cached && cached.getVideoTracks().some((t) => t.readyState === 'live')) return Promise.resolve(cached)
-  return navigator.mediaDevices.getUserMedia({ video: { facingMode } }).then((stream) => {
+  const pending = cameraStreamPending.get(facingMode)
+  if (pending) return pending
+  const request = navigator.mediaDevices.getUserMedia({ video: { facingMode } }).then((stream) => {
     cameraStreamCache.set(facingMode, stream)
+    cameraStreamPending.delete(facingMode)
     return stream
+  }).catch((err) => {
+    cameraStreamPending.delete(facingMode)
+    throw err
   })
+  cameraStreamPending.set(facingMode, request)
+  return request
 }
 
 /** Stops every cached camera stream outright — called when leaving present
@@ -45,6 +54,7 @@ function getOrCreateCameraStream(facingMode: string): Promise<MediaStream> {
 export function stopAllCameraStreams() {
   for (const stream of cameraStreamCache.values()) stream.getTracks().forEach((tr) => tr.stop())
   cameraStreamCache.clear()
+  cameraStreamPending.clear()
 }
 
 export interface RenderOpts {
@@ -785,53 +795,34 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
         const zoom = el.zoom && el.zoom > 0 ? el.zoom : 1
         const panX = el.panX ?? 0
         const panY = el.panY ?? 0
-        const frameTransform = `scaleX(${mirror ? -1 : 1}) scale(${zoom}) translate(${panX * 100}%, ${panY * 100}%)`
+        // Decoding still needs a real <video> attached to the document,
+        // but it's never shown directly — always drawn into the canvas
+        // below instead, zoom/pan/mirror included, so there's no CSS
+        // transform involved for this at all (see this block's own
+        // opening comment for why that matters).
         const camVideo = document.createElement('video')
         camVideo.autoplay = true
         camVideo.muted = el.muted !== false
         camVideo.playsInline = true
-        const useMask = el.chromaKeyEnabled && doc.cameraCalibration?.mask
-        // The mask compositor reads frames off THIS video into a canvas
-        // instead of showing it directly — kept in the DOM (decoding
-        // needs an attached element) but visually replaced by that canvas.
-        camVideo.style.cssText = useMask
-          ? 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none'
-          : `width:100%;height:100%;object-fit:${el.fit ?? 'cover'};border-radius:${radius}px;display:block;background:#0b0f14;transform:${frameTransform};pointer-events:none` + (clipPath ? `;clip-path:${clipPath}` : '')
+        camVideo.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none'
         node.appendChild(camVideo)
-        let maskCanvas: HTMLCanvasElement | null = null
-        if (useMask) {
-          maskCanvas = document.createElement('canvas')
-          maskCanvas.style.cssText = `width:100%;height:100%;object-fit:${el.fit ?? 'cover'};border-radius:${radius}px;display:block;transform:${frameTransform};pointer-events:none` + (clipPath ? `;clip-path:${clipPath}` : '')
-          node.appendChild(maskCanvas)
-        }
+        const camCanvas = document.createElement('canvas')
+        camCanvas.style.cssText = `width:100%;height:100%;border-radius:${radius}px;display:block;background:#0b0f14;pointer-events:none` + (clipPath ? `;clip-path:${clipPath}` : '')
+        node.appendChild(camCanvas)
         const facingMode = el.facing ?? 'user'
         getOrCreateCameraStream(facingMode)
           .then((stream) => {
             camVideo.srcObject = stream
-            let rafId = 0
-            if (maskCanvas && doc.cameraCalibration) {
-              rafId = startCameraMaskLoop(camVideo, maskCanvas, resolveAsset(doc, doc.cameraCalibration.mask))
-            }
-            // Only the per-frame mask-compositing loop (if any) stops here
-            // when this specific <video> node leaves the document — the
-            // STREAM itself is shared/cached (see cameraStreamCache) and
-            // stays alive for whatever re-render creates the next <video>
-            // that wants it, rather than restarting the physical camera
-            // on every edit.
-            const stopWhenGone = new MutationObserver(() => {
-              if (!document.contains(camVideo)) {
-                if (rafId) cancelAnimationFrame(rafId)
-                stopWhenGone.disconnect()
-              }
-            })
-            stopWhenGone.observe(document.body, { childList: true, subtree: true })
+            const chromaKey = el.chromaKeyEnabled ? doc.cameraCalibration : undefined
+            const chroma = chromaKey ? { ...chromaKey, touchUpMaskUrl: chromaKey.touchUpMask ? resolveAsset(doc, chromaKey.touchUpMask) : undefined } : undefined
+            startCameraCanvasLoop(camVideo, camCanvas, { mirror, zoom, panX, panY, fit: el.fit ?? 'cover', chroma })
           })
           .catch(() => {
             camVideo.replaceWith(Object.assign(document.createElement('div'), {
               style: `width:100%;height:100%;border-radius:${radius}px;display:flex;align-items:center;justify-content:center;background:#0b0f14;color:#8fa0b6;font-size:13px;text-align:center;padding:12px`,
               textContent: 'Kein Kamerazugriff',
             }))
-            maskCanvas?.remove()
+            camCanvas.remove()
           })
         break
       }
@@ -946,49 +937,129 @@ export function renderThumbnail(slide: Slide, doc: BentoDoc, width: number): HTM
   return box
 }
 
-/**
- * Composites a live camera <video> with a STATIC mask's own alpha channel,
- * every frame, via requestAnimationFrame — draws the current video frame,
- * then draws the mask image on top using globalCompositeOperation =
- * 'destination-in' (keep only where the mask is opaque; a single cheap
- * GPU-friendly draw call, no per-pixel color-distance loop at all). The
- * mask was authored once, ahead of time, against a frozen snapshot (see
- * editor/panels.ts's "Greenscreen kalibrieren" flow reusing editor/
- * imagemask.ts's ImageMaskEditor) — this function never recomputes it,
- * only reapplies the same fixed alpha to whatever the camera sees now.
- *
- * The canvas's own pixel dimensions follow the VIDEO's native resolution
- * (set once the video's metadata is available), not the element's own
- * display box — same convention a plain <video> or <img> already uses,
- * letting CSS object-fit/transform (zoom, pan, mirror — see the call
- * site) handle framing within the box exactly the same way as the
- * non-chroma-key path does.
- *
- * Returns the requestAnimationFrame id so the caller can cancel it once
- * the element leaves the document.
- */
-function startCameraMaskLoop(video: HTMLVideoElement, canvas: HTMLCanvasElement, maskUrl: string): number {
-  const ctx = canvas.getContext('2d')!
-  const maskImg = new Image()
-  maskImg.src = maskUrl
-  let rafId = 0
+interface CameraLoopOpts {
+  mirror: boolean
+  zoom: number
+  panX: number
+  panY: number
+  fit: 'contain' | 'cover' | 'fill'
+  chroma?: { color: string; similarity?: number; smoothness?: number; touchUpMaskUrl?: string }
+}
+
+/** Which rectangle of the SOURCE video to read from, for a given fit mode
+ *  plus zoom/pan — always the piece that will exactly fill (cover) or
+ *  exactly fit within (contain) the canvas's own w×h once drawn there, so
+ *  the RESULT already has the canvas's own aspect ratio baked in. This is
+ *  what makes zoom safe: it only ever shrinks/shifts the SOURCE rect
+ *  within the video's own bounds, so the drawn result can never exceed
+ *  the canvas's fixed pixel buffer — unlike scaling the DISPLAYED element
+ *  via CSS transform, which could visually overflow past its own box
+ *  (see this whole camera block's own history/comments for why that
+ *  approach was replaced). */
+function cameraSourceRect(videoW: number, videoH: number, canvasW: number, canvasH: number, fit: string, zoom: number, panX: number, panY: number) {
+  const targetAspect = canvasW / canvasH
+  const videoAspect = videoW / videoH
+  let sw: number, sh: number
+  if (fit === 'fill') {
+    sw = videoW
+    sh = videoH
+  } else if (fit === 'contain' ? videoAspect > targetAspect : videoAspect < targetAspect) {
+    // contain: video is WIDER than target -> letterbox top/bottom, whole width used
+    // cover: video is NARROWER than target -> crop top/bottom, whole width used
+    sw = videoW
+    sh = sw / targetAspect
+  } else {
+    sh = videoH
+    sw = sh * targetAspect
+  }
+  sw = Math.min(sw, videoW) / zoom
+  sh = Math.min(sh, videoH) / zoom
+  const sx = Math.max(0, Math.min(videoW - sw, (videoW - sw) / 2 + panX * sw))
+  const sy = Math.max(0, Math.min(videoH - sh, (videoH - sh) / 2 + panY * sh))
+  return { sx, sy, sw, sh }
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim())
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [0, 177, 64]
+}
+
+/** Per-pixel colour-distance removal, run fresh on every frame — see
+ *  BentoDoc.cameraCalibration's own doc comment for why this has to be
+ *  dynamic rather than a fixed spatial mask (a moving subject constantly
+ *  moves into positions a static snapshot recorded as "background"). */
+function applyChromaKey(imageData: ImageData, color: string, similarity: number, smoothness: number) {
+  const [kr, kg, kb] = hexToRgb(color)
+  const threshold = similarity / 100
+  const edge = Math.max(smoothness, 1) / 100
+  const data = imageData.data
+  const MAX_DIST = 441.6729559300637 // sqrt(255^2 * 3) — the largest possible RGB distance, normalizes dist to 0..1
+  for (let i = 0; i < data.length; i += 4) {
+    const dr = data[i] - kr
+    const dg = data[i + 1] - kg
+    const db = data[i + 2] - kb
+    const dist = Math.sqrt(dr * dr + dg * dg + db * db) / MAX_DIST
+    let alpha: number
+    if (dist < threshold - edge) alpha = 0
+    else if (dist > threshold + edge) alpha = 1
+    else alpha = (dist - (threshold - edge)) / (2 * edge)
+    data[i + 3] = Math.round(data[i + 3] * alpha)
+  }
+}
+
+/** Draws the live camera into `canvas` every requestAnimationFrame tick —
+ *  cropped/zoomed/panned/mirrored entirely via drawImage's own source-rect
+ *  and a context-level transform (never a CSS transform on the displayed
+ *  element, which could overflow its box — see cameraSourceRect's own
+ *  comment), with dynamic per-pixel chroma removal layered on when
+ *  `opts.chroma` is set, plus an optional static touch-up mask multiplied
+ *  in on top of that for spot-correction. Self-terminates by checking
+ *  document.contains(canvas) at the START of every frame — no separate
+ *  MutationObserver needed (and no risk of accumulating many simultaneous
+ *  subtree-wide ones across rapid editor re-renders, a likely contributor
+ *  to earlier reported instability). */
+function startCameraCanvasLoop(video: HTMLVideoElement, canvas: HTMLCanvasElement, opts: CameraLoopOpts) {
+  const ctx = canvas.getContext('2d', { willReadFrequently: !!opts.chroma })!
+  let touchUpImg: HTMLImageElement | null = null
+  if (opts.chroma?.touchUpMaskUrl) {
+    touchUpImg = new Image()
+    touchUpImg.src = opts.chroma.touchUpMaskUrl
+  }
   let sized = false
   function draw() {
+    if (!document.contains(canvas)) return // this element's own node left the document — stop, nothing else to clean up (the stream itself stays cached for reuse)
     if (!sized && video.videoWidth) {
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
+      // Canvas's own pixel buffer matches the ELEMENT's own box size —
+      // never the raw video resolution — so CSS width:100%;height:100%
+      // scaling below never distorts proportions regardless of the
+      // camera's own native aspect ratio.
+      const box = canvas.getBoundingClientRect()
+      canvas.width = Math.max(1, Math.round(box.width || video.videoWidth))
+      canvas.height = Math.max(1, Math.round(box.height || video.videoHeight))
       sized = true
     }
-    if (sized) {
+    if (sized && video.videoWidth) {
+      const { sx, sy, sw, sh } = cameraSourceRect(video.videoWidth, video.videoHeight, canvas.width, canvas.height, opts.fit, opts.zoom, opts.panX, opts.panY)
+      ctx.save()
       ctx.globalCompositeOperation = 'source-over'
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-      if (maskImg.complete && maskImg.naturalWidth) {
-        ctx.globalCompositeOperation = 'destination-in'
-        ctx.drawImage(maskImg, 0, 0, canvas.width, canvas.height)
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      if (opts.mirror) {
+        ctx.translate(canvas.width, 0)
+        ctx.scale(-1, 1)
+      }
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+      ctx.restore()
+      if (opts.chroma) {
+        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        applyChromaKey(frame, opts.chroma.color, opts.chroma.similarity ?? 38, opts.chroma.smoothness ?? 12)
+        ctx.putImageData(frame, 0, 0)
+        if (touchUpImg?.complete && touchUpImg.naturalWidth) {
+          ctx.globalCompositeOperation = 'destination-in'
+          ctx.drawImage(touchUpImg, 0, 0, canvas.width, canvas.height)
+        }
       }
     }
-    rafId = requestAnimationFrame(draw)
+    requestAnimationFrame(draw)
   }
-  rafId = requestAnimationFrame(draw)
-  return rafId
+  requestAnimationFrame(draw)
 }
