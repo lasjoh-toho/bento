@@ -427,6 +427,14 @@ export interface MediaElement extends ElementBase {
   /** video only: fit within the element box */
   fit?: 'contain' | 'cover' | 'fill'
   radius?: number
+  /** camera only: clips the live view to a shape via CSS clip-path —
+   *  cheap (no per-frame processing cost, unlike chromaKey) and composes
+   *  naturally with it: a round bubble with the background ALSO removed
+   *  is a common streaming look. 'circle' becomes an ellipse if the
+   *  element's own box isn't square — expected, not a bug. Omitted/
+   *  'none' means a plain rectangle (using `radius` for rounded corners,
+   *  same as any other media element). */
+  maskShape?: 'none' | 'circle'
   autoplay?: boolean
   loop?: boolean
   muted?: boolean
@@ -435,6 +443,30 @@ export interface MediaElement extends ElementBase {
    *  more than one — 'user' (front/selfie) or 'environment' (rear).
    *  Omitted lets the browser pick its own default. */
   facing?: 'user' | 'environment'
+  /**
+   * camera only: turns on green/blue-screen removal for THIS element,
+   * using the ONE shared BentoDoc.cameraCalibration (see that field's own
+   * doc comment) — never a per-element color/tolerance. A presentation
+   * only has one physical camera+backdrop setup at a time, calibrated
+   * once right before recording; every camera element in the deck that
+   * turns this on shares that exact same removal, regardless of how each
+   * one is individually zoomed/positioned within its own box.
+   */
+  chromaKeyEnabled?: boolean
+  /** camera only: 1 = the raw calibrated frame shown as-is (same as
+   *  `fit` alone would give); higher zooms into the CENTER of that frame
+   *  before the box's own fit/crop applies — a simple way to reframe
+   *  without needing a full interactive crop tool, since the shared mask
+   *  itself must stay in the camera's own raw coordinate space (not
+   *  something each element could crop independently without breaking
+   *  alignment). Applied via CSS transform: scale(), cheap, no per-frame
+   *  cost of its own. */
+  zoom?: number
+  /** camera only: pans the zoomed view — fractions of the element's own
+   *  box (-0.5..0.5 each), same convention as a percentage offset.
+   *  Meaningless at zoom 1 (nothing to pan within). */
+  panX?: number
+  panY?: number
 }
 
 export type SlideElement =
@@ -658,6 +690,33 @@ export interface BentoDoc {
   }
   /** shared assets (raw SVG markup or data URIs), referenced by key */
   assets?: Record<string, string>
+  /**
+   * ONE shared green/blue-screen calibration for the whole presentation —
+   * every camera element with `chromaKeyEnabled: true` (see MediaElement)
+   * uses this same removal, never a per-element one. A presentation only
+   * has one physical camera+backdrop setup at a time, and it needs
+   * recalibrating fresh right before each recording anyway (lighting
+   * changes, the backdrop gets bumped, etc.) — sharing it here means
+   * doing that once updates every camera element in the deck at once,
+   * rather than needing to redo it per element/per slide.
+   *
+   * `mask` is authored via the SAME magic-wand/eraser/box/ellipse tools
+   * (editor/imagemask.ts's ImageMaskEditor) a static image's own cutout
+   * mask uses — same storage format too (a grayscale PNG, "asset:<key>"
+   * or a data: URI). The calibration flow captures one frame from the
+   * live camera, runs the mask editor on THAT as a normal (temporary,
+   * throwaway) image element, then lifts the resulting mask out here
+   * once the person's done and discards the temporary element — see
+   * editor/panels.ts's own "Greenscreen kalibrieren" trigger.
+   *
+   * Applied identically to every live frame after that: composite the
+   * video frame with this mask's alpha channel (destination-in), no
+   * per-frame color-distance computation at all — cheap, and exactly
+   * matches what "the wand selected this hue at this tolerance, then a
+   * few remaining spots got erased by hand" produces, once, rather than
+   * approximating that same result at every single frame.
+   */
+  cameraCalibration?: { mask: string }
   /**
    * Live-collab blob references for LARGE assets (docs/blob-offload.md).
    *

@@ -7,7 +7,7 @@
 import type { Store } from '../store'
 import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultImage, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement } from '../measure'
 import { isMacOS } from '../screens'
@@ -124,6 +124,16 @@ export class PropsPanel {
   private cropElId: string | null = null
   /** Same idea as cropElId, for the "Freistellen…" (cutout/erase) mode. */
   private maskElId: string | null = null
+  /** Set alongside maskElId specifically when the element being mask-
+   *  edited is a THROWAWAY snapshot image created by the camera panel's
+   *  "Greenscreen kalibrieren" flow, not a real document image — holds
+   *  the CAMERA element's own id (to return to once done) and a cleanup
+   *  callback the Apply/Cancel handlers run in addition to their normal
+   *  behaviour: lift the resulting mask into doc.cameraCalibration (Apply
+   *  only), remove the temporary snapshot element either way, and
+   *  reselect the camera element so the panel lands back where the
+   *  person actually started. */
+  private cameraCalibration: { cameraElId: string } | null = null
   private maskTool: 'wand' | 'eraser' | 'box' | 'ellipse' = 'eraser'
   private maskBrushSize = 40
   private maskTolerance = 2
@@ -226,6 +236,80 @@ export class PropsPanel {
     mutate()
     this.store.touch()
     if (final) this.burst = false
+  }
+
+  /** Runs right after the normal Apply/Cancel handling for whatever mask
+   *  edit was active — a no-op unless that edit was actually a camera
+   *  calibration snapshot (see cameraCalibration). On Apply, lifts the
+   *  snapshot's own just-committed mask into the shared doc.
+   *  cameraCalibration; either way, removes the throwaway snapshot
+   *  element and its asset, then reselects the camera element the
+   *  person actually started from. */
+  private finishCameraCalibration(applied: boolean) {
+    const cal = this.cameraCalibration
+    if (!cal || !this.maskElId) return
+    this.cameraCalibration = null
+    const snapshotId = this.maskElId
+    this.edit(() => {
+      const snapshot = this.store.element(snapshotId) as ImageElement | undefined
+      if (applied && snapshot?.mask) {
+        this.store.doc.cameraCalibration = { mask: snapshot.mask }
+      }
+      const idx = this.store.slide.elements.findIndex((e) => e.id === snapshotId)
+      if (idx >= 0) this.store.slide.elements.splice(idx, 1)
+    }, true)
+    this.store.select([cal.cameraElId])
+  }
+
+  /** Requests the camera just long enough to grab ONE frame, stops that
+   *  temporary stream immediately (this is a calibration snapshot, not a
+   *  live preview), then hands the captured frame to the SAME mask editor
+   *  (canvas.startMask -> imagemask.ts's ImageMaskEditor) a normal image's
+   *  own "Freistellen…" button uses — wand + tolerance to pick the
+   *  backdrop hue, eraser/box/ellipse to clean up whatever's left, exactly
+   *  as if it were any other image. Apply/Cancel (buildImageProps' own
+   *  existing handlers) then call finishCameraCalibration to lift the
+   *  result into the shared doc.cameraCalibration and clean up the
+   *  temporary snapshot element. */
+  private async startCameraCalibration(cameraElId: string) {
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: {} })
+    } catch {
+      window.alert(t('Kein Kamerazugriff — Kalibrieren nicht möglich.'))
+      return
+    }
+    const video = document.createElement('video')
+    video.srcObject = stream
+    video.muted = true
+    video.playsInline = true
+    await video.play().catch(() => {})
+    await new Promise((resolve) => {
+      if (video.videoWidth) resolve(null)
+      else video.addEventListener('loadedmetadata', () => resolve(null), { once: true })
+    })
+    const cap = document.createElement('canvas')
+    cap.width = video.videoWidth
+    cap.height = video.videoHeight
+    cap.getContext('2d')!.drawImage(video, 0, 0)
+    stream.getTracks().forEach((tr) => tr.stop())
+    const dataUrl = cap.toDataURL('image/png')
+
+    const snapshot = defaultImage(dataUrl, {
+      w: this.store.doc.size.width, h: this.store.doc.size.height, x: 0, y: 0,
+    })
+    this.edit(() => { this.store.slide.elements.push(snapshot) }, true)
+    this.store.select([snapshot.id])
+    this.cameraCalibration = { cameraElId }
+    this.maskElId = snapshot.id
+    this.maskTool = 'wand'
+    this.canvas.setMaskTool('wand')
+    this.canvas.setMaskBrushSize(this.maskBrushSize)
+    this.canvas.setMaskTolerance(this.maskTolerance)
+    this.canvas.setMaskFeather(this.maskFeather)
+    this.canvas.setMaskExpand(this.maskExpand)
+    this.canvas.startMask(snapshot.id).then(() => this.rebuild(true))
+    this.rebuild(true)
   }
 
   rebuild(force = false) {
@@ -2337,11 +2421,13 @@ export class PropsPanel {
       this.host.appendChild(actions)
       actions.querySelector('.ed-mask-cancel')!.addEventListener('click', () => {
         this.canvas.cancelMask()
+        this.finishCameraCalibration(false)
         this.maskElId = null
         this.rebuild(true)
       })
       actions.querySelector('.ed-mask-apply')!.addEventListener('click', () => {
         this.canvas.commitMask()
+        this.finishCameraCalibration(true)
         this.maskElId = null
         this.rebuild(true)
       })
@@ -2505,6 +2591,43 @@ export class PropsPanel {
       toggle('Muted', el.muted !== false, (v) => this.mutate(el.id, (e) => { (e as MediaElement).muted = v || undefined }, true))
       this.row('Corner radius', this.number(el.radius ?? 0, 1, (v, fin) =>
         this.mutate(el.id, (e) => { (e as MediaElement).radius = Math.max(v, 0) }, fin)))
+      this.row(t('Form'), this.select(['none', 'circle'], el.maskShape ?? 'none', (v) =>
+        this.mutate(el.id, (e) => { (e as MediaElement).maskShape = v === 'none' ? undefined : (v as MediaElement['maskShape']) }, true)))
+
+      this.section(t('Bildausschnitt'))
+      this.row(t('Zoom'), this.number(el.zoom ?? 1, 0.1, (v, fin) =>
+        this.mutate(el.id, (e) => { (e as MediaElement).zoom = Math.max(1, v) }, fin)))
+      if ((el.zoom ?? 1) > 1) {
+        this.row(t('Verschieben X'), this.number(el.panX ?? 0, 0.02, (v, fin) =>
+          this.mutate(el.id, (e) => { (e as MediaElement).panX = Math.max(-0.5, Math.min(0.5, v)) }, fin)))
+        this.row(t('Verschieben Y'), this.number(el.panY ?? 0, 0.02, (v, fin) =>
+          this.mutate(el.id, (e) => { (e as MediaElement).panY = Math.max(-0.5, Math.min(0.5, v)) }, fin)))
+      }
+
+      this.section(t('Greenscreen'))
+      const hasCalibration = !!this.store.doc.cameraCalibration
+      toggle('Aktiv', !!el.chromaKeyEnabled, (v) => this.mutate(el.id, (e) => { (e as MediaElement).chromaKeyEnabled = v || undefined }, true))
+      const calHint = document.createElement('p')
+      calHint.className = 'ed-hint'
+      calHint.textContent = hasCalibration
+        ? t('Eine Kalibrierung ist hinterlegt und gilt für alle Kamera-Elemente mit aktiviertem Greenscreen im ganzen Deck. Vor jeder Aufnahme neu kalibrieren, falls sich Licht oder Hintergrund verändert haben.')
+        : t('Noch keine Kalibrierung hinterlegt — „Aktiv“ zeigt bis dahin das unbearbeitete Kamerabild.')
+      this.host.appendChild(calHint)
+      const calBtn = document.createElement('button')
+      calBtn.className = 'ed-btn ed-btn-block'
+      calBtn.textContent = hasCalibration ? t('Greenscreen neu kalibrieren…') : t('Greenscreen kalibrieren…')
+      calBtn.addEventListener('click', () => this.startCameraCalibration(el.id))
+      this.host.appendChild(calBtn)
+      if (hasCalibration) {
+        const clearCalBtn = document.createElement('button')
+        clearCalBtn.className = 'ed-btn ed-btn-block ed-btn-danger'
+        clearCalBtn.textContent = t('Kalibrierung entfernen')
+        clearCalBtn.addEventListener('click', () => {
+          this.edit(() => { delete this.store.doc.cameraCalibration }, true)
+          this.rebuild(true)
+        })
+        this.host.appendChild(clearCalBtn)
+      }
       return
     }
     this.section(t('Source & playback'))

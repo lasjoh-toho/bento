@@ -724,35 +724,58 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
       }
       const inert = opts.liveMedia ? '' : ';pointer-events:none'
       if (el.kind === 'camera') {
+        const clipPath = el.maskShape === 'circle' ? 'circle(50% at 50% 50%)' : ''
         if (!opts.liveMedia) {
           // Editor canvas — no reason to prompt for camera permission on
           // every edit-session page load. Actual stream request happens
           // only in present mode, right below.
           const ph = document.createElement('div')
-          ph.style.cssText = `width:100%;height:100%;border-radius:${radius}px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:#0b0f14;color:#8fa0b6;font-size:13px`
+          ph.style.cssText = `width:100%;height:100%;border-radius:${radius}px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:#0b0f14;color:#8fa0b6;font-size:13px` + (clipPath ? `;clip-path:${clipPath}` : '')
           ph.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>'
           const label = document.createElement('span')
-          label.textContent = 'Kamera (live in der Präsentation)'
+          label.textContent = el.chromaKeyEnabled ? 'Kamera mit Greenscreen (live in der Präsentation)' : 'Kamera (live in der Präsentation)'
           ph.appendChild(label)
           node.appendChild(ph)
           break
         }
+        const mirror = el.facing !== 'environment'
+        const zoom = el.zoom && el.zoom > 0 ? el.zoom : 1
+        const panX = el.panX ?? 0
+        const panY = el.panY ?? 0
+        const frameTransform = `scaleX(${mirror ? -1 : 1}) scale(${zoom}) translate(${panX * 100}%, ${panY * 100}%)`
         const camVideo = document.createElement('video')
         camVideo.autoplay = true
         camVideo.muted = el.muted !== false
         camVideo.playsInline = true
-        camVideo.style.cssText = `width:100%;height:100%;object-fit:${el.fit ?? 'cover'};border-radius:${radius}px;display:block;background:#0b0f14` + (el.facing === 'environment' ? '' : ';transform:scaleX(-1)') + inert
+        const useMask = el.chromaKeyEnabled && doc.cameraCalibration?.mask
+        // The mask compositor reads frames off THIS video into a canvas
+        // instead of showing it directly — kept in the DOM (decoding
+        // needs an attached element) but visually replaced by that canvas.
+        camVideo.style.cssText = useMask
+          ? 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none'
+          : `width:100%;height:100%;object-fit:${el.fit ?? 'cover'};border-radius:${radius}px;display:block;background:#0b0f14;transform:${frameTransform}` + (clipPath ? `;clip-path:${clipPath}` : '') + inert
         node.appendChild(camVideo)
+        let maskCanvas: HTMLCanvasElement | null = null
+        if (useMask) {
+          maskCanvas = document.createElement('canvas')
+          maskCanvas.style.cssText = `width:100%;height:100%;object-fit:${el.fit ?? 'cover'};border-radius:${radius}px;display:block;transform:${frameTransform}` + (clipPath ? `;clip-path:${clipPath}` : '') + inert
+          node.appendChild(maskCanvas)
+        }
         const facingMode = el.facing ?? 'user'
         navigator.mediaDevices?.getUserMedia?.({ video: { facingMode } })
           .then((stream) => {
             camVideo.srcObject = stream
+            let rafId = 0
+            if (maskCanvas && doc.cameraCalibration) {
+              rafId = startCameraMaskLoop(camVideo, maskCanvas, resolveAsset(doc, doc.cameraCalibration.mask))
+            }
             // Stopped when this specific <video> node leaves the document
             // (slide navigated away, deck torn down) — never left running
             // in the background once its element is gone.
             const stopWhenGone = new MutationObserver(() => {
               if (!document.contains(camVideo)) {
                 stream.getTracks().forEach((tr) => tr.stop())
+                if (rafId) cancelAnimationFrame(rafId)
                 stopWhenGone.disconnect()
               }
             })
@@ -763,6 +786,7 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
               style: `width:100%;height:100%;border-radius:${radius}px;display:flex;align-items:center;justify-content:center;background:#0b0f14;color:#8fa0b6;font-size:13px;text-align:center;padding:12px`,
               textContent: 'Kein Kamerazugriff',
             }))
+            maskCanvas?.remove()
           })
         break
       }
@@ -875,4 +899,51 @@ export function renderThumbnail(slide: Slide, doc: BentoDoc, width: number): HTM
   inner.style.transform = `scale(${scale})`
   box.appendChild(inner)
   return box
+}
+
+/**
+ * Composites a live camera <video> with a STATIC mask's own alpha channel,
+ * every frame, via requestAnimationFrame — draws the current video frame,
+ * then draws the mask image on top using globalCompositeOperation =
+ * 'destination-in' (keep only where the mask is opaque; a single cheap
+ * GPU-friendly draw call, no per-pixel color-distance loop at all). The
+ * mask was authored once, ahead of time, against a frozen snapshot (see
+ * editor/panels.ts's "Greenscreen kalibrieren" flow reusing editor/
+ * imagemask.ts's ImageMaskEditor) — this function never recomputes it,
+ * only reapplies the same fixed alpha to whatever the camera sees now.
+ *
+ * The canvas's own pixel dimensions follow the VIDEO's native resolution
+ * (set once the video's metadata is available), not the element's own
+ * display box — same convention a plain <video> or <img> already uses,
+ * letting CSS object-fit/transform (zoom, pan, mirror — see the call
+ * site) handle framing within the box exactly the same way as the
+ * non-chroma-key path does.
+ *
+ * Returns the requestAnimationFrame id so the caller can cancel it once
+ * the element leaves the document.
+ */
+function startCameraMaskLoop(video: HTMLVideoElement, canvas: HTMLCanvasElement, maskUrl: string): number {
+  const ctx = canvas.getContext('2d')!
+  const maskImg = new Image()
+  maskImg.src = maskUrl
+  let rafId = 0
+  let sized = false
+  function draw() {
+    if (!sized && video.videoWidth) {
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      sized = true
+    }
+    if (sized) {
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      if (maskImg.complete && maskImg.naturalWidth) {
+        ctx.globalCompositeOperation = 'destination-in'
+        ctx.drawImage(maskImg, 0, 0, canvas.width, canvas.height)
+      }
+    }
+    rafId = requestAnimationFrame(draw)
+  }
+  rafId = requestAnimationFrame(draw)
+  return rafId
 }
