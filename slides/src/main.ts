@@ -151,12 +151,26 @@ function playerMode(doc: BentoDoc) {
 
 function editorMode(doc: BentoDoc) {
 
-// Inside Moodle, a document must never carry live-collab credentials at all
-// — see the full explanation where the SyncSession gate lives, further down
-// this function. A document saved before that gate existed may still carry
-// them from an earlier session; drop them here, before the Store exists, so
-// this is just the document's own starting state rather than a tracked edit
-// (nothing to undo back to a "with stale collab creds" state).
+// Inside Moodle, a document must never carry live-collab credentials it
+// didn't ask for. SyncSession auto-joins a relay on open whenever the
+// document it's constructed from already has collab creds (bornWithCollab —
+// see sync/session.ts) — mod_bento's own documents are single-editor-at-a-
+// time database rows, saved explicitly via mod_bento_save_document, and had
+// been silently picking up creds the very first time any activity was ever
+// opened (SyncSession mints them for any doc that doesn't already have
+// some), which every save then persisted into Moodle's own database row.
+// The next open — another tab, another browser, another person's session —
+// reconnected to that relay and started receiving whatever unsaved edits
+// were live elsewhere: the deck would show last-saved content for a moment,
+// then visibly "catch up" as the relay state arrived, reading exactly like
+// a broken save even though the database row itself was never touched by
+// any of it. Stripped here, before the Store exists, so this is just the
+// document's own starting state rather than a tracked edit (nothing to undo
+// back to a "with stale collab creds" state) — this does NOT disable
+// sharing itself: a teacher can still click "Share" to co-edit live with a
+// colleague on purpose (see where SyncSession gets created, further down
+// this function) — it only stops that from ever happening automatically
+// purely because a document happened to carry old creds.
 if (moodleConfig && doc.collab) delete doc.collab
 
 document.title = `${doc.title} — ${appConfig().appName}`
@@ -171,24 +185,17 @@ const editor = new Editor(document.getElementById('app')!, store)
 // Live collaboration (bento-sync): same-machine tabs sync automatically over
 // BroadcastChannel; the online relay transport joins via the Share UI.
 //
-// NOT inside Moodle. mod_bento's own documents are single-editor-at-a-time
-// database rows, saved explicitly via mod_bento_save_document — never a
-// live-shared session. Without this gate, ANY document ever saved through
-// Moodle silently picks up collab credentials the first time it's opened
-// (SyncSession mints them for any doc that doesn't already have some), and
-// every SAVE FROM THEN ON stamps live sync state into the very row Moodle
-// treats as the source of truth. The next open — in another tab, another
-// browser, another person's session — reconnects to that relay and starts
-// receiving whatever unsaved edits are live elsewhere, arriving as changes
-// that were never actually saved to Moodle at all: the deck opens showing
-// last-saved content for a moment, then visibly "catches up" as the relay
-// state arrives, which reads exactly like a broken save even though the
-// database row itself was never touched by any of it.
-let session: SyncSession | undefined
-if (!moodleConfig) {
-  session = new SyncSession(store)
-  editor.connectSync(session)
-}
+// Session creation stays normal here even inside Moodle — the fix for the
+// unwanted auto-reconnect bug lives entirely in the doc.collab strip right
+// above, before the Store even exists. SyncSession only auto-joins a relay
+// when the document it's constructed FROM already carries collab creds
+// (bornWithCollab, in sync/session.ts) — since those are now always gone by
+// the time this runs, that path is never taken. Explicitly clicking "Share"
+// still works normally (a teacher co-editing live with a colleague is a
+// real, deliberate use case) — it just never happens automatically anymore
+// purely because a document was opened.
+const session = new SyncSession(store)
+editor.connectSync(session)
 
 // Opening a link ending in #present starts the show immediately (player mode).
 if (location.hash === '#present') {
@@ -218,7 +225,7 @@ if (location.hash === '#present') {
     return store.doc
   },
   serialize: () => {
-    session?.stampInto(store.doc)
+    session.stampInto(store.doc)
     return serializeFile(store.doc)
   },
   undo: () => store.undo(),
@@ -230,22 +237,20 @@ if (location.hash === '#present') {
   anim,
   /** i18n: t/locale/setLocale/choices — setLocale('x-pseudo') audits the sweep */
   i18n: i18nApi,
-  /** live-collaboration session: actor id, connected peers, force a diff-flush.
-   *  Not available inside Moodle — see where `session` is set, further up. */
+  /** live-collaboration session: actor id, connected peers, force a diff-flush */
   sync: {
     get actor() {
-      return session?.actor ?? null
+      return session.actor
     },
-    peers: () => session?.peers() ?? [],
-    flush: () => session?.flush(),
-    transports: () => session?.transportKinds ?? [],
+    peers: () => session.peers(),
+    flush: () => session.flush(),
+    transports: () => session.transportKinds,
     /** start an online session (mints doc.collab, connects the relay) */
     share: () => {
-      if (!session) return null
       void startSharing(session, store)
       return store.doc.collab
     },
-    unshare: () => { if (session) stopSharing(session, store) },
+    unshare: () => stopSharing(session, store),
     online: () => onlineTransport()?.status ?? 'off',
   },
   /**
@@ -300,11 +305,11 @@ if (location.hash === '#present') {
     version: APP_VERSION,
     check: (url?: string) => checkForUpdates(url),
     build: (release: any) => {
-      session?.stampInto(store.doc)
+      session.stampInto(store.doc)
       return buildUpdatedFile(release, store.doc)
     },
     apply: (release: any) => {
-      session?.stampInto(store.doc)
+      session.stampInto(store.doc)
       return applyUpdate(release, store.doc)
     },
   },
