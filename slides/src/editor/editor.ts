@@ -2753,28 +2753,45 @@ export class Editor {
   }
 
   async save(forcePicker: boolean) {
-    this.canvas.commitTextEdit()
+    const t0 = performance.now()
 
     if (moodleConfig) {
       // No local file handle to rewrite here — the "file" is a database
       // row, reached over mod_bento's own web service. See moodle.ts.
+      //
+      // Step-by-step console timing: a save that hangs with no toast has
+      // no other way to show WHICH step it's actually stuck on — this
+      // logs each one as it starts and finishes, so the next occurrence
+      // pinpoints it directly from the console instead of needing live
+      // access to reproduce and step through it. commitTextEdit is INSIDE
+      // this try too (unlike the non-Moodle path below) — it's the one
+      // call in this whole function that previously sat outside any
+      // error handling at all, so a throw there would have exited
+      // save() silently with no toast, same as the two gaps already
+      // fixed elsewhere in this function.
       try {
+        this.canvas.commitTextEdit()
+        console.log(`[bento/save] commitTextEdit: ${(performance.now() - t0).toFixed(0)}ms`)
+        const t1 = performance.now()
         // shared docs persist their CRDT state so the saved copy can rejoin
-        // as a true fork later (offline edits merge both ways) — moved
-        // inside this try: if it throws for any reason, the person now
-        // sees an error toast instead of the whole save silently vanishing.
+        // as a true fork later (offline edits merge both ways)
         this.session?.stampInto(this.store.doc)
+        console.log(`[bento/save] stampInto: ${(performance.now() - t1).toFixed(0)}ms`)
+        const t2 = performance.now()
+        console.log('[bento/save] calling saveToMoodle…')
         await saveToMoodle(this.store.doc)
+        console.log(`[bento/save] saveToMoodle: ${(performance.now() - t2).toFixed(0)}ms`)
         this.store.setDirty(false)
         markFileSaved()
         this.toast(t('In Moodle gespeichert'), 'success')
       } catch (err) {
-        console.error(err)
+        console.error('[bento/save] failed:', err)
         this.toast(t('Save failed — see console'), 'error')
       }
       return
     }
 
+    this.canvas.commitTextEdit()
     // shared docs persist their CRDT state so the saved copy can rejoin
     // as a true fork later (offline edits merge both ways)
     this.session?.stampInto(this.store.doc)

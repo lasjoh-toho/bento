@@ -68,9 +68,11 @@ export async function saveToMoodle(doc: unknown): Promise<void> {
   if (!moodleConfig) throw new Error('Not running inside a Moodle mod/bento activity')
   const { cmid, sesskey, wwwroot, deckid } = moodleConfig
   const url = `${wwwroot}/lib/ajax/service.php?sesskey=${encodeURIComponent(sesskey)}&info=mod_bento_save_document`
+  const tSerializeStart = performance.now()
   const args: Record<string, unknown> = { cmid, document: JSON.stringify(doc) }
   if (deckid) args.deckid = deckid
   const body = [{ index: 0, methodname: 'mod_bento_save_document', args }]
+  console.log(`[bento/moodle] document serialized (${(args.document as string).length} bytes) in ${(performance.now() - tSerializeStart).toFixed(0)}ms — starting fetch to ${url}`)
 
   // fetch() has no default timeout — a network-level hang (server
   // unreachable, request silently dropped by a proxy/firewall along the
@@ -82,6 +84,7 @@ export async function saveToMoodle(doc: unknown): Promise<void> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 20000)
   let res: Response
+  const tFetchStart = performance.now()
   try {
     res = await fetch(url, {
       method: 'POST',
@@ -89,7 +92,9 @@ export async function saveToMoodle(doc: unknown): Promise<void> {
       body: JSON.stringify(body),
       signal: controller.signal,
     })
+    console.log(`[bento/moodle] fetch settled: HTTP ${res.status} after ${(performance.now() - tFetchStart).toFixed(0)}ms`)
   } catch (err) {
+    console.log(`[bento/moodle] fetch itself threw after ${(performance.now() - tFetchStart).toFixed(0)}ms:`, err)
     if (err instanceof Error && err.name === 'AbortError') {
       throw new Error('Zeitüberschreitung — Moodle hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.')
     }
@@ -97,7 +102,9 @@ export async function saveToMoodle(doc: unknown): Promise<void> {
   } finally {
     clearTimeout(timeoutId)
   }
+  const tBodyStart = performance.now()
   const raw = await res.text()
+  console.log(`[bento/moodle] response body read (${raw.length} bytes) in ${(performance.now() - tBodyStart).toFixed(0)}ms`)
 
   let data: any
   try {
