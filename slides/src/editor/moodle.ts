@@ -72,11 +72,31 @@ export async function saveToMoodle(doc: unknown): Promise<void> {
   if (deckid) args.deckid = deckid
   const body = [{ index: 0, methodname: 'mod_bento_save_document', args }]
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+  // fetch() has no default timeout — a network-level hang (server
+  // unreachable, request silently dropped by a proxy/firewall along the
+  // way) would otherwise wait forever with no feedback at all: neither
+  // save()'s success toast nor its catch-block error toast ever runs if
+  // this await itself never resolves OR rejects. 20s is generous for a
+  // JSON POST of one document, short enough that a genuine hang still
+  // reads as "something's wrong" rather than the app looking frozen.
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 20000)
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Zeitüberschreitung — Moodle hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.')
+    }
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
+  }
   const raw = await res.text()
 
   let data: any

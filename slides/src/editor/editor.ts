@@ -2754,14 +2754,16 @@ export class Editor {
 
   async save(forcePicker: boolean) {
     this.canvas.commitTextEdit()
-    // shared docs persist their CRDT state so the saved copy can rejoin
-    // as a true fork later (offline edits merge both ways)
-    this.session?.stampInto(this.store.doc)
 
     if (moodleConfig) {
       // No local file handle to rewrite here — the "file" is a database
       // row, reached over mod_bento's own web service. See moodle.ts.
       try {
+        // shared docs persist their CRDT state so the saved copy can rejoin
+        // as a true fork later (offline edits merge both ways) — moved
+        // inside this try: if it throws for any reason, the person now
+        // sees an error toast instead of the whole save silently vanishing.
+        this.session?.stampInto(this.store.doc)
         await saveToMoodle(this.store.doc)
         this.store.setDirty(false)
         markFileSaved()
@@ -2772,6 +2774,10 @@ export class Editor {
       }
       return
     }
+
+    // shared docs persist their CRDT state so the saved copy can rejoin
+    // as a true fork later (offline edits merge both ways)
+    this.session?.stampInto(this.store.doc)
 
     try {
       const result = await saveFile(this.store.doc, forcePicker)
