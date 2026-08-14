@@ -2765,10 +2765,10 @@ export class Editor {
         await saveToMoodle(this.store.doc)
         this.store.setDirty(false)
         markFileSaved()
-        this.toast(t('In Moodle gespeichert'))
+        this.toast(t('In Moodle gespeichert'), 'success')
       } catch (err) {
         console.error(err)
-        this.toast(t('Save failed — see console'))
+        this.toast(t('Save failed — see console'), 'error')
       }
       return
     }
@@ -3229,16 +3229,18 @@ export class Editor {
     if (!moodleConfig && (runCheck || this.updateFound)) checkBRef?.click()
   }
 
-  toast(message: string) {
+  toast(message: string, kind: 'neutral' | 'success' | 'error' = 'neutral') {
     document.querySelector('.ed-toast')?.remove()
     const t = div('ed-toast')
+    if (kind !== 'neutral') t.classList.add(`ed-toast-${kind}`)
     t.textContent = message
     document.body.appendChild(t)
     setTimeout(() => t.classList.add('show'))
+    const dwell = kind === 'error' ? 4200 : 2200
     setTimeout(() => {
       t.classList.remove('show')
       setTimeout(() => t.remove(), 300)
-    }, 2200)
+    }, dwell)
   }
 }
 

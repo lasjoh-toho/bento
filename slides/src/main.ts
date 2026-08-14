@@ -22,6 +22,7 @@ import { starterDoc } from './starterdeck'
 import { injectFonts } from './fonts'
 import { Store } from './store'
 import { Editor } from './editor/editor'
+import { moodleConfig } from './editor/moodle'
 import { startPresentation } from './present'
 import { SyncSession } from './sync/session'
 import { onlineTransport, startSharing, stopSharing } from './sync/online'
@@ -150,6 +151,14 @@ function playerMode(doc: BentoDoc) {
 
 function editorMode(doc: BentoDoc) {
 
+// Inside Moodle, a document must never carry live-collab credentials at all
+// — see the full explanation where the SyncSession gate lives, further down
+// this function. A document saved before that gate existed may still carry
+// them from an earlier session; drop them here, before the Store exists, so
+// this is just the document's own starting state rather than a tracked edit
+// (nothing to undo back to a "with stale collab creds" state).
+if (moodleConfig && doc.collab) delete doc.collab
+
 document.title = `${doc.title} — ${appConfig().appName}`
 
 // Embedded fonts: register @font-face rules from the asset table so text
@@ -161,8 +170,25 @@ const editor = new Editor(document.getElementById('app')!, store)
 
 // Live collaboration (bento-sync): same-machine tabs sync automatically over
 // BroadcastChannel; the online relay transport joins via the Share UI.
-const session = new SyncSession(store)
-editor.connectSync(session)
+//
+// NOT inside Moodle. mod_bento's own documents are single-editor-at-a-time
+// database rows, saved explicitly via mod_bento_save_document — never a
+// live-shared session. Without this gate, ANY document ever saved through
+// Moodle silently picks up collab credentials the first time it's opened
+// (SyncSession mints them for any doc that doesn't already have some), and
+// every SAVE FROM THEN ON stamps live sync state into the very row Moodle
+// treats as the source of truth. The next open — in another tab, another
+// browser, another person's session — reconnects to that relay and starts
+// receiving whatever unsaved edits are live elsewhere, arriving as changes
+// that were never actually saved to Moodle at all: the deck opens showing
+// last-saved content for a moment, then visibly "catches up" as the relay
+// state arrives, which reads exactly like a broken save even though the
+// database row itself was never touched by any of it.
+let session: SyncSession | undefined
+if (!moodleConfig) {
+  session = new SyncSession(store)
+  editor.connectSync(session)
+}
 
 // Opening a link ending in #present starts the show immediately (player mode).
 if (location.hash === '#present') {
@@ -192,7 +218,7 @@ if (location.hash === '#present') {
     return store.doc
   },
   serialize: () => {
-    session.stampInto(store.doc)
+    session?.stampInto(store.doc)
     return serializeFile(store.doc)
   },
   undo: () => store.undo(),
@@ -204,20 +230,22 @@ if (location.hash === '#present') {
   anim,
   /** i18n: t/locale/setLocale/choices — setLocale('x-pseudo') audits the sweep */
   i18n: i18nApi,
-  /** live-collaboration session: actor id, connected peers, force a diff-flush */
+  /** live-collaboration session: actor id, connected peers, force a diff-flush.
+   *  Not available inside Moodle — see where `session` is set, further up. */
   sync: {
     get actor() {
-      return session.actor
+      return session?.actor ?? null
     },
-    peers: () => session.peers(),
-    flush: () => session.flush(),
-    transports: () => session.transportKinds,
+    peers: () => session?.peers() ?? [],
+    flush: () => session?.flush(),
+    transports: () => session?.transportKinds ?? [],
     /** start an online session (mints doc.collab, connects the relay) */
     share: () => {
+      if (!session) return null
       void startSharing(session, store)
       return store.doc.collab
     },
-    unshare: () => stopSharing(session, store),
+    unshare: () => { if (session) stopSharing(session, store) },
     online: () => onlineTransport()?.status ?? 'off',
   },
   /**
@@ -272,11 +300,11 @@ if (location.hash === '#present') {
     version: APP_VERSION,
     check: (url?: string) => checkForUpdates(url),
     build: (release: any) => {
-      session.stampInto(store.doc)
+      session?.stampInto(store.doc)
       return buildUpdatedFile(release, store.doc)
     },
     apply: (release: any) => {
-      session.stampInto(store.doc)
+      session?.stampInto(store.doc)
       return applyUpdate(release, store.doc)
     },
   },

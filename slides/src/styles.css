@@ -969,7 +969,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   bottom: 26px;
   transform: translate(-50%, 12px);
   background: var(--ink);
-  color: #fff;
+  color: var(--surface);
   font-size: 13px;
   padding: 9px 16px;
   border-radius: 999px;
@@ -979,6 +979,8 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   pointer-events: none;
 }
 .ed-toast.show { opacity: 1; transform: translate(-50%, 0); }
+.ed-toast-success { background: #1c8a4a; color: #fff; }
+.ed-toast-error { background: #c23b3b; color: #fff; }
 
 /* ————— present overlay ————— */
 
