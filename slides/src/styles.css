@@ -1583,20 +1583,24 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   background: rgb(20 22 28 / 0.75);
   color: #fff;
 }
-.ed-thumb-lr {
-  position: absolute;
-  bottom: 5px;
-  inset-inline-start: 5px;
-  z-index: 2;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  display: grid;
-  place-items: center;
-  background: rgb(20 22 28 / 0.75);
-  color: #fff;
-  font: 700 10px system-ui, -apple-system, sans-serif;
+/* A slide carrying a Zusatztext gets a second, stylized white sheet
+   peeking out just below its own preview — reads as "there's another
+   page attached here" at a glance, without a label to parse. Plain
+   flow content after .bento-thumb-surface (not absolutely positioned)
+   so .ed-thumb's own overflow:hidden — needed to crop the slide
+   preview itself cleanly — never clips it; this simply adds to the
+   thumbnail's own total height instead. ~2mm at typical screen
+   density, kept as a literal px value since a physical unit doesn't
+   scale sensibly with a resizable, already-small thumbnail. */
+.ed-thumb-lrsheet {
+  height: 4px;
+  margin: 0 3px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
 }
+.ed-thumb-has-lr { border-radius: 8px 8px 4px 4px; }
 
 /* layout picker — popover over the New-slide button */
 .ed-layoutpick {
@@ -2261,8 +2265,8 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   place-items: center;
   cursor: pointer;
 }
-.bento-ink-size span { display: block; border-radius: 999px; background: #14161c; }
-.bento-ink-size.active { border-color: var(--bento-accent, #ED8266); background: rgb(20 22 28 / 0.12); }
+.bento-ink-size span { display: block; border-radius: 999px; background: var(--ink-active-color, #14161c); border: 1px solid rgb(20 22 28 / 0.25); box-sizing: border-box; }
+.bento-ink-size.active { border-color: var(--ink-active-color, var(--bento-accent, #ED8266)); background: rgb(20 22 28 / 0.12); }
 .bento-ink-erase, .bento-ink-clear, .bento-ink-textbtn, .bento-ink-pen, .bento-ink-hand, .bento-ink-labelbtn, .bento-ink-save-terms {
   width: 30px;
   height: 30px;
@@ -2277,7 +2281,7 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   place-items: center;
   cursor: pointer;
 }
-.bento-ink-erase.active, .bento-ink-textbtn.active, .bento-ink-pen.active, .bento-ink-hand.active, .bento-ink-labelbtn.active { background: var(--bento-accent, #ED8266); color: #14161c; border-color: transparent; }
+.bento-ink-erase.active, .bento-ink-textbtn.active, .bento-ink-pen.active, .bento-ink-hand.active, .bento-ink-labelbtn.active { background: var(--ink-active-color, var(--bento-accent, #ED8266)); color: var(--ink-active-text-color, #14161c); border-color: transparent; }
 .bento-ink-erase:hover, .bento-ink-clear:hover, .bento-ink-textbtn:hover, .bento-ink-pen:hover, .bento-ink-hand:hover, .bento-ink-labelbtn:hover, .bento-ink-save-terms:hover { background: rgb(20 22 28 / 0.12); }
 
 /* the explicit "persist current term arrangement" action — momentary

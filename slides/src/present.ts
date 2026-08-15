@@ -580,6 +580,14 @@ export function startPresentation(
       chip.textContent = term.text
       chip.style.left = `${term.x * 100}%`
       chip.style.top = `${term.y * 100}%`
+      // Brush thickness at creation time drives the font-size too — same
+      // control already sizing pen strokes and the eraser. Simple linear
+      // scale (thickness + 8px) rather than a 1:1 mapping: INK_SIZES' own
+      // range (4-36) is tuned for stroke width, which reads as far too
+      // small taken directly as a font-size — this instead lands the
+      // default middle entry (10) close to what was previously a fixed
+      // 16-20px, while still scaling meaningfully end to end.
+      chip.style.fontSize = `${(term.size ?? INK_SIZES[1]) + 8}px`
       if (style === 'plain') {
         chip.style.color = term.color ?? inkColor
       } else {
@@ -609,7 +617,7 @@ export function startPresentation(
       if (!text) terms.splice(editingIndex, 1) // cleared out — delete rather than leave an empty chip
       else terms[editingIndex].text = text
     } else if (text) {
-      terms.push({ id: uid('term'), text, x, y, style: inkTool === 'label' ? 'chip' : 'plain', color: inkColor })
+      terms.push({ id: uid('term'), text, x, y, style: inkTool === 'label' ? 'chip' : 'plain', color: inkColor, size: inkWidth })
     }
     redrawTerms()
   }
@@ -765,6 +773,8 @@ export function startPresentation(
   inkToolbar.className = 'bento-ink-toolbar'
   const inkColorBtns: HTMLButtonElement[] = []
   const syncInkToolMode = () => {
+    inkToolbar.style.setProperty('--ink-active-color', inkColor)
+    inkToolbar.style.setProperty('--ink-active-text-color', contrastTextColor(inkColor))
     inkColorBtns.forEach((b) => b.classList.toggle('active', (inkTool === 'pen' || inkTool === 'text') && b.dataset.color === inkColor))
     inkPenBtn.classList.toggle('active', inkTool === 'pen')
     inkEraseBtn.classList.toggle('active', inkTool === 'eraser')

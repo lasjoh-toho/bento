@@ -385,6 +385,14 @@ export class Editor {
     this.multiSelectBar.hidden = true
     const canvasWrap = div('ed-canvas-wrap')
     this.longReadEditor = new LongReadEditor(canvasWrap, this.store, () => this.panel.rebuild(true))
+    // The overlay reads over ONE specific slide's own Zusatztext — leaving
+    // it open while navigating to a different slide left it visually
+    // sitting over whatever slide was now underneath, showing content that
+    // no longer matched what was actually selected. Hooked on the store's
+    // own 'current' event rather than one specific navigation trigger
+    // (like a sidebar click) so this covers every way the current slide
+    // can change — keyboard arrows, present-mode swipe, all of it.
+    this.store.on('current', () => { if (this.longReadEditor.active) this.longReadEditor.close() })
     // presenting lives in ONE split pill beside the zoom control: the main
     // half starts the fullscreen show; its menu holds tab-fill and speaker view.
     const pill = div('ed-dropdown ed-present-pill')
@@ -1523,12 +1531,10 @@ export class Editor {
       badge.title = `${slide.comments.filter((c) => !c.resolved).length} open comment(s)`
       item.appendChild(badge)
     }
+    let hasLongRead = false
     if (slide.longRead && slide.longRead.blocks.length > 0) {
-      const headingBlock = slide.longRead.blocks.find((b) => b.type === 'heading' && b.text.trim())
-      const badge = div('ed-thumb-lr')
-      badge.textContent = 'T'
-      badge.title = headingBlock ? headingBlock.text.trim() : t('Zusatztext vorhanden')
-      item.appendChild(badge)
+      hasLongRead = true
+      item.classList.add('ed-thumb-has-lr')
     }
     const tools = div('ed-thumb-tools')
     tools.append(
@@ -1536,6 +1542,17 @@ export class Editor {
       btn(ICONS.trash, '', (ev) => { ev.stopPropagation(); this.deleteSlide(i) }, t('Delete slide')),
     )
     item.append(num, surface, tools)
+    if (hasLongRead) {
+      const headingBlock = slide.longRead!.blocks.find((b) => b.type === 'heading' && b.text.trim())
+      // A second, stylized white sheet peeking out just below the slide
+      // itself — a plain flow element after the preview rather than
+      // anything absolutely positioned, so .ed-thumb's own overflow:
+      // hidden (needed to crop the slide preview itself cleanly) never
+      // clips it.
+      const sheet = div('ed-thumb-lrsheet')
+      sheet.title = headingBlock ? headingBlock.text.trim() : t('Zusatztext vorhanden')
+      item.appendChild(sheet)
+    }
     item.addEventListener('click', (ev) => this.handleThumbClick(ev, i, slide.id))
     if (!isState) this.wireThumbDrag(item, i)
     return item

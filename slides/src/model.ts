@@ -624,6 +624,12 @@ export interface DragTerm {
   y: number
   style?: 'chip' | 'plain'
   color?: string
+  /** Brush thickness (px, present.ts's own INK_SIZES scale) at the moment
+   *  this term was created — same control that already sizes pen strokes
+   *  and the eraser, now also driving this term's own font-size. Omitted
+   *  on anything created before this field existed; present.ts falls
+   *  back to its own default INK_SIZES entry in that case. */
+  size?: number
 }
 
 /** One freehand pen/eraser stroke in Present mode — see Slide.inkStrokes.

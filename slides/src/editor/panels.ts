@@ -2379,12 +2379,28 @@ export class PropsPanel {
         ? t('Backt Zuschnitt und Freistellung in ein einzelnes, meist kleineres Bild — danach nicht mehr separat änderbar.')
         : t('Backt den Zuschnitt in ein einzelnes, kleineres Bild — danach nicht mehr separat änderbar.')
       this.host.appendChild(hint)
+      // Same underlying asset used by any OTHER element anywhere in the
+      // document (a picture pasted/copied more than once, or two frames
+      // sharing one asset via the PowerPoint importer's own
+      // deduplication) — baking THIS element alone doesn't free that
+      // asset at all, since the other element(s) still need it. It adds
+      // a brand new, separate baked copy on top instead, which is the
+      // opposite of what "(spart Speicher)" promises.
+      const srcSharedElsewhere = this.store.doc.slides.some((s) =>
+        s.elements.some((e) => e.id !== el.id && e.type === 'image' && e.src === img.src))
+      const sharedWarning = srcSharedElsewhere ? document.createElement('p') : null
+      if (sharedWarning) {
+        sharedWarning.className = 'ed-hint ed-morph-warn'
+        sharedWarning.textContent = t('Dieses Bild wird noch von einem anderen Element verwendet — das dauerhafte Backen spart hier keinen Speicher, sondern legt zusätzlich eine eigene, gebackene Kopie an.')
+        this.host.appendChild(sharedWarning)
+      }
       const bakeBtn = document.createElement('button')
       bakeBtn.className = 'ed-btn ed-btn-block'
       bakeBtn.textContent = img.mask
-        ? t('Zuschnitt & Freistellung dauerhaft machen (spart Speicher)')
-        : t('Zuschnitt dauerhaft machen (spart Speicher)')
+        ? t(srcSharedElsewhere ? 'Zuschnitt & Freistellung dauerhaft machen' : 'Zuschnitt & Freistellung dauerhaft machen (spart Speicher)')
+        : t(srcSharedElsewhere ? 'Zuschnitt dauerhaft machen' : 'Zuschnitt dauerhaft machen (spart Speicher)')
       bakeBtn.addEventListener('click', async () => {
+        if (srcSharedElsewhere && !window.confirm(t('Dieses Bild wird noch von einem anderen Element verwendet — die gebackene Kopie kommt zusätzlich zum bestehenden Bild hinzu, statt Speicher zu sparen. Trotzdem fortfahren?'))) return
         bakeBtn.disabled = true
         bakeBtn.textContent = t('Wird verarbeitet…')
         await bakeImagePermanent(this.store, el.id)
