@@ -741,4 +741,7 @@ export const zhHans: Catalog = {
   "Match my system": "跟随系统",
   "Dark": "深色",
   "Saved to Moodle ({size})": "已保存到 Moodle（{size}）",
+  "Copy downloaded": "副本已下载",
+  "Download failed — see console": "下载失败 — 请查看控制台",
+  "Downloads a self-contained file with everything as it is right now — works even if saving to Moodle is slow or fails.": "下载一个包含当前全部内容的独立文件 — 即使保存到 Moodle 很慢或失败也能使用。",
 }

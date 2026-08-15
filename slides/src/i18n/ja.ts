@@ -741,4 +741,7 @@ export const ja: Catalog = {
   "Match my system": "システムに合わせる",
   "Dark": "ダーク",
   "Saved to Moodle ({size})": "Moodleに保存しました（{size}）",
+  "Copy downloaded": "コピーをダウンロードしました",
+  "Download failed — see console": "ダウンロードに失敗 — コンソールを確認",
+  "Downloads a self-contained file with everything as it is right now — works even if saving to Moodle is slow or fails.": "現在の状態を含む単独ファイルをダウンロードします — Moodleへの保存が遅い、または失敗しても機能します。",
 }

@@ -19,7 +19,7 @@ import { SlideCanvas } from './canvas'
 import { PropsPanel } from './panels'
 import { LongReadEditor } from './longread'
 import { startPresentation } from '../present'
-import { adoptFileHandle, canWriteInPlace, currentFileName, fileBase, hasFileHandle, isEncryptionActive, openedFileName, saveFile, serializeAuto, serializeFile, setEncryptionPassword, writeUpdatedFile, writeUpdatedFileAs } from '../save'
+import { adoptFileHandle, canWriteInPlace, currentFileName, downloadFile, fileBase, hasFileHandle, isEncryptionActive, openedFileName, saveFile, serializeAuto, serializeFile, setEncryptionPassword, suggestedFileName, writeUpdatedFile, writeUpdatedFileAs } from '../save'
 import { moodleConfig, saveToMoodle } from './moodle'
 import { addVersion, clearRecovery, clearVersions, docContentKey, getRecovery, listVersions, pruneOld, putRecovery, type Snapshot } from '../autosave'
 import { insertElements, insertSlides, parseClip, serializeElements, serializeSlides } from './clipboard'
@@ -763,8 +763,12 @@ export class Editor {
       // FILE operations only — everything that goes to OTHER PEOPLE lives in
       // the Share panel (one mental model: Save = for me, Share = for others).
       item(ICONS.copy, t('Save a copy…'),
-        t('A backup of this deck for yourself — same deck, same live session.'),
-        () => void this.save(true))
+        moodleConfig
+          ? t('Downloads a self-contained file with everything as it is right now — works even if saving to Moodle is slow or fails.')
+          : t('A backup of this deck for yourself — same deck, same live session.'),
+        moodleConfig
+          ? () => void this.downloadCopy()
+          : () => void this.save(true))
       item(ICONS.plus, t('Duplicate as new deck…'),
         t('A separate deck for you — same content, new identity; it never syncs with this one.'),
         () => this.saveAsNewDeck())
@@ -2842,6 +2846,28 @@ export class Editor {
       this.toast(t('Save failed — see console'))
     } finally {
       this.saveBtn.classList.remove('ed-saving')
+    }
+  }
+
+  /** "Save a copy…" inside Moodle: a fully self-contained .bento.html file,
+   *  built and downloaded entirely client-side — no network request of any
+   *  kind. A direct safety net for large presentations, where saving to
+   *  Moodle itself can be slow or fail outright (see moodle.ts's own
+   *  timeout): this always works regardless of document size, server load,
+   *  or connectivity, since nothing ever leaves the browser. Not wired
+   *  through session.stampInto() the way the real save() is — that would
+   *  embed live-collaboration credentials into a downloaded copy that has
+   *  no business carrying any (see main.ts's own reasoning for stripping
+   *  those from every Moodle document in the first place). */
+  private async downloadCopy() {
+    this.canvas.commitTextEdit()
+    try {
+      const html = await serializeAuto(this.store.doc)
+      downloadFile(html, suggestedFileName(this.store.doc))
+      this.toast(t('Copy downloaded'), 'success')
+    } catch (err) {
+      console.error('[bento/downloadCopy] failed:', err)
+      this.toast(t('Download failed — see console'), 'error')
     }
   }
 

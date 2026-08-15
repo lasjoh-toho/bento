@@ -741,4 +741,7 @@ export const fr: Catalog = {
   "Match my system": "Comme le système",
   "Dark": "Sombre",
   "Saved to Moodle ({size})": "Enregistré dans Moodle ({size})",
+  "Copy downloaded": "Copie téléchargée",
+  "Download failed — see console": "Échec du téléchargement — voir la console",
+  "Downloads a self-contained file with everything as it is right now — works even if saving to Moodle is slow or fails.": "Télécharge un fichier autonome avec tout tel quel — fonctionne même si l'enregistrement dans Moodle est lent ou échoue.",
 }

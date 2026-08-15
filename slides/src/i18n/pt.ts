@@ -739,4 +739,7 @@ export const pt: Catalog = {
   "Match my system": "Acompanhar o sistema",
   "Dark": "Escuro",
   "Saved to Moodle ({size})": "Guardado no Moodle ({size})",
+  "Copy downloaded": "Cópia descarregada",
+  "Download failed — see console": "Falha ao descarregar — veja o console",
+  "Downloads a self-contained file with everything as it is right now — works even if saving to Moodle is slow or fails.": "Descarrega um ficheiro autónomo com tudo como está agora — funciona mesmo que guardar no Moodle seja lento ou falhe.",
 }
