@@ -740,4 +740,5 @@ export const zhHant: Catalog = {
   "Appearance": "外觀",
   "Match my system": "跟隨系統",
   "Dark": "深色",
+  "Saved to Moodle ({size})": "已儲存到 Moodle（{size}）",
 }

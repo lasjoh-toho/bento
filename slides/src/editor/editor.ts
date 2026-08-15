@@ -67,6 +67,7 @@ export class Editor {
   private multiSelectBar!: HTMLElement
   private props!: HTMLElement
   private dirtyDot!: HTMLElement
+  private saveBtn!: HTMLElement
   private fileChip?: HTMLElement
   /** Name of a deck opened by DROP when no writable handle came with it. */
   private openedAs?: string
@@ -323,6 +324,8 @@ export class Editor {
       : canWriteInPlace()
         ? t('Save — rewrite this file in place (⌘S)')
         : t('Save — download an updated copy (⌘S). This browser can’t rewrite the open file.'))
+    saveB.classList.add('ed-save-btn')
+    this.saveBtn = saveB
     saveB.appendChild(this.dirtyDot) // the amber unsaved-changes dot lives ON Save
     const pdfB = btn(ICONS.pdf, '', () => this.exportPdf(), t('Export PDF (print)'))
     const helpB = btn('<b class="ed-help-q">?</b>', '', () => this.openHelp(), t('Shortcuts & tips (?)'))
@@ -2754,6 +2757,7 @@ export class Editor {
 
   async save(forcePicker: boolean) {
     const t0 = performance.now()
+    this.saveBtn.classList.add('ed-saving')
 
     if (moodleConfig) {
       // No local file handle to rewrite here — the "file" is a database
@@ -2779,24 +2783,26 @@ export class Editor {
         console.log(`[bento/save] stampInto: ${(performance.now() - t1).toFixed(0)}ms`)
         const t2 = performance.now()
         console.log('[bento/save] calling saveToMoodle…')
-        await saveToMoodle(this.store.doc)
+        const { bytes } = await saveToMoodle(this.store.doc)
         console.log(`[bento/save] saveToMoodle: ${(performance.now() - t2).toFixed(0)}ms`)
         this.store.setDirty(false)
         markFileSaved()
-        this.toast(t('In Moodle gespeichert'), 'success')
+        this.toast(t('Saved to Moodle ({size})', { size: formatBytesMB(bytes) }), 'success')
       } catch (err) {
         console.error('[bento/save] failed:', err)
         this.toast(t('Save failed — see console'), 'error')
+      } finally {
+        this.saveBtn.classList.remove('ed-saving')
       }
       return
     }
 
-    this.canvas.commitTextEdit()
-    // shared docs persist their CRDT state so the saved copy can rejoin
-    // as a true fork later (offline edits merge both ways)
-    this.session?.stampInto(this.store.doc)
-
     try {
+      this.canvas.commitTextEdit()
+      // shared docs persist their CRDT state so the saved copy can rejoin
+      // as a true fork later (offline edits merge both ways)
+      this.session?.stampInto(this.store.doc)
+
       const result = await saveFile(this.store.doc, forcePicker)
       if (result === 'cancelled') return
       this.store.setDirty(false)
@@ -2817,6 +2823,8 @@ export class Editor {
     } catch (err) {
       console.error(err)
       this.toast(t('Save failed — see console'))
+    } finally {
+      this.saveBtn.classList.remove('ed-saving')
     }
   }
 
@@ -2911,6 +2919,18 @@ export class Editor {
             this.store.slide.elements = this.store.slide.elements.filter((e) => !ids.has(e.id))
           })
           this.store.select([])
+          return
+        }
+        // No elements selected — if slides are multi-selected in the sidebar
+        // instead, Delete/Backspace should remove THOSE, same as clicking the
+        // multiselect bar's own Löschen button (bulkDeleteSlides). Previously
+        // this branch only ever looked at element selection, so pressing
+        // Delete with slides marked (but no element selected) silently did
+        // nothing — the natural, expected keystroke for "remove what's
+        // selected" simply had no effect.
+        if (this.multiSelectedIds.size) {
+          ev.preventDefault()
+          this.bulkDeleteSlides()
         }
         return
       }
@@ -3343,6 +3363,15 @@ function div(cls: string): HTMLElement {
   const d = document.createElement('div')
   d.className = cls
   return d
+}
+
+/** "6,6 MB" / "480 KB" — one decimal above 1 MB (fine-grained enough to
+ *  notice a big paste or image import without being noisy), whole numbers
+ *  below it. Used in the Moodle save toast so a slow/large save reads as
+ *  "yes, that's a big file" rather than an unexplained wait. */
+function formatBytesMB(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`
+  return `${Math.round(bytes / 1024)} KB`
 }
 
 function btn(

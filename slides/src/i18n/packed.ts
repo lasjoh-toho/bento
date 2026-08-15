@@ -746,4 +746,5 @@ export const PACKED: Record<string, ReadonlyArray<string | 0>> = {
   "Appearance": ["外観","外观","外觀","Apariencia","Apparence","Darstellung","Aspetto","Aspeto"],
   "Match my system": ["システムに合わせる","跟随系统","跟隨系統","Según el sistema","Comme le système","Systemeinstellung folgen","Come il sistema","Acompanhar o sistema"],
   "Dark": ["ダーク","深色","深色","Oscuro","Sombre","Dunkel","Scuro","Escuro"],
+  "Saved to Moodle ({size})": ["Moodleに保存しました（{size}）","已保存到 Moodle（{size}）","已儲存到 Moodle（{size}）","Guardado en Moodle ({size})","Enregistré dans Moodle ({size})","In Moodle gespeichert ({size})","Salvato in Moodle ({size})","Guardado no Moodle ({size})"],
 }

@@ -740,4 +740,5 @@ export const de: Catalog = {
   "Appearance": "Darstellung",
   "Match my system": "Systemeinstellung folgen",
   "Dark": "Dunkel",
+  "Saved to Moodle ({size})": "In Moodle gespeichert ({size})",
 }

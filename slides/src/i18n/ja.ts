@@ -740,4 +740,5 @@ export const ja: Catalog = {
   "Appearance": "外観",
   "Match my system": "システムに合わせる",
   "Dark": "ダーク",
+  "Saved to Moodle ({size})": "Moodleに保存しました（{size}）",
 }

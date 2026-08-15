@@ -740,4 +740,5 @@ export const es: Catalog = {
   "Appearance": "Apariencia",
   "Match my system": "Según el sistema",
   "Dark": "Oscuro",
+  "Saved to Moodle ({size})": "Guardado en Moodle ({size})",
 }

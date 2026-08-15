@@ -740,4 +740,5 @@ export const zhHans: Catalog = {
   "Appearance": "外观",
   "Match my system": "跟随系统",
   "Dark": "深色",
+  "Saved to Moodle ({size})": "已保存到 Moodle（{size}）",
 }
