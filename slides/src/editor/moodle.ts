@@ -21,6 +21,10 @@ export interface MoodleConfig {
    *  param, which is what this meta tag ultimately reflects. Absent means
    *  "save to the published document", same as before this field existed. */
   deckid?: number
+  /** Admin-configured save-request timeout in SECONDS (settings.php's own
+   *  "Zeitüberschreitung beim Speichern") — falls back to 20 if somehow
+   *  absent (an older mod_bento not yet carrying this field). */
+  savetimeout?: number
 }
 
 function readMoodleConfig(): MoodleConfig | null {
@@ -64,25 +68,28 @@ export const moodleConfig: MoodleConfig | null = readMoodleConfig()
  * payload) rather than failing silently — editor.ts surfaces this via the
  * normal save-failed toast.
  */
-export async function saveToMoodle(doc: unknown): Promise<void> {
+export async function saveToMoodle(doc: unknown): Promise<{ bytes: number }> {
   if (!moodleConfig) throw new Error('Not running inside a Moodle mod/bento activity')
-  const { cmid, sesskey, wwwroot, deckid } = moodleConfig
+  const { cmid, sesskey, wwwroot, deckid, savetimeout } = moodleConfig
   const url = `${wwwroot}/lib/ajax/service.php?sesskey=${encodeURIComponent(sesskey)}&info=mod_bento_save_document`
   const tSerializeStart = performance.now()
-  const args: Record<string, unknown> = { cmid, document: JSON.stringify(doc) }
+  const serialized = JSON.stringify(doc)
+  const args: Record<string, unknown> = { cmid, document: serialized }
   if (deckid) args.deckid = deckid
   const body = [{ index: 0, methodname: 'mod_bento_save_document', args }]
-  console.log(`[bento/moodle] document serialized (${(args.document as string).length} bytes) in ${(performance.now() - tSerializeStart).toFixed(0)}ms — starting fetch to ${url}`)
+  console.log(`[bento/moodle] document serialized (${serialized.length} bytes) in ${(performance.now() - tSerializeStart).toFixed(0)}ms — starting fetch to ${url}`)
 
   // fetch() has no default timeout — a network-level hang (server
   // unreachable, request silently dropped by a proxy/firewall along the
   // way) would otherwise wait forever with no feedback at all: neither
   // save()'s success toast nor its catch-block error toast ever runs if
-  // this await itself never resolves OR rejects. 20s is generous for a
-  // JSON POST of one document, short enough that a genuine hang still
-  // reads as "something's wrong" rather than the app looking frozen.
+  // this await itself never resolves OR rejects. Admin-configured (settings.
+  // php's own "Zeitüberschreitung beim Speichern", default 20s) rather than
+  // a fixed value — a site with larger presentations or a slower server can
+  // raise it without needing a code change.
+  const timeoutMs = (savetimeout && savetimeout > 0 ? savetimeout : 20) * 1000
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 20000)
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
   let res: Response
   const tFetchStart = performance.now()
   try {
@@ -128,4 +135,5 @@ export async function saveToMoodle(doc: unknown): Promise<void> {
   if (data[0]?.error) {
     throw new Error(data[0].message || data[0].exception?.message || 'Speichern fehlgeschlagen')
   }
+  return { bytes: serialized.length }
 }
