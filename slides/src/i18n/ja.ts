@@ -744,4 +744,8 @@ export const ja: Catalog = {
   "Copy downloaded": "コピーをダウンロードしました",
   "Download failed — see console": "ダウンロードに失敗 — コンソールを確認",
   "Downloads a self-contained file with everything as it is right now — works even if saving to Moodle is slow or fails.": "現在の状態を含む単独ファイルをダウンロードします — Moodleへの保存が遅い、または失敗しても機能します。",
+  "Remove unused media…": "未使用のメディアを削除…",
+  "Frees up space taken by images, videos, or fonts no element uses anymore (left behind when one was removed or replaced) — ⌘Z undoes.": "どの要素からも参照されなくなった画像・動画・フォントの容量を解放します（要素の削除や置き換え後に残ったもの）— ⌘Zで元に戻せます。",
+  "Removed {count} unused item(s), freed ~{size}": "未使用の項目を{count}件削除し、約{size}を解放しました",
+  "No unused media found": "未使用のメディアは見つかりませんでした",
 }

@@ -1046,6 +1046,125 @@ export function internAsset(doc: BentoDoc, src: string): string {
   return `asset:${key}`
 }
 
+/** `"asset:<key>"` → `<key>`; anything else (a data: URI still not interned,
+ *  an external URL, undefined) → null. Only image/media fields use this
+ *  `asset:`-prefixed convention — svg/fonts store the bare key directly. */
+function assetKeyFrom(value: string | undefined): string | null {
+  return value?.startsWith('asset:') ? value.slice('asset:'.length) : null
+}
+
+/** Every asset key (doc.assets) and font key (doc.fonts, a separate
+ *  namespace) still referenced by something in the document — the
+ *  complement of what removeUnusedAssets() below actually deletes. Walks
+ *  every slide INCLUDING interactive states (stateOf) and doc.layouts[]
+ *  (slide-shaped templates that live outside slides[] — easy to miss,
+ *  since a naive walk over just doc.slides skips them entirely).
+ *
+ *  Chart elements get a defensive regex sweep of their own (JSON-
+ *  stringified) `option` blob for `asset:<key>` substrings — that field is
+ *  an opaque ECharts config this can't meaningfully type-check into, so a
+ *  chart background or point-marker image embedded somewhere inside it
+ *  would otherwise go undetected and get deleted out from under it. Costs
+ *  a few false-considered keys at worst (never a false removal), which is
+ *  the safe direction to err in here. */
+function findUsedAssetAndFontKeys(doc: BentoDoc): { assetKeys: Set<string>; fontKeys: Set<string> } {
+  const assetKeys = new Set<string>()
+  const fontFamiliesInUse = new Set<string>()
+  if (doc.theme.fontFamily) fontFamiliesInUse.add(doc.theme.fontFamily)
+
+  const visitElement = (el: SlideElement) => {
+    if (el.type === 'image') {
+      const src = assetKeyFrom(el.src)
+      if (src) assetKeys.add(src)
+      const mask = assetKeyFrom(el.mask)
+      if (mask) assetKeys.add(mask)
+    } else if (el.type === 'svg') {
+      if (el.asset) assetKeys.add(el.asset)
+    } else if (el.type === 'media') {
+      const src = assetKeyFrom(el.src)
+      if (src) assetKeys.add(src)
+      const poster = assetKeyFrom(el.poster)
+      if (poster) assetKeys.add(poster)
+    } else if (el.type === 'text') {
+      if (el.fontFamily) fontFamiliesInUse.add(el.fontFamily)
+    } else if (el.type === 'table') {
+      if (el.style.fontFamily) fontFamiliesInUse.add(el.style.fontFamily)
+    } else if (el.type === 'chart') {
+      for (const m of JSON.stringify(el.option).matchAll(/asset:([a-zA-Z0-9_-]+)/g)) assetKeys.add(m[1])
+    }
+  }
+
+  const visitSlide = (s: Slide) => {
+    for (const el of s.elements) visitElement(el)
+    // LongReadBlock (s.longRead.blocks) has no asset-carrying fields at
+    // all — nothing to visit there.
+  }
+
+  for (const s of doc.slides) visitSlide(s)
+  for (const s of doc.layouts ?? []) visitSlide(s)
+
+  // Embedded fonts are a SEPARATE namespace (doc.fonts, keyed by `asset`,
+  // referenced indirectly by `family` name) — a font key counts as used
+  // when something above actually used ITS family name, not by any direct
+  // key reference (there isn't one). A font still in use must ALSO protect
+  // its own underlying doc.assets entry (f.asset IS a key into doc.assets
+  // — the raw embedded font bytes) — added to assetKeys too, or the
+  // asset-cleanup below would see it referenced nowhere and delete a
+  // still-active font's own data out from under it.
+  const fontKeys = new Set<string>()
+  for (const f of doc.fonts ?? []) {
+    if (fontFamiliesInUse.has(f.family)) {
+      fontKeys.add(f.asset)
+      assetKeys.add(f.asset)
+    }
+  }
+
+  return { assetKeys, fontKeys }
+}
+
+/** Removes every entry in doc.assets/doc.fonts nothing in the document
+ *  references anymore — typically left behind when an image/video/font is
+ *  removed or replaced (the element goes away; its asset, embedded once
+ *  and never touched again, doesn't). Call inside a store.commit(), same
+ *  as internAsset(). Returns a summary for a confirmation UI: how many
+ *  entries were removed and the approximate bytes freed (a data: URI's own
+ *  string length — close enough for "you just freed ~N MB", not a byte-
+ *  exact accounting of the eventual serialized file). */
+export function removeUnusedAssets(doc: BentoDoc): { removedCount: number; freedBytes: number } {
+  const { assetKeys: used, fontKeys: usedFonts } = findUsedAssetAndFontKeys(doc)
+  // Every font's own underlying asset entry (used or not) — handled
+  // EXCLUSIVELY by the font loop below, never touched by the plain asset
+  // loop too. Without this exclusion, an unused font got double-counted:
+  // once when the asset loop found its (unprotected) asset key unreferenced
+  // and removed it, again when the font loop separately removed the same
+  // font's own array entry — one logical removal counted as two.
+  const fontAssetKeys = new Set((doc.fonts ?? []).map((f) => f.asset))
+  let removedCount = 0
+  let freedBytes = 0
+  if (doc.assets) {
+    for (const key of Object.keys(doc.assets)) {
+      if (used.has(key) || fontAssetKeys.has(key)) continue
+      freedBytes += doc.assets[key].length
+      delete doc.assets[key]
+      removedCount++
+    }
+  }
+  if (doc.fonts) {
+    const kept = doc.fonts.filter((f) => {
+      if (usedFonts.has(f.asset)) return true
+      const bytes = doc.assets?.[f.asset]
+      if (bytes) {
+        freedBytes += bytes.length
+        delete doc.assets![f.asset]
+      }
+      removedCount++
+      return false
+    })
+    doc.fonts = kept
+  }
+  return { removedCount, freedBytes }
+}
+
 /** Soft ceiling for embedding media as a data URI (bytes). Above this the
  *  editor warns — a big embed makes the .bento.html slow to open and save. */
 export const MEDIA_EMBED_BUDGET = 8 * 1024 * 1024 // 8 MB

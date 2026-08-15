@@ -744,4 +744,8 @@ export const zhHans: Catalog = {
   "Copy downloaded": "副本已下载",
   "Download failed — see console": "下载失败 — 请查看控制台",
   "Downloads a self-contained file with everything as it is right now — works even if saving to Moodle is slow or fails.": "下载一个包含当前全部内容的独立文件 — 即使保存到 Moodle 很慢或失败也能使用。",
+  "Remove unused media…": "移除未使用的媒体…",
+  "Frees up space taken by images, videos, or fonts no element uses anymore (left behind when one was removed or replaced) — ⌘Z undoes.": "释放不再被任何元素使用的图片、视频或字体占用的空间（元素被删除或替换后遗留）— ⌘Z 可撤销。",
+  "Removed {count} unused item(s), freed ~{size}": "已移除 {count} 个未使用项，释放约 {size}",
+  "No unused media found": "未发现未使用的媒体",
 }

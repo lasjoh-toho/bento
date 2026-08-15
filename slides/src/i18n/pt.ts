@@ -742,4 +742,8 @@ export const pt: Catalog = {
   "Copy downloaded": "Cópia descarregada",
   "Download failed — see console": "Falha ao descarregar — veja o console",
   "Downloads a self-contained file with everything as it is right now — works even if saving to Moodle is slow or fails.": "Descarrega um ficheiro autónomo com tudo como está agora — funciona mesmo que guardar no Moodle seja lento ou falhe.",
+  "Remove unused media…": "Remover multimédia não utilizada…",
+  "Frees up space taken by images, videos, or fonts no element uses anymore (left behind when one was removed or replaced) — ⌘Z undoes.": "Liberta espaço ocupado por imagens, vídeos ou tipos de letra que já nenhum elemento usa (ficam para trás quando um é removido ou substituído) — ⌘Z desfaz.",
+  "Removed {count} unused item(s), freed ~{size}": "{count} item(ns) não utilizado(s) removido(s), ~{size} libertado(s)",
+  "No unused media found": "Não foi encontrada multimédia não utilizada",
 }

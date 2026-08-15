@@ -8,7 +8,7 @@ import {
   FORMAT_VERSION,
   MEDIA_EMBED_BUDGET,
   applyChartPalette, applyLayout, builtinLayouts, defaultChart, defaultImage, defaultMedia, defaultShape, defaultTable, defaultText,
-  instantiateLayout, isLightBg, layoutElementIds, newDocId, parseDoc, readableInk, syncLinkedChart, uid,
+  instantiateLayout, isLightBg, layoutElementIds, newDocId, parseDoc, readableInk, removeUnusedAssets, syncLinkedChart, uid,
   type ChartElement, type ShapeKind, type Slide, type SlideElement, type TableElement,
 } from '../model'
 import { THEME_CHOICES, setTheme, themeChoice } from '../../../kernel/src/theme.ts'
@@ -772,6 +772,9 @@ export class Editor {
       item(ICONS.plus, t('Duplicate as new deck…'),
         t('A separate deck for you — same content, new identity; it never syncs with this one.'),
         () => this.saveAsNewDeck())
+      item(ICONS.trash, t('Remove unused media…'),
+        t('Frees up space taken by images, videos, or fonts no element uses anymore (left behind when one was removed or replaced) — ⌘Z undoes.'),
+        () => this.removeUnusedMedia())
       if (isEncryptionActive()) {
         item(ICONS.lock, t('Change password…'),
           t('Pick a new password for this file — takes effect on the next save.'),
@@ -2869,6 +2872,25 @@ export class Editor {
       console.error('[bento/downloadCopy] failed:', err)
       this.toast(t('Download failed — see console'), 'error')
     }
+  }
+
+  /** "Remove unused media…" — images/videos/fonts no element references
+   *  anymore (left behind when one was removed or replaced; internAsset()
+   *  never removes an entry on its own, only ever adds one). Mutates via
+   *  store.commit() so this is a normal, undoable edit like everything
+   *  else on this menu — ⌘Z brings a removed asset straight back. */
+  private removeUnusedMedia() {
+    let removedCount = 0
+    let freedBytes = 0
+    this.store.commit(() => {
+      ;({ removedCount, freedBytes } = removeUnusedAssets(this.store.doc))
+    })
+    this.toast(
+      removedCount > 0
+        ? t('Removed {count} unused item(s), freed ~{size}', { count: String(removedCount), size: formatBytesMB(freedBytes) })
+        : t('No unused media found'),
+      'success',
+    )
   }
 
   // --- keyboard ------------------------------------------------------------------
