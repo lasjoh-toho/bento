@@ -209,7 +209,7 @@ export class PropsPanel {
   private isActiveEditFocus(): boolean {
     const a = document.activeElement as HTMLElement | null
     if (!a || !this.host.contains(a)) return false
-    if (a.tagName === 'TEXTAREA' || a.isContentEditable) return true
+    if (a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable) return true
     if (a.tagName === 'INPUT') {
       const t = (a as HTMLInputElement).type
       return t !== 'checkbox' && t !== 'radio' && t !== 'button'
