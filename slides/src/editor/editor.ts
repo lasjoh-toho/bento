@@ -69,6 +69,7 @@ export class Editor {
   private dirtyDot!: HTMLElement
   private saveBtn!: HTMLElement
   private saveProgressBar!: HTMLElement
+  private saveBtnLabel!: HTMLElement
   private fileChip?: HTMLElement
   /** Name of a deck opened by DROP when no writable handle came with it. */
   private openedAs?: string
@@ -327,6 +328,7 @@ export class Editor {
         : t('Save — download an updated copy (⌘S). This browser can’t rewrite the open file.'))
     saveB.classList.add('ed-save-btn')
     this.saveBtn = saveB
+    this.saveBtnLabel = saveB.querySelector('span')!
     this.saveProgressBar = div('ed-save-progress')
     saveB.appendChild(this.saveProgressBar)
     saveB.appendChild(this.dirtyDot) // the amber unsaved-changes dot lives ON Save
@@ -2820,10 +2822,16 @@ export class Editor {
         console.log(`[bento/save] stampInto: ${(performance.now() - t1).toFixed(0)}ms`)
         const t2 = performance.now()
         console.log('[bento/save] calling saveToMoodle…')
-        const { bytes } = await saveToMoodle(this.store.doc, (fraction) => {
-          this.saveProgressBar.classList.add('ed-save-progress-active')
-          this.saveProgressBar.style.width = `${Math.round(fraction * 100)}%`
-        })
+        const { bytes } = await saveToMoodle(
+          this.store.doc,
+          (fraction) => {
+            this.saveProgressBar.classList.add('ed-save-progress-active')
+            this.saveProgressBar.style.width = `${Math.round(fraction * 100)}%`
+          },
+          (totalBytes) => {
+            this.saveBtnLabel.textContent = formatBytesMB(totalBytes)
+          },
+        )
         console.log(`[bento/save] saveToMoodle: ${(performance.now() - t2).toFixed(0)}ms`)
         this.store.setDirty(false)
         markFileSaved()
@@ -2835,6 +2843,7 @@ export class Editor {
         this.saveBtn.classList.remove('ed-saving')
         this.saveProgressBar.classList.remove('ed-save-progress-active')
         this.saveProgressBar.style.width = '0'
+        this.saveBtnLabel.textContent = t('Save')
         activeThumb?.classList.remove('ed-thumb-saving')
       }
       return

@@ -76,13 +76,19 @@ export const moodleConfig: MoodleConfig | null = readMoodleConfig()
  *   isn't actually broken at that point, just slow — the missing piece was
  *   ever showing that to the person waiting on it, the same way Moodle's
  *   own plain file-upload form already does for a large file).
+ * @param onStart optional, called once with the exact serialized byte
+ *   count right after serialization finishes but before the upload
+ *   itself begins — lets the caller show the real size immediately
+ *   (e.g. on the Save button's own label) without serializing the
+ *   document a second time just to find out how big it is.
  */
-export async function saveToMoodle(doc: unknown, onProgress?: (fraction: number) => void): Promise<{ bytes: number }> {
+export async function saveToMoodle(doc: unknown, onProgress?: (fraction: number) => void, onStart?: (bytes: number) => void): Promise<{ bytes: number }> {
   if (!moodleConfig) throw new Error('Not running inside a Moodle mod/bento activity')
   const { cmid, sesskey, wwwroot, deckid, savetimeout } = moodleConfig
   const url = `${wwwroot}/lib/ajax/service.php?sesskey=${encodeURIComponent(sesskey)}&info=mod_bento_save_document`
   const tSerializeStart = performance.now()
   const serialized = JSON.stringify(doc)
+  onStart?.(serialized.length)
   const args: Record<string, unknown> = { cmid, document: serialized }
   if (deckid) args.deckid = deckid
   const body = [{ index: 0, methodname: 'mod_bento_save_document', args }]
@@ -96,7 +102,7 @@ export async function saveToMoodle(doc: unknown, onProgress?: (fraction: number)
   // for fetch() — a network-level hang (server unreachable, request
   // silently dropped by a proxy/firewall along the way) would otherwise
   // wait forever with no feedback at all.
-  const timeoutMs = (savetimeout && savetimeout > 0 ? savetimeout : 20) * 1000
+  const timeoutMs = (savetimeout && savetimeout > 0 ? savetimeout : 600) * 1000
   const tFetchStart = performance.now()
 
   const { status, raw } = await new Promise<{ status: number; raw: string }>((resolve, reject) => {
