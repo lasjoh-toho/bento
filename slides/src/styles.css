@@ -264,6 +264,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 .ed-save-btn.ed-saving {
   cursor: default;
   pointer-events: none;
+  background: var(--accent);
 }
 .ed-save-btn.ed-saving::after {
   opacity: 1;
