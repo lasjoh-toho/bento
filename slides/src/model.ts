@@ -1443,6 +1443,19 @@ export function parseDoc(json: string): BentoDoc | null {
         doc.docId = newDocId()
         delete doc.collab
       }
+      // `size` isn't optional in the type, and the editor itself never
+      // produces a document without it — but a document can arrive here
+      // from OUTSIDE the editor's own write path entirely (a raw API call
+      // that only sent format+slides, hand-edited JSON, a future producer
+      // that forgot it), and every consumer downstream reads doc.size.
+      // width/height unconditionally, assuming the type guarantee actually
+      // held. Falling back here — the one place every loaded document
+      // already passes through — means a document missing this opens with
+      // a sensible default size instead of taking the entire app down
+      // ("This file could not start") the moment anything tries to render.
+      if (!doc.size || typeof doc.size.width !== 'number' || typeof doc.size.height !== 'number') {
+        doc.size = { width: 1280, height: 720 }
+      }
       return doc as BentoDoc
     }
   } catch {
