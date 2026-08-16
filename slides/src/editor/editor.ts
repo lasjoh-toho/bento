@@ -68,6 +68,7 @@ export class Editor {
   private props!: HTMLElement
   private dirtyDot!: HTMLElement
   private saveBtn!: HTMLElement
+  private saveProgressBar!: HTMLElement
   private fileChip?: HTMLElement
   /** Name of a deck opened by DROP when no writable handle came with it. */
   private openedAs?: string
@@ -326,6 +327,8 @@ export class Editor {
         : t('Save — download an updated copy (⌘S). This browser can’t rewrite the open file.'))
     saveB.classList.add('ed-save-btn')
     this.saveBtn = saveB
+    this.saveProgressBar = div('ed-save-progress')
+    saveB.appendChild(this.saveProgressBar)
     saveB.appendChild(this.dirtyDot) // the amber unsaved-changes dot lives ON Save
     const pdfB = btn(ICONS.pdf, '', () => this.exportPdf(), t('Export PDF (print)'))
     const helpB = btn('<b class="ed-help-q">?</b>', '', () => this.openHelp(), t('Shortcuts & tips (?)'))
@@ -2782,6 +2785,16 @@ export class Editor {
   async save(forcePicker: boolean) {
     const t0 = performance.now()
     this.saveBtn.classList.add('ed-saving')
+    // A second, always-in-view saving indicator on the currently-active
+    // slide's own thumbnail — the sidebar stays visible while working even
+    // when attention isn't on the toolbar/Save button itself. Looked up
+    // once here rather than re-queried on every progress event; if the
+    // sidebar rebuilds mid-save (rare — some other edit landing at the
+    // same moment) this element reference goes stale and the indicator
+    // just stops updating, which is harmless (the finally block's own
+    // cleanup below only needs the same reference to remove it again).
+    const activeThumb = this.sidebar.querySelector<HTMLElement>('.ed-thumb.active')
+    activeThumb?.classList.add('ed-thumb-saving')
 
     if (moodleConfig) {
       // No local file handle to rewrite here — the "file" is a database
@@ -2807,7 +2820,10 @@ export class Editor {
         console.log(`[bento/save] stampInto: ${(performance.now() - t1).toFixed(0)}ms`)
         const t2 = performance.now()
         console.log('[bento/save] calling saveToMoodle…')
-        const { bytes } = await saveToMoodle(this.store.doc)
+        const { bytes } = await saveToMoodle(this.store.doc, (fraction) => {
+          this.saveProgressBar.classList.add('ed-save-progress-active')
+          this.saveProgressBar.style.width = `${Math.round(fraction * 100)}%`
+        })
         console.log(`[bento/save] saveToMoodle: ${(performance.now() - t2).toFixed(0)}ms`)
         this.store.setDirty(false)
         markFileSaved()
@@ -2817,6 +2833,9 @@ export class Editor {
         this.toast(t('Save failed — see console'), 'error')
       } finally {
         this.saveBtn.classList.remove('ed-saving')
+        this.saveProgressBar.classList.remove('ed-save-progress-active')
+        this.saveProgressBar.style.width = '0'
+        activeThumb?.classList.remove('ed-thumb-saving')
       }
       return
     }
@@ -2849,6 +2868,7 @@ export class Editor {
       this.toast(t('Save failed — see console'))
     } finally {
       this.saveBtn.classList.remove('ed-saving')
+      activeThumb?.classList.remove('ed-thumb-saving')
     }
   }
 

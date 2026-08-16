@@ -273,6 +273,28 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 @media (prefers-reduced-motion: reduce) {
   .ed-save-btn.ed-saving::after { animation: none; background: rgb(255 158 138 / 0.85); }
 }
+/* Upload progress — a thin fill along the Save button's own bottom edge,
+   width set directly from XHR's own upload.onprogress (see moodle.ts's
+   saveToMoodle() and editor.ts's own save()). Large presentations on a
+   slow connection/server can take minutes to actually upload — this is
+   what that time actually looks like to the person waiting on it, rather
+   than the spinning ring alone (which shows "something is happening" but
+   not "how far along"). Starts at width 0 / opacity 0, so a save that
+   completes fast enough for XHR to never report a progress event at all
+   just never shows this — the ring alone already covers that case fine. */
+.ed-save-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 0;
+  background: rgb(255 158 138 / 0.95);
+  border-radius: 0 0 0 8px;
+  opacity: 0;
+  transition: width 0.15s linear, opacity 0.15s ease;
+  pointer-events: none;
+}
+.ed-save-btn.ed-saving .ed-save-progress.ed-save-progress-active { opacity: 1; }
 .ed-btn svg { display: block; }
 
 .ed-btn-primary {
@@ -336,6 +358,22 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 }
 .ed-thumb:hover { border-color: #c9d2de; }
 .ed-thumb.active { border-color: var(--accent); }
+/* "This slide's own document is currently saving" — see Editor.save()'s
+   own activeThumb lookup. A thin red bar along the thumbnail's bottom
+   edge, a second always-in-sidebar indicator alongside the Save button's
+   own progress bar, since a large presentation on a slow connection can
+   take minutes and the sidebar stays visible the whole time even when
+   attention isn't on the toolbar. */
+.ed-thumb-saving::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: #C0392B;
+  z-index: 3;
+}
 .ed-thumb.multiselected {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

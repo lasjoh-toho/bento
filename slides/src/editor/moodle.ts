@@ -67,8 +67,17 @@ export const moodleConfig: MoodleConfig | null = readMoodleConfig()
  * message on any failure (network, non-JSON response, or a Moodle exception
  * payload) rather than failing silently — editor.ts surfaces this via the
  * normal save-failed toast.
+ *
+ * @param onProgress optional, called repeatedly with a 0..1 fraction as the
+ *   document actually uploads — wired to a visible progress bar by
+ *   editor.ts's own save(), since a large presentation on a slow
+ *   connection/server can take minutes with genuinely nothing to show for
+ *   it otherwise (this session's own investigation found the save itself
+ *   isn't actually broken at that point, just slow — the missing piece was
+ *   ever showing that to the person waiting on it, the same way Moodle's
+ *   own plain file-upload form already does for a large file).
  */
-export async function saveToMoodle(doc: unknown): Promise<{ bytes: number }> {
+export async function saveToMoodle(doc: unknown, onProgress?: (fraction: number) => void): Promise<{ bytes: number }> {
   if (!moodleConfig) throw new Error('Not running inside a Moodle mod/bento activity')
   const { cmid, sesskey, wwwroot, deckid, savetimeout } = moodleConfig
   const url = `${wwwroot}/lib/ajax/service.php?sesskey=${encodeURIComponent(sesskey)}&info=mod_bento_save_document`
@@ -77,49 +86,49 @@ export async function saveToMoodle(doc: unknown): Promise<{ bytes: number }> {
   const args: Record<string, unknown> = { cmid, document: serialized }
   if (deckid) args.deckid = deckid
   const body = [{ index: 0, methodname: 'mod_bento_save_document', args }]
-  console.log(`[bento/moodle] document serialized (${serialized.length} bytes) in ${(performance.now() - tSerializeStart).toFixed(0)}ms — starting fetch to ${url}`)
+  const bodyStr = JSON.stringify(body)
+  console.log(`[bento/moodle] document serialized (${serialized.length} bytes) in ${(performance.now() - tSerializeStart).toFixed(0)}ms — starting upload to ${url}`)
 
-  // fetch() has no default timeout — a network-level hang (server
-  // unreachable, request silently dropped by a proxy/firewall along the
-  // way) would otherwise wait forever with no feedback at all: neither
-  // save()'s success toast nor its catch-block error toast ever runs if
-  // this await itself never resolves OR rejects. Admin-configured (settings.
-  // php's own "Zeitüberschreitung beim Speichern", default 20s) rather than
-  // a fixed value — a site with larger presentations or a slower server can
-  // raise it without needing a code change.
+  // Admin-configured (settings.php's own "Zeitüberschreitung beim
+  // Speichern", default 20s) rather than a fixed value — a site with
+  // larger presentations or a slower server can raise it without needing a
+  // code change. XHR's own .timeout does the same job AbortController did
+  // for fetch() — a network-level hang (server unreachable, request
+  // silently dropped by a proxy/firewall along the way) would otherwise
+  // wait forever with no feedback at all.
   const timeoutMs = (savetimeout && savetimeout > 0 ? savetimeout : 20) * 1000
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-  let res: Response
   const tFetchStart = performance.now()
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
-    console.log(`[bento/moodle] fetch settled: HTTP ${res.status} after ${(performance.now() - tFetchStart).toFixed(0)}ms`)
-  } catch (err) {
-    console.log(`[bento/moodle] fetch itself threw after ${(performance.now() - tFetchStart).toFixed(0)}ms:`, err)
-    if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('Zeitüberschreitung — Moodle hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.')
+
+  const { status, raw } = await new Promise<{ status: number; raw: string }>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', url)
+    xhr.setRequestHeader('Content-Type', 'application/json')
+    xhr.timeout = timeoutMs
+    xhr.upload.onprogress = (ev) => {
+      if (onProgress && ev.lengthComputable) onProgress(ev.loaded / ev.total)
     }
-    throw err
-  } finally {
-    clearTimeout(timeoutId)
-  }
-  const tBodyStart = performance.now()
-  const raw = await res.text()
-  console.log(`[bento/moodle] response body read (${raw.length} bytes) in ${(performance.now() - tBodyStart).toFixed(0)}ms`)
+    xhr.onload = () => {
+      console.log(`[bento/moodle] request settled: HTTP ${xhr.status} after ${(performance.now() - tFetchStart).toFixed(0)}ms`)
+      resolve({ status: xhr.status, raw: xhr.responseText })
+    }
+    xhr.ontimeout = () => {
+      console.log(`[bento/moodle] request timed out after ${(performance.now() - tFetchStart).toFixed(0)}ms`)
+      reject(new Error('Zeitüberschreitung — Moodle hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.'))
+    }
+    xhr.onerror = () => {
+      console.log(`[bento/moodle] request itself threw after ${(performance.now() - tFetchStart).toFixed(0)}ms`)
+      reject(new Error('Netzwerkfehler beim Speichern — bitte erneut versuchen.'))
+    }
+    xhr.send(bodyStr)
+  })
 
   let data: any
   try {
     data = JSON.parse(raw)
   } catch {
-    throw new Error(`Moodle antwortete nicht mit JSON (HTTP ${res.status}): ${raw.slice(0, 200)}`)
+    throw new Error(`Moodle antwortete nicht mit JSON (HTTP ${status}): ${raw.slice(0, 200)}`)
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${JSON.stringify(data)}`)
+  if (status < 200 || status >= 300) throw new Error(`HTTP ${status}: ${JSON.stringify(data)}`)
   // A genuinely successful call always comes back as an array (one entry
   // per call in the batch, per Moodle's AJAX protocol) — anything else
   // (a plain object, typically {error, errorcode, ...}) means the
