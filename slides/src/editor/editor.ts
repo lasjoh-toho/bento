@@ -70,6 +70,7 @@ export class Editor {
   private saveBtn!: HTMLElement
   private saveProgressBar!: HTMLElement
   private saveBtnLabel!: HTMLElement
+  private savedIndicator: HTMLElement | null = null
   private fileChip?: HTMLElement
   /** Name of a deck opened by DROP when no writable handle came with it. */
   private openedAs?: string
@@ -115,6 +116,10 @@ export class Editor {
     store.on('doc', () => this.scheduleThumbs())
     store.on('dirty', () => {
       this.dirtyDot.classList.toggle('on', store.dirty)
+      if (moodleConfig && this.savedIndicator) {
+        this.saveBtn.style.display = store.dirty ? '' : 'none'
+        this.savedIndicator.style.display = store.dirty ? 'none' : ''
+      }
     })
     window.addEventListener('beforeunload', (ev) => {
       if (store.dirty) ev.preventDefault()
@@ -332,6 +337,25 @@ export class Editor {
     this.saveProgressBar = div('ed-save-progress')
     saveB.appendChild(this.saveProgressBar)
     saveB.appendChild(this.dirtyDot) // the amber unsaved-changes dot lives ON Save
+    // Moodle only: a "Gespeichert" checkmark that swaps places with the
+    // Save button itself when there's genuinely nothing to save — rather
+    // than a button sitting there permanently inviting a click that would
+    // just re-save the exact same content. The local-file Save button
+    // (no moodleConfig) stays always-visible instead: its own dirty-dot
+    // already communicates "nothing changed" without needing to vanish
+    // entirely, and re-saving a local file in place is a much cheaper,
+    // less surprising no-op than a full Moodle upload round-trip would be.
+    if (moodleConfig) {
+      this.savedIndicator = document.createElement('span')
+      this.savedIndicator.className = 'ed-saved-indicator'
+      this.savedIndicator.textContent = '✓ ' + t('Saved')
+      this.savedIndicator.style.display = 'none'
+      // Set immediately — otherwise an already-saved document (store.
+      // dirty false from the start) would keep showing "Save" until the
+      // first actual edit ever fires the 'dirty' event above.
+      this.saveBtn.style.display = this.store.dirty ? '' : 'none'
+      this.savedIndicator.style.display = this.store.dirty ? 'none' : ''
+    }
     const pdfB = btn(ICONS.pdf, '', () => this.exportPdf(), t('Export PDF (print)'))
     const helpB = btn('<b class="ed-help-q">?</b>', '', () => this.openHelp(), t('Shortcuts & tips (?)'))
     helpB.classList.add('ed-btn-help')
@@ -343,6 +367,7 @@ export class Editor {
     history.append(undoB, redoB)
     const saveGroup = div('ed-split')
     saveGroup.append(saveB, this.saveDropdown())
+    if (this.savedIndicator) saveGroup.appendChild(this.savedIndicator)
     const shareD = this.shareDropdown()
     const langD = this.languageDropdown()
     actions.append(pdfB, this.avatarsBox, shareD, saveGroup, langD, helpB)

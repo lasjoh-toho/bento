@@ -2558,6 +2558,18 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
 }
 .ed-split .ed-btn:hover { background: var(--chrome-2); }
 .ed-caret { font-size: 10px; line-height: 1; }
+.ed-saved-indicator {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--chrome);
+  color: #3a8a5e;
+  font: 600 13px/1 system-ui, -apple-system, sans-serif;
+  white-space: nowrap;
+}
 
 /* quiet divider between share actions and advanced session controls */
 .ed-share-sep { height: 1px; background: var(--line); margin: 2px 0; }
