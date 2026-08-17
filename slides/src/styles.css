@@ -282,15 +282,18 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
    not "how far along"). Starts at width 0 / opacity 0, so a save that
    completes fast enough for XHR to never report a progress event at all
    just never shows this — the ring alone already covers that case fine.
-   Fills the button's FULL height (not just a thin bottom edge) in the
-   same dark blue as .ed-recover's own "Unsaved changes" banner — this
-   growing fill effectively becomes the button's own background while
-   saving, rather than a separate accent line underneath it. */
+   Fills the button's FULL height (not just a thin bottom edge). Uses
+   var(--blue) rather than a hardcoded color — that variable is already
+   tuned per-theme specifically for chrome-background readability (lifted
+   to #7aa5f5 in dark mode, since the plain #5b8def light-mode value reads
+   as "barely distinguishable from dark chrome", per its own existing
+   comment) — a fixed navy here read exactly as invisible against dark
+   mode's own toolbar background for the same reason, as reported. */
 .ed-save-progress {
   position: absolute;
   inset: 0;
   width: 0;
-  background: #16273e;
+  background: var(--blue);
   border-radius: 7px;
   opacity: 0;
   transition: width 0.15s linear, opacity 0.15s ease;
@@ -299,11 +302,13 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 }
 .ed-save-btn.ed-saving .ed-save-progress.ed-save-progress-active { opacity: 1; }
 /* Keeps the icon/label stack visibly above the full-height fill above,
-   and swaps to a light color to stay readable against the now-dark
-   background — same inverted-contrast pairing used for .ed-recover's
-   own light text on a dark banner. */
+   and swaps to a dark color (matching --accent-ink, the color already
+   used for text ON --accent elsewhere) to stay readable against BOTH the
+   orange base and the lighter --blue fill — unlike the previous very
+   dark navy, --blue is light enough that light text no longer has
+   reliable contrast against it. */
 .ed-save-btn.ed-saving > :not(.ed-save-progress) { position: relative; z-index: 1; }
-.ed-save-btn.ed-saving { color: #f2f0ea; }
+.ed-save-btn.ed-saving { color: var(--accent-ink); }
 .ed-btn svg { display: block; }
 
 .ed-btn-primary {
