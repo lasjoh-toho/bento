@@ -25,6 +25,16 @@ export interface MoodleConfig {
    *  "Zeitüberschreitung beim Speichern") — falls back to 20 if somehow
    *  absent (an older mod_bento not yet carrying this field). */
   savetimeout?: number
+  /** A sequence of OTHER decks to play through, one at a time, after this
+   *  document's own last slide is reached — see view.php's own visible-
+   *  decks query for how this list is built (every deck/document
+   *  currently marked visible, in sortorder, this one excluded). Each
+   *  entry is lazy-loaded (a plain GET, not fetched up front) only once
+   *  present mode actually reaches it — this is the whole point: viewing
+   *  a long sequence of visible presentations shouldn't require
+   *  downloading all of them just to start the first one. Absent or
+   *  empty means "just this one document", same as before this existed. */
+  playlist?: { url: string }[]
 }
 
 function readMoodleConfig(): MoodleConfig | null {

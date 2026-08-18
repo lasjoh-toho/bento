@@ -26,7 +26,7 @@ export function startPresentation(
   doc: BentoDoc,
   startIndex: number,
   onExit: (lastIndex: number) => void,
-  opts: { fullscreen?: boolean; onSaveTerms?: (slideIndex: number, terms: DragTerm[]) => void } = {},
+  opts: { fullscreen?: boolean; onSaveTerms?: (slideIndex: number, terms: DragTerm[]) => void; onReachedEnd?: () => void } = {},
 ): PresentSession {
   const overlay = document.createElement('div')
   overlay.className = 'bento-present-overlay'
@@ -88,6 +88,7 @@ export function startPresentation(
     for (let i = (isSkipped(cur) ? anchorOf(cur) : cur) + 1; i < doc.slides.length; i++) {
       if (!isSkipped(i)) return deck.slide(i, 0)
     }
+    opts.onReachedEnd?.()
   }
   const goPrev = () => {
     const cur = deck.getIndices().h

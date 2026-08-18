@@ -18,7 +18,7 @@ import { renderSlide, renderThumbnail } from '../render'
 import { SlideCanvas } from './canvas'
 import { PropsPanel } from './panels'
 import { LongReadEditor } from './longread'
-import { startPresentation } from '../present'
+import { startPresentation, type PresentSession } from '../present'
 import { adoptFileHandle, canWriteInPlace, currentFileName, downloadFile, fileBase, hasFileHandle, isEncryptionActive, openedFileName, saveFile, serializeAuto, serializeFile, setEncryptionPassword, suggestedFileName, writeUpdatedFile, writeUpdatedFileAs } from '../save'
 import { moodleConfig, saveToMoodle } from './moodle'
 import { addVersion, clearRecovery, clearVersions, docContentKey, getRecovery, listVersions, pruneOld, putRecovery, type Snapshot } from '../autosave'
@@ -2197,28 +2197,35 @@ export class Editor {
     document.querySelector('.ed-hint-pulse')?.classList.remove('ed-hint-pulse')
     this.canvas.commitTextEdit()
     this.presenting = true
-    startPresentation(this.store.doc, fromStart ? 0 : this.store.currentIndex, (last) => {
-      this.presenting = false
-      this.store.goTo(last)
-      this.canvas.render()
-    }, {
-      fullscreen,
-      onSaveTerms: () => {
-        // present.ts already mutated store.doc.slides[slideIndex].dragTerms
-        // directly (that's what makes it survive Escape + restarting the
-        // presentation without needing this at all) — this button's job is
-        // just to mark that as a real, dirty/undo-tracked change, exactly
-        // like every other edit, so it's included the next time the file
-        // itself gets saved. touch() (not commit()) is the right primitive
-        // here specifically because the mutation already happened; there's
-        // no separate "before" state left to checkpoint against.
-        this.store.touch()
-        // In Moodle, saving IS just a background request — no download
-        // dialog to interrupt the presentation with — so do it right away
-        // rather than waiting for a separate save step later.
-        if (moodleConfig) void saveToMoodle(this.store.doc)
-      },
-    })
+    const playlist = moodleConfig?.playlist ?? []
+    let playlistPos = -1 // -1 = still on the original document itself
+    let session: PresentSession
+    const startOne = (doc: import('../model').BentoDoc, startIndex: number) => {
+      session = startPresentation(doc, startIndex, (last) => {
+        this.presenting = false
+        this.store.goTo(last)
+        this.canvas.render()
+      }, {
+        fullscreen,
+        onSaveTerms: () => {
+          this.store.touch()
+          if (moodleConfig) void saveToMoodle(this.store.doc)
+        },
+        onReachedEnd: playlist.length ? () => {
+          playlistPos = (playlistPos + 1) % playlist.length
+          fetch(playlist[playlistPos].url)
+            .then((res) => res.json())
+            .then((nextDoc: import('../model').BentoDoc) => {
+              session.exit()
+              startOne(nextDoc, 0)
+            })
+            .catch((e) => {
+              console.error('[bento/present] failed to load next in playlist:', e)
+            })
+        } : undefined,
+      })
+    }
+    startOne(this.store.doc, fromStart ? 0 : this.store.currentIndex)
   }
 
   // --- paste: external objects + cross-deck elements/slides ---------------------
