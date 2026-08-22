@@ -820,15 +820,29 @@ export class PropsPanel {
         this.store.commit(() => {
           const doc = this.store.doc
           doc.assets = doc.assets || {}
+          // Reverse index (content -> existing key) so a content match
+          // reuses the SAME key regardless of what the incoming file
+          // happened to call it — mirrors mergeDocs' own dedup step in
+          // the converter tool (bentoconvert.js) exactly; the collision
+          // loop below only ever renames on a key clash with a DIFFERENT
+          // value, it wouldn't on its own notice a same-content asset
+          // already sitting under some unrelated key.
+          const valueToKey: Record<string, string> = {}
+          for (const [k, v] of Object.entries(doc.assets)) valueToKey[v as string] = k
           const keyMap: Record<string, string> = {}
           for (const [key, val] of Object.entries((parsed.assets ?? {}) as Record<string, string>)) {
+            if (Object.prototype.hasOwnProperty.call(valueToKey, val)) {
+              if (valueToKey[val] !== key) keyMap[key] = valueToKey[val]
+              continue
+            }
             let newKey = key
-            if (Object.prototype.hasOwnProperty.call(doc.assets, newKey) && doc.assets[newKey] !== val) {
+            if (Object.prototype.hasOwnProperty.call(doc.assets, newKey)) {
               let i = 1
               while (Object.prototype.hasOwnProperty.call(doc.assets, key + '_' + i)) i++
               newKey = key + '_' + i
             }
             doc.assets[newKey] = val
+            valueToKey[val] = newKey
             if (newKey !== key) keyMap[key] = newKey
           }
           const usedIds = new Set(doc.slides.map((s) => s.id))
