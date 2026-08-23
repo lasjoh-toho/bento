@@ -2221,7 +2221,7 @@ export class Editor {
             .then((res) => res.json())
             .then((nextDoc: import('../model').BentoDoc) => {
               startOne(nextDoc, 0)
-              oldSession.exit({ keepFullscreen: true })
+              void session.fullscreenReady.then(() => oldSession.exit({ keepFullscreen: true }))
             })
             .catch((e) => {
               console.error('[bento/present] failed to load next in playlist:', e)

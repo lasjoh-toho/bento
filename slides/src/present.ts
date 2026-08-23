@@ -20,6 +20,11 @@ const MORPH_EASE = 'power2.inOut'
 
 export interface PresentSession {
   exit(opts?: { keepFullscreen?: boolean }): void
+  /** Resolves once this session's own fullscreen request has settled (or
+   *  immediately if fullscreen wasn't requested at all) — see this file's
+   *  own reasoning above on why a caller doing a playlist handoff needs to
+   *  await this before tearing down the previous session. */
+  fullscreenReady: Promise<void>
 }
 
 export function startPresentation(
@@ -1280,8 +1285,12 @@ export function startPresentation(
   document.addEventListener('visibilitychange', onVisibility)
   void acquireWakeLock()
 
+  let fullscreenSettled!: () => void
+  const fullscreenReady = new Promise<void>((resolve) => { fullscreenSettled = resolve })
   const enterFullscreen = () => {
-    overlay.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => {})
+    const req = overlay.requestFullscreen?.({ navigationUI: 'hide' })
+    if (req) req.catch(() => {}).then(() => fullscreenSettled())
+    else fullscreenSettled()
   }
   const toggleFullscreen = () => {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
@@ -1297,6 +1306,7 @@ export function startPresentation(
   }
   document.addEventListener('fullscreenchange', onFsChange)
   if (opts.fullscreen !== false) enterFullscreen()
+  else fullscreenSettled()
   // If the editor already opened notes on the second screen, go live on that
   // existing window now — no new window.open, so fullscreen above kept this
   // click's activation and the notes were never trapped in the fullscreen Space.
@@ -1990,7 +2000,7 @@ export function startPresentation(
     }
   })
 
-  return { exit }
+  return { exit, fullscreenReady }
 }
 
 // --- media playback -----------------------------------------------------------

@@ -1703,7 +1703,7 @@ export class PropsPanel {
       this.host.appendChild(add)
     }
 
-    const SHAPE_KINDS: ShapeKind[] = ['rect', 'ellipse', 'triangle', 'arrow', 'line']
+    const SHAPE_KINDS: ShapeKind[] = ['rect', 'ellipse', 'triangle', 'arrow', 'polygon', 'line']
     this.row('Shape', this.select(SHAPE_KINDS, el.shape, (v) =>
       this.mutate(el.id, (e) => { (e as ShapeElement).shape = v as ShapeKind }, true)))
     this.row('Stroke', this.colorAlpha(el.stroke === 'transparent' ? 'rgba(30, 42, 58, 0)' : el.stroke, (v, fin) =>
@@ -1728,6 +1728,10 @@ export class PropsPanel {
     if (el.shape === 'rect') {
       this.row('Corner radius', this.number(el.radius, 1, (v, fin) =>
         this.mutate(el.id, (e) => { (e as ShapeElement).radius = Math.max(v, 0) }, fin)))
+    }
+    if (el.shape === 'polygon') {
+      this.row('Sides', this.number(el.sides ?? 6, 1, (v, fin) =>
+        this.mutate(el.id, (e) => { (e as ShapeElement).sides = Math.max(3, Math.min(12, Math.round(v))) }, fin)))
     }
   }
 

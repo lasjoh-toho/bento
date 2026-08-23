@@ -197,7 +197,7 @@ export interface TextElement extends ElementBase {
   citation?: Citation
 }
 
-export type ShapeKind = 'rect' | 'ellipse' | 'triangle' | 'arrow' | 'line' | 'path'
+export type ShapeKind = 'rect' | 'ellipse' | 'triangle' | 'arrow' | 'polygon' | 'line' | 'path'
 
 /** Linear gradient fill. Colors are any CSS color, including rgba(). */
 export interface GradientFill {
@@ -220,6 +220,8 @@ export interface ShapeElement extends ElementBase {
   strokeWidth: number
   /** corner radius, rect only */
   radius: number
+  /** number of sides, polygon only — 3..12, defaults to 6 (hexagon) when unset */
+  sides?: number
   /** dash length in px; 0/undefined = solid stroke (legacy — see strokeStyle) */
   strokeDash?: number
   /** stroke pattern; wins over strokeDash when set */
@@ -1007,6 +1009,7 @@ export function defaultShape(shape: ShapeKind, partial: Partial<ShapeElement> = 
     stroke: 'transparent',
     strokeWidth: 0,
     radius: shape === 'rect' ? 12 : 0,
+    sides: shape === 'polygon' ? 6 : undefined,
     ...partial,
   }
 }

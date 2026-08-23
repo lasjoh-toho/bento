@@ -347,6 +347,19 @@ export function shapeSvg(el: ShapeElement): SVGSVGElement {
       )
       break
     }
+    case 'polygon': {
+      node = document.createElementNS(SVG_NS, 'polygon')
+      const sides = Math.max(3, Math.min(12, el.sides ?? 6))
+      const cx = w / 2, cy = h / 2
+      const rx = Math.max(w / 2 - inset, 0), ry = Math.max(h / 2 - inset, 0)
+      const pts: string[] = []
+      for (let i = 0; i < sides; i++) {
+        const angle = -Math.PI / 2 + (i * 2 * Math.PI) / sides
+        pts.push(`${cx + rx * Math.cos(angle)},${cy + ry * Math.sin(angle)}`)
+      }
+      node.setAttribute('points', pts.join(' '))
+      break
+    }
     case 'line': {
       node = document.createElementNS(SVG_NS, 'line')
       const lw = Math.max(sw, 2)
