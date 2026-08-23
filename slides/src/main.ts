@@ -166,7 +166,6 @@ function playerMode(doc: BentoDoc) {
     void serializeAuto(doc).then((html) => downloadFile(html, suggestedFileName(doc)))
   })
   ;(window as any).bento = { format: doc.format, doc, readonly: true }
-  start()
 }
 
 function editorMode(doc: BentoDoc) {
@@ -217,10 +216,7 @@ const editor = new Editor(document.getElementById('app')!, store)
 const session = new SyncSession(store)
 editor.connectSync(session)
 
-// Opening a link ending in #present starts the show immediately (player mode).
-if (location.hash === '#present') {
-  editor.present(true)
-}
+
 
 // Dismiss the boot splash (inline in index.html so it paints before this
 // bundle parses). Hold it briefly so the assemble animation reads as a

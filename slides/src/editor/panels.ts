@@ -7,7 +7,7 @@
 import type { Store } from '../store'
 import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement } from '../measure'
 import { isMacOS } from '../screens'
@@ -1703,6 +1703,9 @@ export class PropsPanel {
       this.host.appendChild(add)
     }
 
+    const SHAPE_KINDS: ShapeKind[] = ['rect', 'ellipse', 'triangle', 'arrow', 'line']
+    this.row('Shape', this.select(SHAPE_KINDS, el.shape, (v) =>
+      this.mutate(el.id, (e) => { (e as ShapeElement).shape = v as ShapeKind }, true)))
     this.row('Stroke', this.colorAlpha(el.stroke === 'transparent' ? 'rgba(30, 42, 58, 0)' : el.stroke, (v, fin) =>
       this.mutate(el.id, (e) => { (e as ShapeElement).stroke = v }, fin)))
     this.row('Stroke width', this.number(el.strokeWidth, 0.5, (v, fin) =>
