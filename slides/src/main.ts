@@ -137,9 +137,29 @@ function playerMode(doc: BentoDoc) {
   document.body.appendChild(card)
   const start = () => {
     card.style.display = 'none'
-    startPresentation(doc, 0, () => {
-      card.style.display = ''
-    })
+    const playlist = moodleConfig?.playlist ?? []
+    let playlistPos = -1 // -1 = still on the original document itself
+    let session: ReturnType<typeof startPresentation>
+    const startOne = (d: BentoDoc, startIndex: number) => {
+      session = startPresentation(d, startIndex, () => {
+        card.style.display = ''
+      }, {
+        onReachedEnd: playlist.length ? () => {
+          playlistPos = (playlistPos + 1) % playlist.length
+          const oldSession = session
+          fetch(playlist[playlistPos].url)
+            .then((res) => res.json())
+            .then((nextDoc: BentoDoc) => {
+              startOne(nextDoc, 0)
+              oldSession.exit({ keepFullscreen: true })
+            })
+            .catch((e) => {
+              console.error('[bento/present] failed to load next in playlist:', e)
+            })
+        } : undefined,
+      })
+    }
+    startOne(doc, 0)
   }
   card.querySelector('.ed-playgo')!.addEventListener('click', start)
   card.querySelector('.ed-playcopy')!.addEventListener('click', () => {

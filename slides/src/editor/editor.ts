@@ -2200,8 +2200,11 @@ export class Editor {
     const playlist = moodleConfig?.playlist ?? []
     let playlistPos = -1 // -1 = still on the original document itself
     let session: PresentSession
+    let generation = 0
     const startOne = (doc: import('../model').BentoDoc, startIndex: number) => {
+      const myGeneration = ++generation
       session = startPresentation(doc, startIndex, (last) => {
+        if (myGeneration !== generation) return // a stale, mid-chain session's own exit — the chain is still running under a newer one
         this.presenting = false
         this.store.goTo(last)
         this.canvas.render()
@@ -2213,11 +2216,12 @@ export class Editor {
         },
         onReachedEnd: playlist.length ? () => {
           playlistPos = (playlistPos + 1) % playlist.length
+          const oldSession = session
           fetch(playlist[playlistPos].url)
             .then((res) => res.json())
             .then((nextDoc: import('../model').BentoDoc) => {
-              session.exit()
               startOne(nextDoc, 0)
+              oldSession.exit({ keepFullscreen: true })
             })
             .catch((e) => {
               console.error('[bento/present] failed to load next in playlist:', e)

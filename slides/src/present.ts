@@ -19,7 +19,7 @@ const MORPH_DURATION = 0.65
 const MORPH_EASE = 'power2.inOut'
 
 export interface PresentSession {
-  exit(): void
+  exit(opts?: { keepFullscreen?: boolean }): void
 }
 
 export function startPresentation(
@@ -1302,7 +1302,7 @@ export function startPresentation(
   // click's activation and the notes were never trapped in the fullscreen Space.
   if (speakerWindow()) openSpeaker()
 
-  const exit = () => {
+  const exit = (opts: { keepFullscreen?: boolean } = {}) => {
     if (exited) return
     exited = true
     // measurements are keyed by slide INDEX, so they'd be wrong for the next
@@ -1310,7 +1310,7 @@ export function startPresentation(
     symCache.clear()
     pauseMediaIn(slidesEl) // stop any playing clip before teardown
     stopAllCameraStreams()
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    if (!opts.keepFullscreen && document.fullscreenElement) document.exitFullscreen().catch(() => {})
     const last = deck.getIndices().h
     try {
       deck.destroy()
