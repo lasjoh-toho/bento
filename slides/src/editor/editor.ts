@@ -8,7 +8,7 @@ import {
   FORMAT_VERSION,
   MEDIA_EMBED_BUDGET,
   applyChartPalette, applyLayout, builtinLayouts, defaultChart, defaultImage, defaultMedia, defaultShape, defaultTable, defaultText,
-  instantiateLayout, isLightBg, layoutElementIds, newDocId, parseDoc, readableInk, removeUnusedAssets, syncLinkedChart, uid,
+  instantiateLayout, internAsset, isLightBg, layoutElementIds, newDocId, parseDoc, readableInk, removeUnusedAssets, syncLinkedChart, uid,
   type ChartElement, type ShapeKind, type Slide, type SlideElement, type TableElement,
 } from '../model'
 import { THEME_CHOICES, setTheme, themeChoice } from '../../../kernel/src/theme.ts'
@@ -22,7 +22,7 @@ import { startPresentation, type PresentSession } from '../present'
 import { adoptFileHandle, canWriteInPlace, currentFileName, downloadFile, fileBase, hasFileHandle, isEncryptionActive, openedFileName, saveFile, serializeAuto, serializeFile, setEncryptionPassword, suggestedFileName, writeUpdatedFile, writeUpdatedFileAs } from '../save'
 import { moodleConfig, saveToMoodle } from './moodle'
 import { addVersion, clearRecovery, clearVersions, docContentKey, getRecovery, listVersions, pruneOld, putRecovery, type Snapshot } from '../autosave'
-import { insertElements, insertSlides, parseClip, serializeElements, serializeSlides } from './clipboard'
+import { insertElements, insertSlides, parseClip, parseHtmlPaste, serializeElements, serializeSlides } from './clipboard'
 import { openSpeakerWindow, speakerIdleBody } from '../screens'
 import { borderPoint, boxCenter, lineEndpoints, setLineEndpoints, sideMidpoint } from './lineedit'
 import { ICONS } from '../icons'
@@ -2278,7 +2278,39 @@ export class Editor {
         this.toast(made.length === 1 ? t('Pasted 1 slide') : t('Pasted {n} slides', { n: made.length }))
         return
       }
-      // 3) plain text → a text element
+      // 3) HTML with multiple images/paragraphs (a web page, PDF, or word
+      // processor selection — sources that DO keep several images separate
+      // in their own HTML, unlike PowerPoint/Keynote's own cross-app
+      // shape-flattening) → one element per block, stacked onto this slide.
+      const html = dt.getData('text/html')
+      if (html && html.trim()) {
+        ev.preventDefault()
+        parseHtmlPaste(html).then((blocks) => {
+          if (blocks.length < 2 && !blocks.some((b) => b.kind === 'image')) return // nothing worth the async detour — falls through to plain text below
+          const { width } = this.store.doc.size
+          const added: SlideElement[] = []
+          this.store.commit(() => {
+            let y = 120
+            for (const block of blocks) {
+              if (block.kind === 'image' && block.src) {
+                const w = Math.round(width * 0.5), h = Math.round(w * 0.6)
+                const el = defaultImage(internAsset(this.store.doc, block.src), { x: Math.round((width - w) / 2), y, w, h, fit: 'contain' })
+                this.store.slide.elements.push(el); added.push(el); y += h + 24
+              } else if (block.kind === 'text' && block.html) {
+                const w = Math.round(width * 0.6), h = 100
+                const el = defaultText({ html: block.html, color: readableInk(this.store.slide.background), x: Math.round((width - w) / 2), y, w, h })
+                this.store.slide.elements.push(el); added.push(el); y += h + 16
+              }
+            }
+          })
+          if (added.length) {
+            this.store.select(added.map((e) => e.id))
+            this.toast(added.length === 1 ? t('Pasted 1 item') : t('Pasted {n} items', { n: added.length }))
+          }
+        }).catch((e) => console.error('[bento] HTML paste failed:', e))
+        return
+      }
+      // 4) plain text → a text element
       if (text && text.trim()) {
         ev.preventDefault()
         const esc = text.trim().slice(0, 4000).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')

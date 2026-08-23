@@ -111,7 +111,95 @@ function rewriteRefs(els: SlideElement[], remap: Map<string, string>) {
   }
 }
 
-/** Insert pasted elements onto a slide with fresh ids, nudged so they're visible. */
+export interface HtmlPasteBlock {
+  kind: 'text' | 'image'
+  html?: string // sanitized inner HTML, text blocks only
+  src?: string // a usable image src (data: URI, or a fetched-and-inlined one), image blocks only
+}
+
+const HTML_PASTE_BLOCK_TAGS = new Set(['p', 'div', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'img'])
+
+/** Walks a parsed HTML fragment's own body in document order, collecting one
+ *  entry per meaningful block-level node (or <img>) — deliberately simple
+ *  compared to bentopaste.js's own version (no heading-level tracking, no
+ *  empty-paragraph position-preserving safety net): this is for a handful of
+ *  images/paragraphs landing on the current slide, not reconstructing a
+ *  long, faithfully-ordered multi-slide document. */
+function collectHtmlPasteNodes(root: HTMLElement): HTMLElement[] {
+  const out: HTMLElement[] = []
+  const walk = (node: Element) => {
+    for (const child of Array.from(node.children)) {
+      const tag = child.tagName.toLowerCase()
+      if (tag === 'img') { out.push(child as HTMLElement); continue }
+      if (HTML_PASTE_BLOCK_TAGS.has(tag) && (child.textContent ?? '').trim()) { out.push(child as HTMLElement); continue }
+      walk(child) // not a block itself (e.g. a wrapping <span>/<article>) — look inside it instead
+    }
+  }
+  walk(root)
+  return out
+}
+
+function sanitizeInlineHtml(el: HTMLElement): string {
+  // Keep only plain inline formatting a bento text element can actually
+  // render — strip everything else (styles, classes, data attributes,
+  // nested block structure) down to its own text content, bold/italic kept.
+  const allowed = new Set(['b', 'strong', 'i', 'em', 'br'])
+  const clean = (node: Node): string =>
+    Array.from(node.childNodes).map((n) => {
+      if (n.nodeType === Node.TEXT_NODE) return (n.textContent ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      if (n.nodeType !== Node.ELEMENT_NODE) return ''
+      const tag = (n as Element).tagName.toLowerCase()
+      const inner = clean(n)
+      return allowed.has(tag) ? `<${tag}>${inner}</${tag}>` : inner
+    }).join('')
+  return clean(el).trim()
+}
+
+async function resolveImageSrc(src: string): Promise<string | null> {
+  if (src.startsWith('data:')) return src
+  if (!/^https?:\/\//.test(src)) return null
+  try {
+    const res = await fetch(src, { mode: 'cors' })
+    if (!res.ok) return null
+    const blob = await res.blob()
+    if (!blob.type.startsWith('image/')) return null
+    return await new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null // most cross-origin images without permissive CORS headers land here — silently skipped rather than left broken
+  }
+}
+
+/** Parses a paste event's own text/html into a flat list of usable blocks —
+ *  images resolved to a real, directly-usable src (data: URI as-is, an
+ *  http(s) URL fetched and inlined where CORS allows it), everything else
+ *  reduced to plain inline-formatted text. Async because image resolution
+ *  is; caller is responsible for having already called ev.preventDefault()
+ *  synchronously before awaiting this. */
+export async function parseHtmlPaste(html: string): Promise<HtmlPasteBlock[]> {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  if (!doc.body) return []
+  const nodes = collectHtmlPasteNodes(doc.body)
+  const blocks: HtmlPasteBlock[] = []
+  for (const node of nodes) {
+    if (node.tagName.toLowerCase() === 'img') {
+      const src = node.getAttribute('src')
+      if (!src) continue
+      const resolved = await resolveImageSrc(src)
+      if (resolved) blocks.push({ kind: 'image', src: resolved })
+      continue
+    }
+    const inner = sanitizeInlineHtml(node)
+    if (inner) blocks.push({ kind: 'text', html: inner })
+  }
+  return blocks
+}
+
+
 export function insertElements(payload: ClipPayload, doc: BentoDoc, slide: Slide): SlideElement[] {
   const remap = mergeAssets(payload, doc)
   mergeFonts(payload, doc, remap)
