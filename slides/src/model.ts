@@ -135,7 +135,7 @@ export interface TextElement extends ElementBase {
   color: string
   /** When set (and stops non-empty), painted into the glyphs; wins over `color`. */
   colorGradient?: GradientFill
-  align: 'left' | 'center' | 'right'
+  align: 'left' | 'center' | 'right' | 'justify'
   valign: 'top' | 'middle' | 'bottom'
   lineHeight: number
   /** px; optional tracking for letter-spaced caps labels */
@@ -308,6 +308,8 @@ export interface ImageElement extends ElementBase {
 export interface Citation {
   /** Shown in the on-slide caption. Empty/undefined shows nothing there. */
   author?: string
+  /** Shown in the on-slide caption alongside author, if known. */
+  title?: string
   /** "Erstveröffentlichung" — year first published, if known. */
   publishedYear?: string
   /** "Erstveröffentlichung" — place/publication first published in, if known. */
@@ -327,6 +329,15 @@ export interface Citation {
    *  aktualisieren" collects references. Undefined means true, same
    *  default-on convention as showCaption. */
   collectInReferences?: boolean
+  /** Caption font size as a fraction of the host element's own font size
+   *  (text elements only — images have no "own" font size to scale
+   *  from, and keep their fixed absolute size regardless). Undefined
+   *  means the default, 0.8 (80%). */
+  captionFontScale?: number
+  /** Undefined means the default: true (italic). */
+  captionItalic?: boolean
+  /** Undefined means the default: 'right'. */
+  captionAlign?: 'left' | 'center' | 'right'
 }
 
 export interface SvgElement extends ElementBase {

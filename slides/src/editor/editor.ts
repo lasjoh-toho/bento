@@ -2785,6 +2785,7 @@ export class Editor {
       [`${mod}C · ${mod}V`, t('Copy · paste — elements, or the whole slide when nothing is selected')],
       [`${mod}D`, t('Duplicate selection')],
       [`${mod}G · ${mod}⇧G`, t('Group · ungroup')],
+      ['T', t('Insert a text box')],
       ['C', t('Comment mode')],
       ['?', t('This help')],
     ])
@@ -3027,6 +3028,11 @@ export class Editor {
       }
       if (inField) return
 
+      if (!mod && ev.key.toLowerCase() === 't') {
+        ev.preventDefault()
+        this.canvas.insert(defaultText({ color: readableInk(this.store.slide.background), y: 120 + Math.random() * 200 }), true)
+        return
+      }
       if (!mod && (ev.key === '?' || (ev.key === '/' && ev.shiftKey))) {
         ev.preventDefault()
         this.openHelp()

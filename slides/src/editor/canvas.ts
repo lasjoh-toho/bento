@@ -1222,7 +1222,23 @@ export class SlideCanvas {
       ev.preventDefault()
       document.execCommand('insertHTML', false, sanitizeHtml(markdownToHtml(text)))
     })
-    inner.addEventListener('blur', () => this.commitTextEdit(), { once: true })
+    inner.addEventListener('blur', () => { if (!this.blurCommitPaused) this.commitTextEdit() }, { once: true })
+  }
+
+  /** Set while the properties panel is mid-way through applying a format
+   *  (e.g. a color) to a partial text SELECTION rather than the whole
+   *  element — a native <input type="color"> steals focus (and fires
+   *  blur) the instant it's clicked, well before the panel's own
+   *  change/input handler ever runs; pausing the blur-triggered commit
+   *  keeps the element in its editable state (and this.editing set) long
+   *  enough for that handler to restore the selection and apply the
+   *  format. The panel calls resumeBlurCommit() right after, which commits
+   *  immediately if the field has already lost focus by then. */
+  blurCommitPaused = false
+  pauseBlurCommit() { this.blurCommitPaused = true }
+  resumeBlurCommit() {
+    this.blurCommitPaused = false
+    if (this.editing && document.activeElement !== this.editing.querySelector('.bento-text-inner')) this.commitTextEdit()
   }
 
   /** collaborator presence: notified when text editing starts/stops */

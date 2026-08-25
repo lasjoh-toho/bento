@@ -354,7 +354,7 @@ export class PropsPanel {
         for (const e of s.elements) {
           if (e.type !== 'image' && e.type !== 'text') continue
           if (!e.citation?.sourceUrl || e.citation.collectInReferences === false) continue
-          const parts = [e.citation.author?.trim(), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
+          const parts = [[e.citation.author?.trim(), e.citation.title?.trim()].filter(Boolean).join(', '), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
           lines.push(parts.filter(Boolean).join(', '))
         }
       }
@@ -905,9 +905,10 @@ export class PropsPanel {
         row.classList.add('dragging')
       })
       row.addEventListener('dragend', () => row.classList.remove('dragging'))
-      row.addEventListener('dragover', (e) => e.preventDefault())
+      row.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation() })
       row.addEventListener('drop', (e) => {
         e.preventDefault()
+        e.stopPropagation()
         const draggedId = e.dataTransfer?.getData('text/plain')
         if (!draggedId || draggedId === el.id) return
         const rect = row.getBoundingClientRect()
@@ -1482,7 +1483,8 @@ export class PropsPanel {
       }, true)))
     if (!tgrad) {
       this.row('Color', this.color(el.color, (v, fin) =>
-        this.mutate(el.id, (e) => { (e as TextElement).color = v }, fin)))
+        this.mutate(el.id, (e) => { (e as TextElement).color = v }, fin),
+        (v) => document.execCommand('foreColor', false, v)))
     } else {
       this.row('Grad. angle', this.number(tgrad.angle, 1, (v, fin) =>
         this.mutate(el.id, (e) => {
@@ -1531,7 +1533,7 @@ export class PropsPanel {
         }, true))
       this.host.appendChild(addStop)
     }
-    this.row('Align', this.select(['left', 'center', 'right'], el.align, (v) =>
+    this.row('Align', this.select(['left', 'center', 'right', 'justify'], el.align, (v) =>
       this.mutate(el.id, (e) => { (e as TextElement).align = v as TextElement['align'] }, true)))
     this.row('V-align', this.select(['top', 'middle', 'bottom'], el.valign, (v) =>
       this.mutate(el.id, (e) => { (e as TextElement).valign = v as TextElement['valign'] }, true)))
@@ -2460,12 +2462,40 @@ export class PropsPanel {
         ie.citation = { ...(ie.citation as Citation), ...patch }
       }, true)
 
+    const pasteInput = document.createElement('input')
+    pasteInput.type = 'text'
+    pasteInput.placeholder = t('Ganze Angabe hier einfügen …')
+    pasteInput.addEventListener('change', () => {
+      const raw = pasteInput.value.trim()
+      if (!raw) return
+      const yearMatch = raw.match(/\b(1[4-9]\d{2}|20\d{2})\b/)
+      let author = raw, title: string | undefined, year: string | undefined
+      if (yearMatch) {
+        year = yearMatch[0]
+        const before = raw.slice(0, yearMatch.index).replace(/[\s,.()–-]+$/, '').trim()
+        const after = raw.slice((yearMatch.index ?? 0) + yearMatch[0].length).replace(/^[\s,.:()–-]+/, '').trim()
+        author = before || after
+        title = before ? (after || undefined) : undefined
+      }
+      setCitation({ author: author || undefined, title, publishedYear: year })
+      pasteInput.value = ''
+      this.rebuild(true)
+    })
+    this.row(t('Schnell einfügen'), pasteInput)
+
     const authorInput = document.createElement('input')
     authorInput.type = 'text'
     authorInput.placeholder = t('Autor')
     authorInput.value = c.author ?? ''
     authorInput.addEventListener('change', () => setCitation({ author: authorInput.value || undefined }))
     this.row(t('Autor'), authorInput)
+
+    const titleInput = document.createElement('input')
+    titleInput.type = 'text'
+    titleInput.placeholder = t('Titel')
+    titleInput.value = c.title ?? ''
+    titleInput.addEventListener('change', () => setCitation({ title: titleInput.value || undefined }))
+    this.row(t('Titel'), titleInput)
 
     // Two fields, no individual labels of their own — the row label
     // "Erstveröffentlichung" already makes "Jahr"/"Ort" as bare
@@ -2491,6 +2521,15 @@ export class PropsPanel {
       c.showCaption !== false,
       (v) => setCitation({ showCaption: v }),
     ))
+    if (c.showCaption !== false) {
+      if (host.type === 'text') {
+        this.row(t('Schriftgröße (% vom Text)'), this.number(Math.round((c.captionFontScale ?? 0.8) * 100), 1, (v) =>
+          setCitation({ captionFontScale: Math.max(v, 10) / 100 })))
+      }
+      this.row(t('Kursiv'), this.toggle(c.captionItalic !== false, (v) => setCitation({ captionItalic: v })))
+      this.row(t('Ausrichtung'), this.select(['left', 'center', 'right'], c.captionAlign ?? 'right', (v) =>
+        setCitation({ captionAlign: v as Citation['captionAlign'] })))
+    }
     this.row(t('Im Quellenverzeichnis sammeln'), this.toggle(
       c.collectInReferences !== false,
       (v) => setCitation({ collectInReferences: v }),
@@ -2966,12 +3005,42 @@ export class PropsPanel {
     return wrap
   }
 
-  private color(value: string, onEdit: (v: string, final: boolean) => void): HTMLElement {
+  /** Captures the current text selection, if one exists AND is a real
+   *  (non-collapsed) range inside an actively-edited text element on the
+   *  canvas — call this on pointerdown, before a native picker (color,
+   *  etc.) steals focus and the DOM selection is very likely lost. */
+  private captureTextSelection(): Range | null {
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null
+    const inner = document.querySelector('.bento-editing .bento-text-inner')
+    if (!inner || !inner.contains(sel.anchorNode)) return null
+    return sel.getRangeAt(0).cloneRange()
+  }
+
+  private color(value: string, onEdit: (v: string, final: boolean) => void, applyToSelection?: (color: string) => void): HTMLElement {
     const input = document.createElement('input')
     input.type = 'color'
     input.value = /^#[0-9a-fA-F]{6}$/.test(value) ? value : parseColor(value).hex
-    input.addEventListener('input', () => onEdit(input.value, false))
-    input.addEventListener('change', () => onEdit(input.value, true))
+    let savedRange: Range | null = null
+    if (applyToSelection) {
+      input.addEventListener('pointerdown', () => {
+        this.canvas.pauseBlurCommit()
+        savedRange = this.captureTextSelection()
+      })
+    }
+    const emit = (final: boolean) => {
+      if (savedRange) {
+        const sel = window.getSelection()
+        sel?.removeAllRanges()
+        sel?.addRange(savedRange)
+        applyToSelection!(input.value)
+        if (final) { savedRange = null; this.canvas.resumeBlurCommit() }
+        return
+      }
+      onEdit(input.value, final)
+    }
+    input.addEventListener('input', () => emit(false))
+    input.addEventListener('change', () => emit(true))
     return input
   }
 

@@ -1087,11 +1087,14 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
       // arbitrary text styling here — this way it just naturally stacks
       // within the box's own flex layout, no overflow-clipping risk at all.
       if (el.citation && el.citation.showCaption !== false) {
-        const citationText = [el.citation.author?.trim(), [el.citation.publishedYear?.trim(), el.citation.publishedPlace?.trim()].filter(Boolean).join(', ')].filter(Boolean).join(' · ')
+        const citationText = [[el.citation.author?.trim(), el.citation.title?.trim()].filter(Boolean).join(', '), [el.citation.publishedYear?.trim(), el.citation.publishedPlace?.trim()].filter(Boolean).join(', ')].filter(Boolean).join(' · ')
         if (citationText) {
           const caption = document.createElement('div')
           caption.className = 'bento-text-citation'
-          caption.style.cssText = 'font-size:0.55em;opacity:0.6;margin-top:0.4em;text-align:inherit'
+          const scale = el.citation.captionFontScale ?? 0.8
+          const italic = el.citation.captionItalic !== false
+          const align = el.citation.captionAlign ?? 'right'
+          caption.style.cssText = `font-size:${scale}em;opacity:0.6;margin-top:0.4em;text-align:${align};font-style:${italic ? 'italic' : 'normal'}`
           caption.textContent = citationText
           node.appendChild(caption)
         }
@@ -1157,11 +1160,13 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
       // bottom of the slide — which is common — rather than actually
       // showing.
       if (el.citation && el.citation.showCaption !== false) {
-        const citationText = [el.citation.author?.trim(), [el.citation.publishedYear?.trim(), el.citation.publishedPlace?.trim()].filter(Boolean).join(', ')].filter(Boolean).join(' · ')
+        const citationText = [[el.citation.author?.trim(), el.citation.title?.trim()].filter(Boolean).join(', '), [el.citation.publishedYear?.trim(), el.citation.publishedPlace?.trim()].filter(Boolean).join(', ')].filter(Boolean).join(' · ')
         if (citationText) {
           const caption = document.createElement('div')
           caption.className = 'bento-image-citation'
-          caption.style.cssText = 'position:absolute;left:0;right:0;bottom:0;padding:4px 8px;font-size:11px;line-height:1.3;color:#fff;background:linear-gradient(to top, rgb(0 0 0 / 0.55), rgb(0 0 0 / 0));text-align:left;pointer-events:none'
+          const italic = el.citation.captionItalic !== false
+          const align = el.citation.captionAlign ?? 'right'
+          caption.style.cssText = `position:absolute;left:0;right:0;bottom:0;padding:4px 8px;font-size:11px;line-height:1.3;color:#fff;background:linear-gradient(to top, rgb(0 0 0 / 0.55), rgb(0 0 0 / 0));text-align:${align};font-style:${italic ? 'italic' : 'normal'};pointer-events:none`
           caption.textContent = citationText
           node.appendChild(caption)
         }
