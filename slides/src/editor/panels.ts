@@ -67,8 +67,9 @@ const ROW_TIPS: Record<string, string> = {
   'Size (pt)': 'Font size in points',
   'Weight': 'Font weight — 400 regular, 700 bold',
   'Align': 'Horizontal text alignment',
-  'V-align': 'Vertical alignment inside the box',
+  '↕ Ausrichtung': 'Vertical alignment inside the box',
   'Line height': 'Line spacing as a multiple of the font size',
+  'Laufweite': 'Letter spacing, in pixels — applies to the selection if you\'ve highlighted characters, otherwise the whole text box',
   'Fill style': 'Solid colour or a linear gradient',
   'Fill': 'Fill colour with opacity — for lines this IS the line colour',
   'Grad. angle': 'Gradient direction in degrees (CSS convention: 0° points up)',
@@ -148,6 +149,10 @@ export class PropsPanel {
     /** Opens the sidebar's layout picker in "apply to every selected
      *  slide" mode — that machinery lives in editor.ts, not here. */
     private onOpenLayoutPickerForSelected: (anchor: HTMLElement) => void = () => {},
+    /** Opens the current slide's own longRead/Zusatztext editor (where
+     *  footnotes actually live — a slide-wide surface, not something this
+     *  per-element panel can host directly) — also lives in editor.ts. */
+    private onOpenLongReadEditor: () => void = () => {},
   ) {
     // Selection/slide switches always rebuild — the user acted outside the
     // panel, so whatever input was focused is obsolete. Doc mutations respect
@@ -245,7 +250,7 @@ export class PropsPanel {
   }
 
   /** Collapsed by default until the user opens them (persisted per title). */
-  private static CLOSED_BY_DEFAULT = new Set(['Slideshow', 'Presenting', 'Interactivity', 'Layout', 'Advanced (JSON)'])
+  private static CLOSED_BY_DEFAULT = new Set(['Slideshow', 'Presenting', 'Interactivity', 'Layout', 'Advanced (JSON)', 'Referenzen', 'Morph'])
 
   /**
    * Retrofit the flat panel into an accordion: every .ed-section header
@@ -312,37 +317,6 @@ export class PropsPanel {
         this.host.appendChild(hiddenHint)
       }
     }
-    const tocBtn = document.createElement('button')
-    tocBtn.className = 'ed-btn ed-btn-block'
-    tocBtn.textContent = t('Inhaltsverzeichnis einfügen')
-    tocBtn.title = t('Fügt ein dynamisches Inhaltsverzeichnis ein, das alle Folien mit Titel aufführt — bleibt automatisch aktuell, auch wenn Folien später hinzukommen, umbenannt oder entfernt werden.')
-    tocBtn.addEventListener('click', () => {
-      this.edit(() => {
-        this.store.slide.elements.push(defaultText({
-          x: 300, y: 160, w: 680, h: 400,
-          fontSize: 26, align: 'left', valign: 'top', lineHeight: 1.7,
-          toc: true, html: '', placeholder: t('Inhaltsverzeichnis (noch keine benannten Folien)'),
-        }))
-      }, true)
-      this.rebuild(true)
-    })
-    this.host.appendChild(tocBtn)
-
-    const tocHiddenBtn = document.createElement('button')
-    tocHiddenBtn.className = 'ed-btn ed-btn-block'
-    tocHiddenBtn.textContent = t('Verstecktes Inhaltsverzeichnis einfügen (vor Folie 1)')
-    tocHiddenBtn.title = t('Wie oben, aber diese Folie wird dabei automatisch aus dem normalen Weiter/Zurück-Durchlauf ausgeblendet — erreichbar nur über Zurück direkt an Folie 1, oder den unsichtbaren Knopf oben in der Mitte jeder anderen Folie.')
-    tocHiddenBtn.addEventListener('click', () => {
-      this.edit(() => {
-        this.store.slide.elements.push(defaultText({
-          x: 300, y: 160, w: 680, h: 400,
-          fontSize: 26, align: 'left', valign: 'top', lineHeight: 1.7,
-          toc: 0, html: '', placeholder: t('Inhaltsverzeichnis (noch keine benannten Folien)'),
-        }))
-      }, true)
-      this.rebuild(true)
-    })
-    this.host.appendChild(tocHiddenBtn)
 
     const citeBtn = document.createElement('button')
     citeBtn.className = 'ed-btn ed-btn-block'
@@ -710,6 +684,46 @@ export class PropsPanel {
     notes.title = t('Shown in the speaker view (Slideshow menu, or S while presenting).') +
       (isMacOS() ? ' ' + t('On macOS, open the speaker view before going fullscreen.') : '')
     this.host.appendChild(notes)
+
+    this.section(t('Referenzen'))
+    const tocBtn = document.createElement('button')
+    tocBtn.className = 'ed-btn ed-btn-block'
+    tocBtn.textContent = t('Inhaltsverzeichnis einfügen')
+    tocBtn.title = t('Fügt ein dynamisches Inhaltsverzeichnis ein, das alle Folien mit Titel aufführt — bleibt automatisch aktuell, auch wenn Folien später hinzukommen, umbenannt oder entfernt werden.')
+    tocBtn.addEventListener('click', () => {
+      this.edit(() => {
+        this.store.slide.elements.push(defaultText({
+          x: 300, y: 160, w: 680, h: 400,
+          fontSize: 26, align: 'left', valign: 'top', lineHeight: 1.7,
+          toc: true, html: '', placeholder: t('Inhaltsverzeichnis (noch keine benannten Folien)'),
+        }))
+      }, true)
+      this.rebuild(true)
+    })
+    this.host.appendChild(tocBtn)
+
+    const tocHiddenBtn = document.createElement('button')
+    tocHiddenBtn.className = 'ed-btn ed-btn-block'
+    tocHiddenBtn.textContent = t('Verstecktes Inhaltsverzeichnis einfügen (vor Folie 1)')
+    tocHiddenBtn.title = t('Wie oben, aber diese Folie wird dabei automatisch aus dem normalen Weiter/Zurück-Durchlauf ausgeblendet — erreichbar nur über Zurück direkt an Folie 1, oder den unsichtbaren Knopf oben in der Mitte jeder anderen Folie.')
+    tocHiddenBtn.addEventListener('click', () => {
+      this.edit(() => {
+        this.store.slide.elements.push(defaultText({
+          x: 300, y: 160, w: 680, h: 400,
+          fontSize: 26, align: 'left', valign: 'top', lineHeight: 1.7,
+          toc: 0, html: '', placeholder: t('Inhaltsverzeichnis (noch keine benannten Folien)'),
+        }))
+      }, true)
+      this.rebuild(true)
+    })
+    this.host.appendChild(tocHiddenBtn)
+
+    const footnoteBtn = document.createElement('button')
+    footnoteBtn.className = 'ed-btn ed-btn-block'
+    footnoteBtn.textContent = t('Fußnoten & Zusatztext bearbeiten…')
+    footnoteBtn.title = t('Öffnet den Zusatztext-Editor dieser Folie — dort lässt sich markierter Text als Fußnote einfügen, unter anderem.')
+    footnoteBtn.addEventListener('click', () => this.onOpenLongReadEditor())
+    this.host.appendChild(footnoteBtn)
   }
 
   private buildMultiPanel(els: SlideElement[]) {
@@ -1449,19 +1463,22 @@ export class PropsPanel {
   }
 
   private buildTextProps(el: TextElement) {
-    this.section(t('Typography'))
-    const hint = document.createElement('p')
-    hint.className = 'ed-hint'
-    hint.innerHTML = t('While editing: <b>⌘B</b>/<b>⌘I</b>/<b>⌘U</b> · markdown auto-converts — **bold*&#8203;* *italic*&#8203; `code` ~~strike~~ and "- " bullets; pasting markdown converts too. Escape with \\ or press ⌘Z right after to keep the literal characters.')
-    this.host.appendChild(hint)
+    this.section(t('Typography'), 'While editing: ⌘B/⌘I/⌘U · markdown auto-converts — **bold** *italic* `code` ~~strike~~ and "- " bullets; pasting markdown converts too. Escape with \\ or press ⌘Z right after to keep the literal characters.')
     this.buildFitHeight(el)
     this.row('Font', this.fontSelect(el))
     // Shown in POINTS (the unit office users know); the model stores slide-space
     // px. 1pt = 4/3 px at the slide's 96dpi space, so 32px = 24pt exactly.
     this.row('Size (pt)', this.number(Math.round(el.fontSize * 0.75 * 10) / 10, 1, (v, fin) =>
       this.mutate(el.id, (e) => {
-        (e as TextElement).fontSize = Math.round(Math.max(v, 3) * (4 / 3) * 100) / 100
-      }, fin)))
+        const te = e as TextElement
+        te.fontSize = Math.round(Math.max(v, 3) * (4 / 3) * 100) / 100
+        te.html = this.clearCssPropFromHtml(te.html, 'font-size')
+      }, fin),
+      (v) => {
+        const range = this.captureTextSelection()
+        if (!range) return
+        this.mutate(el.id, () => this.applyCssToSelection(range, 'font-size', `${Math.round(Math.max(v, 3) * (4 / 3) * 100) / 100}px`), true)
+      }))
     this.row('Weight', this.weightSelect(el))
     // Text fill: a solid colour, or a multi-stop gradient painted into the glyphs.
     const tgrad = el.colorGradient
@@ -1483,8 +1500,15 @@ export class PropsPanel {
       }, true)))
     if (!tgrad) {
       this.row('Color', this.color(el.color, (v, fin) =>
-        this.mutate(el.id, (e) => { (e as TextElement).color = v }, fin),
-        (v) => document.execCommand('foreColor', false, v)))
+        this.mutate(el.id, (e) => {
+          const te = e as TextElement
+          te.color = v
+          te.html = this.clearCssPropFromHtml(te.html, 'color')
+        }, fin),
+        (v) => {
+          document.execCommand('styleWithCSS', false, 'true')
+          document.execCommand('foreColor', false, v)
+        }))
     } else {
       this.row('Grad. angle', this.number(tgrad.angle, 1, (v, fin) =>
         this.mutate(el.id, (e) => {
@@ -1534,11 +1558,22 @@ export class PropsPanel {
       this.host.appendChild(addStop)
     }
     this.row('Align', this.select(['left', 'center', 'right', 'justify'], el.align, (v) =>
-      this.mutate(el.id, (e) => { (e as TextElement).align = v as TextElement['align'] }, true)))
-    this.row('V-align', this.select(['top', 'middle', 'bottom'], el.valign, (v) =>
-      this.mutate(el.id, (e) => { (e as TextElement).valign = v as TextElement['valign'] }, true)))
+      this.mutate(el.id, (e) => { (e as TextElement).align = v as TextElement['align'] }, true), 'ed-select-narrow'))
+    this.row('↕ Ausrichtung', this.select(['top', 'middle', 'bottom'], el.valign, (v) =>
+      this.mutate(el.id, (e) => { (e as TextElement).valign = v as TextElement['valign'] }, true), 'ed-select-narrow'))
     this.row('Line height', this.number(el.lineHeight, 0.05, (v, fin) =>
       this.mutate(el.id, (e) => { (e as TextElement).lineHeight = Math.max(v, 0.5) }, fin)))
+    this.row('Laufweite', this.number(el.letterSpacing ?? 0, 0.5, (v, fin) =>
+      this.mutate(el.id, (e) => {
+        const te = e as TextElement
+        te.letterSpacing = v
+        te.html = this.clearCssPropFromHtml(te.html, 'letter-spacing')
+      }, fin),
+      (v) => {
+        const range = this.captureTextSelection()
+        if (!range) return
+        this.mutate(el.id, () => this.applyCssToSelection(range, 'letter-spacing', `${v}px`), true)
+      }))
 
     // Outline / hollow glyphs via -webkit-text-stroke. Width 0 = off; 'hollow'
     // makes the glyph interior transparent (the classic outlined section word).
@@ -1601,8 +1636,27 @@ export class PropsPanel {
       add(c.label, c.stack, hit)
     }
     if (current && !matched) add(curFirst || 'custom', current, true)
-    sel.addEventListener('change', () =>
-      this.mutate(el.id, (e) => { (e as TextElement).fontFamily = sel.value }, true))
+    let savedRange: Range | null = null
+    sel.addEventListener('pointerdown', () => {
+      this.canvas.pauseBlurCommit()
+      savedRange = this.captureTextSelection()
+    })
+    sel.addEventListener('change', () => {
+      if (savedRange) {
+        const winSel = window.getSelection()
+        winSel?.removeAllRanges()
+        winSel?.addRange(savedRange)
+        this.mutate(el.id, () => this.applyCssToSelection(savedRange!, 'font-family', sel.value || 'inherit'), true)
+        savedRange = null
+        this.canvas.resumeBlurCommit()
+        return
+      }
+      this.mutate(el.id, (e) => {
+        const te = e as TextElement
+        te.fontFamily = sel.value
+        te.html = this.clearCssPropFromHtml(te.html, 'font-family')
+      }, true)
+    })
     return sel
   }
 
@@ -2440,7 +2494,7 @@ export class PropsPanel {
    *  what was actually retrieved. Works for both images and text — same
    *  shared Citation type either way, just a different host element. */
   private buildCitationProps(host: ImageElement | TextElement) {
-    this.section(t('Quellenangabe'))
+    this.section(t('Referenzen'))
     if (!host.citation) {
       const addBtn = document.createElement('button')
       addBtn.className = 'ed-btn ed-btn-block'
@@ -2932,10 +2986,16 @@ export class PropsPanel {
     this.mutate(id, (el) => { (el as any)[key] = v }, true)
   }
 
-  private section(title: string) {
+  private section(title: string, info?: string) {
     const h = document.createElement('h3')
     h.className = 'ed-section'
     h.textContent = title
+    if (info) {
+      const infoIcon = document.createElement('span')
+      infoIcon.className = 'ed-section-info'
+      infoIcon.title = t(info)
+      h.appendChild(infoIcon)
+    }
     this.host.appendChild(h)
   }
 
@@ -2965,14 +3025,31 @@ export class PropsPanel {
     return wrap
   }
 
-  private number(value: number, step: number, onEdit: (v: number, final: boolean) => void): HTMLElement {
+  private number(value: number, step: number, onEdit: (v: number, final: boolean) => void, applyToSelection?: (n: number) => void): HTMLElement {
     const input = document.createElement('input')
     input.type = 'number'
     input.step = String(step)
     input.value = String(value)
+    let savedRange: Range | null = null
+    if (applyToSelection) {
+      input.addEventListener('pointerdown', () => {
+        this.canvas.pauseBlurCommit()
+        savedRange = this.captureTextSelection()
+      })
+    }
     input.addEventListener('change', () => {
       const v = parseFloat(input.value)
-      if (!Number.isNaN(v)) onEdit(v, true)
+      if (Number.isNaN(v)) return
+      if (savedRange) {
+        const sel = window.getSelection()
+        sel?.removeAllRanges()
+        sel?.addRange(savedRange)
+        applyToSelection!(v)
+        savedRange = null
+        this.canvas.resumeBlurCommit()
+        return
+      }
+      onEdit(v, true)
     })
     return input
   }
@@ -3015,6 +3092,41 @@ export class PropsPanel {
     const inner = document.querySelector('.bento-editing .bento-text-inner')
     if (!inner || !inner.contains(sel.anchorNode)) return null
     return sel.getRangeAt(0).cloneRange()
+  }
+
+  /** Wraps just the given range in a <span style="prop:value">, leaving
+   *  everything outside it untouched — the general-purpose mechanism for
+   *  "apply this property to the selected characters only", usable for
+   *  any CSS property (unlike document.execCommand, which only covers a
+   *  handful of hardcoded commands and can't express e.g. an arbitrary
+   *  pixel font size at all). */
+  private applyCssToSelection(range: Range, prop: string, value: string) {
+    const span = document.createElement('span')
+    span.style.setProperty(prop, value)
+    span.appendChild(range.extractContents())
+    range.insertNode(span)
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
+    const after = document.createRange()
+    after.selectNodeContents(span)
+    sel?.addRange(after)
+  }
+
+  /** Strips a given CSS property from every inline style in an HTML
+   *  fragment — used when a property is applied to the WHOLE element
+   *  (nothing selected): any leftover per-character override of that
+   *  same property (from an earlier partial-selection edit) would
+   *  otherwise keep masking the new element-level value in exactly the
+   *  characters it was applied to, so those overrides need clearing for
+   *  the whole-element change to actually show through uniformly. */
+  private clearCssPropFromHtml(html: string, prop: string): string {
+    const div = document.createElement('div')
+    div.innerHTML = html
+    div.querySelectorAll<HTMLElement>('[style]').forEach((node) => {
+      node.style.removeProperty(prop)
+      if (!node.getAttribute('style')?.trim()) node.removeAttribute('style')
+    })
+    return div.innerHTML
   }
 
   private color(value: string, onEdit: (v: string, final: boolean) => void, applyToSelection?: (color: string) => void): HTMLElement {
@@ -3095,13 +3207,33 @@ export class PropsPanel {
       if (n === current) o.selected = true
       sel.appendChild(o)
     }
-    sel.addEventListener('change', () =>
-      this.mutate(el.id, (e) => { (e as TextElement).fontWeight = parseInt(sel.value) }, true))
+    let savedRange: Range | null = null
+    sel.addEventListener('pointerdown', () => {
+      this.canvas.pauseBlurCommit()
+      savedRange = this.captureTextSelection()
+    })
+    sel.addEventListener('change', () => {
+      if (savedRange) {
+        const winSel = window.getSelection()
+        winSel?.removeAllRanges()
+        winSel?.addRange(savedRange)
+        this.mutate(el.id, () => this.applyCssToSelection(savedRange!, 'font-weight', sel.value), true)
+        savedRange = null
+        this.canvas.resumeBlurCommit()
+        return
+      }
+      this.mutate(el.id, (e) => {
+        const te = e as TextElement
+        te.fontWeight = parseInt(sel.value)
+        te.html = this.clearCssPropFromHtml(te.html, 'font-weight')
+      }, true)
+    })
     return sel
   }
 
-  private select(options: string[], value: string, onChange: (v: string) => void): HTMLElement {
+  private select(options: string[], value: string, onChange: (v: string) => void, className?: string): HTMLElement {
     const sel = document.createElement('select')
+    if (className) sel.className = className
     for (const opt of options) {
       const o = document.createElement('option')
       o.value = opt
