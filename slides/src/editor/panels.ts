@@ -1474,11 +1474,7 @@ export class PropsPanel {
         te.fontSize = Math.round(Math.max(v, 3) * (4 / 3) * 100) / 100
         te.html = this.clearCssPropFromHtml(te.html, 'font-size')
       }, fin),
-      (v) => {
-        const range = this.captureTextSelection()
-        if (!range) return
-        this.mutate(el.id, () => this.applyCssToSelection(range, 'font-size', `${Math.round(Math.max(v, 3) * (4 / 3) * 100) / 100}px`), true)
-      }))
+      { prop: 'font-size', toCss: (v) => `${Math.round(Math.max(v, 3) * (4 / 3) * 100) / 100}px` }))
     this.row('Weight', this.weightSelect(el))
     // Text fill: a solid colour, or a multi-stop gradient painted into the glyphs.
     const tgrad = el.colorGradient
@@ -1505,10 +1501,7 @@ export class PropsPanel {
           te.color = v
           te.html = this.clearCssPropFromHtml(te.html, 'color')
         }, fin),
-        (v) => {
-          document.execCommand('styleWithCSS', false, 'true')
-          document.execCommand('foreColor', false, v)
-        }))
+        'color'))
     } else {
       this.row('Grad. angle', this.number(tgrad.angle, 1, (v, fin) =>
         this.mutate(el.id, (e) => {
@@ -1569,11 +1562,7 @@ export class PropsPanel {
         te.letterSpacing = v
         te.html = this.clearCssPropFromHtml(te.html, 'letter-spacing')
       }, fin),
-      (v) => {
-        const range = this.captureTextSelection()
-        if (!range) return
-        this.mutate(el.id, () => this.applyCssToSelection(range, 'letter-spacing', `${v}px`), true)
-      }))
+      { prop: 'letter-spacing', toCss: (v) => `${v}px` }))
 
     // Outline / hollow glyphs via -webkit-text-stroke. Width 0 = off; 'hollow'
     // makes the glyph interior transparent (the classic outlined section word).
@@ -1636,21 +1625,13 @@ export class PropsPanel {
       add(c.label, c.stack, hit)
     }
     if (current && !matched) add(curFirst || 'custom', current, true)
-    let savedRange: Range | null = null
+    let session: ReturnType<PropsPanel['startSelectionEditSession']> = null
     sel.addEventListener('pointerdown', () => {
-      this.canvas.pauseBlurCommit()
-      savedRange = this.captureTextSelection()
+      if (!session) session = this.startSelectionEditSession('font-family')
     })
+    sel.addEventListener('blur', () => { session?.end(); session = null })
     sel.addEventListener('change', () => {
-      if (savedRange) {
-        const winSel = window.getSelection()
-        winSel?.removeAllRanges()
-        winSel?.addRange(savedRange)
-        this.mutate(el.id, () => this.applyCssToSelection(savedRange!, 'font-family', sel.value || 'inherit'), true)
-        savedRange = null
-        this.canvas.resumeBlurCommit()
-        return
-      }
+      if (session) { session.apply(sel.value || 'inherit'); return }
       this.mutate(el.id, (e) => {
         const te = e as TextElement
         te.fontFamily = sel.value
@@ -3025,32 +3006,26 @@ export class PropsPanel {
     return wrap
   }
 
-  private number(value: number, step: number, onEdit: (v: number, final: boolean) => void, applyToSelection?: (n: number) => void): HTMLElement {
+  private number(value: number, step: number, onEdit: (v: number, final: boolean) => void, selection?: { prop: string; toCss: (n: number) => string }): HTMLElement {
     const input = document.createElement('input')
     input.type = 'number'
     input.step = String(step)
     input.value = String(value)
-    let savedRange: Range | null = null
-    if (applyToSelection) {
+    let session: ReturnType<PropsPanel['startSelectionEditSession']> = null
+    if (selection) {
       input.addEventListener('pointerdown', () => {
-        this.canvas.pauseBlurCommit()
-        savedRange = this.captureTextSelection()
+        if (!session) session = this.startSelectionEditSession(selection.prop)
       })
+      input.addEventListener('blur', () => { session?.end(); session = null })
     }
-    input.addEventListener('change', () => {
+    const emit = (final: boolean) => {
       const v = parseFloat(input.value)
       if (Number.isNaN(v)) return
-      if (savedRange) {
-        const sel = window.getSelection()
-        sel?.removeAllRanges()
-        sel?.addRange(savedRange)
-        applyToSelection!(v)
-        savedRange = null
-        this.canvas.resumeBlurCommit()
-        return
-      }
-      onEdit(v, true)
-    })
+      if (session) { session.apply(selection!.toCss(v)); return }
+      if (final) onEdit(v, true)
+    }
+    input.addEventListener('input', () => emit(false))
+    input.addEventListener('change', () => emit(true))
     return input
   }
 
@@ -3094,22 +3069,38 @@ export class PropsPanel {
     return sel.getRangeAt(0).cloneRange()
   }
 
-  /** Wraps just the given range in a <span style="prop:value">, leaving
-   *  everything outside it untouched — the general-purpose mechanism for
-   *  "apply this property to the selected characters only", usable for
-   *  any CSS property (unlike document.execCommand, which only covers a
-   *  handful of hardcoded commands and can't express e.g. an arbitrary
-   *  pixel font size at all). */
-  private applyCssToSelection(range: Range, prop: string, value: string) {
-    const span = document.createElement('span')
-    span.style.setProperty(prop, value)
-    span.appendChild(range.extractContents())
-    range.insertNode(span)
-    const sel = window.getSelection()
-    sel?.removeAllRanges()
-    const after = document.createRange()
-    after.selectNodeContents(span)
-    sel?.addRange(after)
+  /** Starts an "apply this CSS property to the selected text" session —
+   *  spans the control's ENTIRE focus lifetime, not just a single value
+   *  change. The first apply() wraps the captured selection in a fresh
+   *  span; every later apply() in the same session (repeated stepper
+   *  clicks, arrow-key nudges, dragging a native color picker's own
+   *  sliders — anything short of the control actually losing focus)
+   *  just updates that same span's style property directly, which is
+   *  both cheap and immune to the original Range going stale after the
+   *  first DOM mutation. Call end() on the control's own blur — NOT
+   *  after each value change — to resume the canvas's paused commit.
+   *  Returns null when there's no real selection to start a session
+   *  for, so the caller's own whole-element fallback path runs instead. */
+  private startSelectionEditSession(prop: string): { apply: (value: string) => void; end: () => void } | null {
+    const range = this.captureTextSelection()
+    if (!range) return null
+    this.canvas.pauseBlurCommit()
+    let span: HTMLElement | null = null
+    return {
+      apply: (value: string) => {
+        if (span) { span.style.setProperty(prop, value); return }
+        span = document.createElement('span')
+        span.style.setProperty(prop, value)
+        span.appendChild(range.extractContents())
+        range.insertNode(span)
+        const sel = window.getSelection()
+        sel?.removeAllRanges()
+        const after = document.createRange()
+        after.selectNodeContents(span)
+        sel?.addRange(after)
+      },
+      end: () => this.canvas.resumeBlurCommit(),
+    }
   }
 
   /** Strips a given CSS property from every inline style in an HTML
@@ -3129,26 +3120,19 @@ export class PropsPanel {
     return div.innerHTML
   }
 
-  private color(value: string, onEdit: (v: string, final: boolean) => void, applyToSelection?: (color: string) => void): HTMLElement {
+  private color(value: string, onEdit: (v: string, final: boolean) => void, selectionProp?: string): HTMLElement {
     const input = document.createElement('input')
     input.type = 'color'
     input.value = /^#[0-9a-fA-F]{6}$/.test(value) ? value : parseColor(value).hex
-    let savedRange: Range | null = null
-    if (applyToSelection) {
+    let session: ReturnType<PropsPanel['startSelectionEditSession']> = null
+    if (selectionProp) {
       input.addEventListener('pointerdown', () => {
-        this.canvas.pauseBlurCommit()
-        savedRange = this.captureTextSelection()
+        if (!session) session = this.startSelectionEditSession(selectionProp)
       })
+      input.addEventListener('blur', () => { session?.end(); session = null })
     }
     const emit = (final: boolean) => {
-      if (savedRange) {
-        const sel = window.getSelection()
-        sel?.removeAllRanges()
-        sel?.addRange(savedRange)
-        applyToSelection!(input.value)
-        if (final) { savedRange = null; this.canvas.resumeBlurCommit() }
-        return
-      }
+      if (session) { session.apply(input.value); return }
       onEdit(input.value, final)
     }
     input.addEventListener('input', () => emit(false))
@@ -3207,21 +3191,13 @@ export class PropsPanel {
       if (n === current) o.selected = true
       sel.appendChild(o)
     }
-    let savedRange: Range | null = null
+    let session: ReturnType<PropsPanel['startSelectionEditSession']> = null
     sel.addEventListener('pointerdown', () => {
-      this.canvas.pauseBlurCommit()
-      savedRange = this.captureTextSelection()
+      if (!session) session = this.startSelectionEditSession('font-weight')
     })
+    sel.addEventListener('blur', () => { session?.end(); session = null })
     sel.addEventListener('change', () => {
-      if (savedRange) {
-        const winSel = window.getSelection()
-        winSel?.removeAllRanges()
-        winSel?.addRange(savedRange)
-        this.mutate(el.id, () => this.applyCssToSelection(savedRange!, 'font-weight', sel.value), true)
-        savedRange = null
-        this.canvas.resumeBlurCommit()
-        return
-      }
+      if (session) { session.apply(sel.value); return }
       this.mutate(el.id, (e) => {
         const te = e as TextElement
         te.fontWeight = parseInt(sel.value)
