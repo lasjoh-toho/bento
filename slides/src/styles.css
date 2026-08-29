@@ -809,11 +809,10 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 [data-tooltip]::after {
   content: attr(data-tooltip);
   position: absolute;
-  bottom: calc(100% + 7px);
-  left: 0;
+  top: 0;
+  right: calc(100% + 7px);
   z-index: 50;
-  width: max-content;
-  max-width: 280px;
+  width: 100%;
   padding: 7px 10px;
   border-radius: 8px;
   background: #ffffff;

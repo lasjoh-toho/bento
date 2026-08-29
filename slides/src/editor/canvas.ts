@@ -8,8 +8,9 @@ import Moveable from 'moveable'
 import Selecto from 'selecto'
 import type { Store } from '../store'
 import { t } from '../i18n'
-import { defaultShape, internAsset, readableInk, uid, type ShapeElement, type SlideElement, type TableElement } from '../model'
+import { defaultShape, internAsset, readableInk, uid, type ShapeElement, type SlideElement, type TableElement, type TextElement } from '../model'
 import { renderSlide, sanitizeHtml } from '../render'
+import { fitFontSizeToBox } from '../measure'
 import { autoformatAtCaret, clearAutoformat, markdownToHtml, undoAutoformat } from './markdown'
 import { PathEditor } from './patheditor'
 import { LineEditor, isLineLike, setLineEndpoints, setPathAnchors } from './lineedit'
@@ -984,6 +985,25 @@ export class SlideCanvas {
         cy: (parseFloat(target.style.top) || 0) + (parseFloat(target.style.height) || 0) / 2,
       })
     }
+    const autoFitThrottle = new Map<HTMLElement, number>()
+    const liveAutoFitFontSize = (target: HTMLElement, w: number, h: number, force: boolean) => {
+      const id = target.dataset.elId
+      if (!id) return
+      const el = this.store.element(id)
+      if (!el || el.type !== 'text' || !(el as TextElement).autoFitFontSize) return
+      const now = performance.now()
+      const last = autoFitThrottle.get(target) ?? 0
+      if (!force && now - last < 80) return
+      autoFitThrottle.set(target, now)
+      const te = el as TextElement
+      const size = fitFontSizeToBox({
+        html: te.html, w, h,
+        fontFamily: te.fontFamily, fontWeight: te.fontWeight,
+        lineHeight: te.lineHeight, letterSpacing: te.letterSpacing,
+      }, this.store.doc)
+      const inner = target.querySelector<HTMLElement>('.bento-text-inner')
+      if (inner) inner.style.fontSize = `${size}px`
+    }
     const applyResize = (
       target: HTMLElement,
       w: number,
@@ -994,6 +1014,7 @@ export class SlideCanvas {
     ) => {
       target.style.width = `${w}px`
       target.style.height = `${h}px`
+      liveAutoFitFontSize(target, w, h, false)
       const c = resizeCenters.get(target)
       if (inputEvent?.altKey && c) {
         target.style.left = `${c.cx - w / 2}px`
@@ -1097,6 +1118,14 @@ export class SlideCanvas {
         el.w = Math.round(f.w * 10) / 10
         el.h = Math.round(f.h * 10) / 10
         el.rotation = f.rotation
+        if (el.type === 'text' && (el as TextElement).autoFitFontSize) {
+          const te = el as TextElement
+          te.fontSize = fitFontSizeToBox({
+            html: te.html, w: el.w, h: el.h,
+            fontFamily: te.fontFamily, fontWeight: te.fontWeight,
+            lineHeight: te.lineHeight, letterSpacing: te.letterSpacing,
+          }, this.store.doc)
+        }
       }
     })
   }

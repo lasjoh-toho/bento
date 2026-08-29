@@ -481,6 +481,33 @@ export function resolveMath(html: string): string {
 
 const ALLOWED_TAGS = new Set(['B', 'I', 'U', 'BR', 'SPAN', 'DIV', 'P', 'STRONG', 'EM', 'S', 'CODE'])
 
+/** CSS properties this editor's own partial-selection formatting can set on
+ *  a SPAN, each with a strict value pattern — never trust the raw string,
+ *  rebuild the property from a validated, narrow match only. */
+const SAFE_SPAN_STYLE: Record<string, RegExp> = {
+  'font-size': /^\d+(\.\d+)?px$/,
+  'letter-spacing': /^-?\d+(\.\d+)?px$/,
+  'font-weight': /^(normal|bold|[1-9]00)$/,
+  'color': /^#[0-9a-fA-F]{3,8}$|^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\)$/,
+  // letters, digits, spaces, hyphens, commas, and quotes around multi-word
+  // names — never parens/semicolons/url(), which is what would let a style
+  // value smuggle in unrelated CSS or a resource fetch.
+  'font-family': /^[a-zA-Z0-9 ,'"-]+$/,
+}
+
+function sanitizeSpanStyle(raw: string): string {
+  const kept: string[] = []
+  for (const decl of raw.split(';')) {
+    const idx = decl.indexOf(':')
+    if (idx < 0) continue
+    const prop = decl.slice(0, idx).trim().toLowerCase()
+    const val = decl.slice(idx + 1).trim()
+    const pattern = SAFE_SPAN_STYLE[prop]
+    if (pattern && pattern.test(val)) kept.push(`${prop}:${val}`)
+  }
+  return kept.join(';')
+}
+
 /** Keep pasted/edited rich text down to a safe inline subset. */
 export function sanitizeHtml(html: string): string {
   if (typeof document === 'undefined') return stripAllTags(html)
@@ -496,7 +523,11 @@ export function sanitizeHtml(html: string): string {
           elChild.remove()
           continue
         }
+        const safeStyle = elChild.tagName === 'SPAN' && elChild.hasAttribute('style')
+          ? sanitizeSpanStyle(elChild.getAttribute('style') ?? '')
+          : ''
         for (const attr of Array.from(elChild.attributes)) elChild.removeAttribute(attr.name)
+        if (safeStyle) elChild.setAttribute('style', safeStyle)
         walk(elChild)
       } else if (child.nodeType !== Node.TEXT_NODE) {
         child.remove()

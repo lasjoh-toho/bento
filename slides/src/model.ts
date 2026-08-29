@@ -140,6 +140,9 @@ export interface TextElement extends ElementBase {
   lineHeight: number
   /** px; optional tracking for letter-spaced caps labels */
   letterSpacing?: number
+  /** When true, resizing this box live-recalculates the largest font size
+   *  that still fits — not just a one-shot fit at button-click time. */
+  autoFitFontSize?: boolean
   /** Outline / hollow glyphs via -webkit-text-stroke. `fill:'none'` makes the
    *  interior transparent (the classic hollow section-break word); default keeps
    *  the solid `color` fill and just adds an outline. */

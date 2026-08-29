@@ -82,6 +82,25 @@ export function measureText(spec: TextMeasureSpec, doc: BentoDoc): TextMeasureme
   return withHost((host) => measureInto(host, spec, doc))
 }
 
+/** Binary search for the largest font size whose wrapped text still fits
+ *  the given box (spec.w/spec.h), same principle as
+ *  https://pretextjs.dev/fit-text-to-container. `spec` should omit
+ *  fontSize — every candidate size is tried in turn. */
+export function fitFontSizeToBox(spec: Omit<TextMeasureSpec, 'fontSize'>, doc: BentoDoc): number {
+  return withHost((host) => {
+    const fits = (fontSize: number) => measureInto(host, { ...spec, fontSize }, doc).fits
+    let lo = 4
+    let hi = 400
+    if (!fits(lo)) return lo
+    while (hi - lo > 0.5) {
+      const mid = (lo + hi) / 2
+      if (fits(mid)) lo = mid
+      else hi = mid
+    }
+    return Math.round(lo * 100) / 100
+  })
+}
+
 /** One measurement inside an already-open host. */
 function measureInto(host: HTMLElement, spec: TextMeasureSpec, doc: BentoDoc): TextMeasurement {
   const el = defaultText({

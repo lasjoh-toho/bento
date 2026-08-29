@@ -9,7 +9,7 @@ import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
 import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
-import { measureElement, measureText, type TextMeasureSpec } from '../measure'
+import { measureElement, fitFontSizeToBox } from '../measure'
 import { isMacOS } from '../screens'
 import { CHART_PRESETS } from '../charts'
 import { FONT_CHOICES, firstFamily, injectFonts } from '../fonts'
@@ -30,6 +30,11 @@ import { lsJson, lsSet } from '../../../kernel/src/storage.ts'
 const UNPAIR = '#unpair'
 
 const ROW_TIPS: Record<string, string> = {
+  'Autoplay': 'Runs only while presenting; browsers require "muted" for video to autoplay.',
+  'Rand verschieben (px)': 'Weicher Übergang am Rand statt hartem Ausschnitt — wirkt erst beim Übernehmen, die Vorschau beim Malen bleibt scharf. Legt fest, wo dieser Übergang ansetzt: positiv erweitert die freigestellte Fläche zuerst (schützt feine Details am Motivrand, kann einen schmalen Saum des alten Hintergrunds mit einschließen), negativ verkleinert sie zuerst (entfernt einen Hintergrundsaum sicher, kann feine Motivkanten kappen).',
+  'Schriftfarbe für alle Texte': 'Wirkt nur auf Textelemente (nicht Formen/Bilder); ein bestehender Farbverlauf im Text wird dabei entfernt.',
+  'Anwenden auf': 'Bei "next": wird auf jede Folie angewendet, die du jetzt auswählst — so lange, bis du "Anwenden auf" wieder änderst.',
+  'Anmerkungsoptionen': 'Zeigt im Präsentationsmodus einen Stift-Umschalter — zum Anschreiben auf einem Touch-/Stylus-Display. Striche und Begriffe lassen sich dort auch dauerhaft speichern (siehe Speichern-Symbol in der Werkzeugleiste).',
   'Folie ausblenden': 'Wird beim Präsentieren übersprungen (zählt auch nicht mit) — bleibt hier zum Bearbeiten normal erreichbar.',
   'Page size': 'Deck-wide slide size. Elements keep their positions — changing size reframes the canvas, never rescales your art.',
   'Width': 'Custom slide width in pixels',
@@ -38,12 +43,12 @@ const ROW_TIPS: Record<string, string> = {
   'Progress bar': 'Deck-wide. Show the thin progress bar along the bottom while presenting.',
   'Corner arrows': 'Deck-wide. Reveal’s own navigation arrows. Off by default — links and keys already navigate.',
   'Background': 'This slide’s background colour',
-  'Transition': 'How this slide enters. Morph animates elements that share ids with the previous slide.',
+  'Transition': 'How this slide enters. Morph animates elements that appear on both this slide and the previous one (copy a slide, then move things around).',
   'Name': 'A friendly name for this slide — shown in link pickers and state badges',
   'Hover': 'What hovering does while presenting: reveal swaps content sets; focus-group dims the other groups',
   'Hover dim': 'How strongly the non-hovered groups fade (focus-group mode)',
   'Default set': 'The hover set everyone sees before any hover happens',
-  'Preview set': 'Which hover set to show on the canvas while you edit',
+  'Preview set': 'Which hover set to show on the canvas while you edit. While presenting, hovering an element whose group matches a set name shows that set.',
   'Role': 'What this text IS in a layout (title, body…) — applying a layout matches elements by role',
   'Shadow': 'Drop-shadow presets — the shadow follows the element’s real shape, corners and transparency',
   'Color': 'Colour with opacity — pick with the swatch, the % field is how opaque it is',
@@ -89,7 +94,7 @@ const ROW_TIPS: Record<string, string> = {
   'Header text': 'Header row text colour',
   'Text': 'Table text colour',
   'Grid lines': 'Colour of the lines between cells',
-  'Fit': 'How the media fills its box — cover crops to fill, contain letterboxes',
+  'Fit': 'How the media fills its box — cover crops to fill, contain letterboxes. Ignored while a crop is set — reset the crop to use it again.',
   'URL': 'Link a hosted file instead of embedding — keeps the deck small',
   'Poster': 'Preview image shown before the video plays',
   'State of': 'Makes this slide a hidden state of another — reached by clicked links, skipped by arrow keys',
@@ -345,12 +350,6 @@ export class PropsPanel {
       slide.transition,
       (v) => this.edit(() => { this.store.slide.transition = v as TransitionKind }, true),
     ))
-    if (slide.transition === 'morph') {
-      const hint = document.createElement('p')
-      hint.className = 'ed-hint'
-      hint.innerHTML = t('<b>Morph</b> animates elements that appear on both this slide and the previous one (copy a slide, then move things around).')
-      this.host.appendChild(hint)
-    }
 
     // Deck-wide slideshow chrome, in its own section: these are not properties
     // of THIS slide (the section above) but of how the whole deck presents, and
@@ -389,12 +388,6 @@ export class PropsPanel {
         else delete this.store.slide.annotate
       }, true),
     ))
-    if (slide.annotate) {
-      const hint = document.createElement('p')
-      hint.className = 'ed-hint'
-      hint.textContent = t('Zeigt im Präsentationsmodus einen Stift-Umschalter — zum Anschreiben auf einem Touch-/Stylus-Display. Striche und Begriffe lassen sich dort auch dauerhaft speichern (siehe Speichern-Symbol in der Werkzeugleiste).')
-      this.host.appendChild(hint)
-    }
 
 
     // interactivity: naming, state-of, hover focus
@@ -463,10 +456,6 @@ export class PropsPanel {
           this.store.hoverPreview = v
           this.store.emit('current') // re-render canvas without touching the doc
         }))
-        const revealHint = document.createElement('p')
-        revealHint.className = 'ed-hint'
-        revealHint.innerHTML = t('While presenting, hovering an element whose <b>group</b> matches a set name shows that set. Use Preview to edit each set.')
-        this.host.appendChild(revealHint)
       }
     }
 
@@ -524,12 +513,6 @@ export class PropsPanel {
       }
       this.rebuild(true)
     }))
-    if (this.colorScope === 'next' && this.pendingColor) {
-      const pendingHint = document.createElement('p')
-      pendingHint.className = 'ed-hint'
-      pendingHint.textContent = t('Aktiv: wird auf jede Folie angewendet, die du jetzt auswählst — so lange, bis du "Anwenden auf" wieder änderst.')
-      this.host.appendChild(pendingHint)
-    }
 
     const applyToSlides = (fn: (s: Slide) => void, patch: NonNullable<typeof this.pendingColor>) => {
       if (this.colorScope === 'next') {
@@ -557,7 +540,6 @@ export class PropsPanel {
 
     const firstTextColor = slide.elements.find((e): e is TextElement => e.type === 'text')?.color ?? '#000000'
     this.row(t('Schriftfarbe für alle Texte'), this.colorHex(firstTextColor, (v, fin) => { if (fin) applyTextColor(v) }))
-
     const bgGrad = slide.backgroundGradient
     this.row(t('Hintergrund-Stil'), this.labeledSelect(fillStyles(), bgGrad ? 'gradient' : 'solid', (v) => {
       if (v === 'gradient') {
@@ -590,11 +572,6 @@ export class PropsPanel {
         }))
       })
     }
-    const colorHint = document.createElement('p')
-    colorHint.className = 'ed-hint'
-    colorHint.textContent = t('Schriftfarbe wirkt nur auf Textelemente (nicht Formen/Bilder); ein bestehender Farbverlauf im Text wird dabei entfernt.')
-    this.host.appendChild(colorHint)
-
     if (multiIds.size > 0) {
       this.section(t('Für Auswahl ({n} Folien)', { n: String(multiIds.size) }))
       this.row(t('Übergang'), this.select(
@@ -610,11 +587,8 @@ export class PropsPanel {
       layoutBtn.className = 'ed-btn ed-btn-block'
       layoutBtn.textContent = t('Layout auf Auswahl anwenden…')
       layoutBtn.addEventListener('click', () => this.onOpenLayoutPickerForSelected(layoutBtn))
+      this.hintOn(layoutBtn, 'Layout ersetzt die Inhalte jeder ausgewählten Folie durch die des gewählten Layouts (wie beim Anwenden auf eine einzelne Folie) — Übergang ändert nur die eine Einstellung, ohne sonst etwas an den Folien zu verändern.')
       this.host.appendChild(layoutBtn)
-      const bulkHint = document.createElement('p')
-      bulkHint.className = 'ed-hint'
-      bulkHint.textContent = t('Layout ersetzt die Inhalte jeder ausgewählten Folie durch die des gewählten Layouts (wie beim Anwenden auf eine einzelne Folie) — Übergang ändert nur die eine Einstellung, ohne sonst etwas an den Folien zu verändern.')
-      this.host.appendChild(bulkHint)
     }
 
     this.section(t('Folie exportieren/importieren'))
@@ -622,22 +596,16 @@ export class PropsPanel {
     exportBtn.className = 'ed-btn ed-btn-block'
     exportBtn.textContent = multiIds.size > 0 ? t('Nur diese eine Folie exportieren…') : t('Diese Folie exportieren…')
     exportBtn.addEventListener('click', () => this.exportCurrentSlide())
-    this.host.appendChild(exportBtn)
     if (multiIds.size > 0) {
-      const multiExportHint = document.createElement('p')
-      multiExportHint.className = 'ed-hint'
-      multiExportHint.textContent = t('Für alle {n} ausgewählten Folien zusammen: „Exportieren" in der Leiste oben in der Folienliste benutzen, nicht diesen Knopf hier.', { n: String(multiIds.size) })
-      this.host.appendChild(multiExportHint)
+      exportBtn.dataset.tooltip = t('Für alle {n} ausgewählten Folien zusammen: „Exportieren" in der Leiste oben in der Folienliste benutzen, nicht diesen Knopf hier.', { n: String(multiIds.size) })
     }
+    this.host.appendChild(exportBtn)
     const importBtn = document.createElement('button')
     importBtn.className = 'ed-btn ed-btn-block'
     importBtn.textContent = t('Folie(n) importieren…')
     importBtn.addEventListener('click', () => this.importSlidesFromFile())
+    this.hintOn(importBtn, 'Export erzeugt eine eigenständige bento/slides-Datei mit genau dieser Folie (nur die von ihr genutzten Bilder/Assets, nicht das ganze Deck) — lässt sich später wieder importieren oder im Konverter-Tool mit anderen Decks verbinden. Import fügt die Folie(n) direkt nach der aktuellen ein.')
     this.host.appendChild(importBtn)
-    const exportHint = document.createElement('p')
-    exportHint.className = 'ed-hint'
-    exportHint.textContent = t('Export erzeugt eine eigenständige bento/slides-Datei mit genau dieser Folie (nur die von ihr genutzten Bilder/Assets, nicht das ganze Deck) — lässt sich später wieder importieren oder im Konverter-Tool mit anderen Decks verbinden. Import fügt die Folie(n) direkt nach der aktuellen ein.')
-    this.host.appendChild(exportHint)
 
     this.section(t('Speaker notes'))
     const notes = document.createElement('textarea')
@@ -1091,6 +1059,9 @@ export class PropsPanel {
     input.type = 'text'
     input.value = effective
     input.spellcheck = false
+    input.dataset.tooltip = el.morphId
+      ? t('Morphs as {id}, overriding its own id. Set it back to {own} to clear.', { id: effective, own: el.id })
+      : t('Elements sharing a morph id morph into each other across slides. Change this (or pick below) to pair with an element on another slide.')
     input.addEventListener('change', () => {
       const err = this.setMorphId(el, input.value)
       if (err) { warn.textContent = err; warn.style.display = ''; input.value = effective }
@@ -1132,13 +1103,6 @@ export class PropsPanel {
     }
 
     this.host.appendChild(warn)
-
-    const hint = document.createElement('p')
-    hint.className = 'ed-hint'
-    hint.innerHTML = el.morphId
-      ? t('Morphs as <code>{id}</code>, overriding its own id. Set it back to <code>{own}</code> to clear.', { id: effective, own: el.id })
-      : t('Elements sharing a morph id morph into each other across slides. Change this (or pick below) to pair with an element on another slide.')
-    this.host.appendChild(hint)
   }
 
   /** Set or clear an element's morph-key override. Writing the element's own
@@ -1278,14 +1242,10 @@ export class PropsPanel {
         const editPath = document.createElement('button')
         editPath.className = 'ed-btn ed-btn-block'
         editPath.textContent = t('✎ Edit path on canvas')
-        editPath.title = t('Drag points to reshape · double-click to add/remove · scroll a point to change its speed')
+        editPath.dataset.tooltip = t('Drag points to reshape · double-click to add/remove · scroll a point to change its speed. Tip: on the canvas, scroll a point to make the element dwell there or rush past it.')
         editPath.addEventListener('click', () =>
           document.dispatchEvent(new CustomEvent('bento:edit-path', { detail: { id: el.id } })))
         this.host.appendChild(editPath)
-        const speedHint = document.createElement('p')
-        speedHint.className = 'ed-hint'
-        speedHint.textContent = t('Tip: on the canvas, scroll a point to make the element dwell there or rush past it.')
-        this.host.appendChild(speedHint)
       }
     }
 
@@ -1473,26 +1433,19 @@ export class PropsPanel {
     fitBtn.dataset.tooltip = t('Findet die größtmögliche Schriftgröße, bei der der Text noch in die Box passt (Breite und Höhe).')
     fitBtn.addEventListener('click', () => {
       const fresh = this.store.element(el.id) as TextElement
-      const doc = this.store.doc
-      const spec = (fontSize: number): TextMeasureSpec => ({
-        html: fresh.html, w: fresh.w, h: fresh.h, fontSize,
+      const size = fitFontSizeToBox({
+        html: fresh.html, w: fresh.w, h: fresh.h,
         fontFamily: fresh.fontFamily, fontWeight: fresh.fontWeight,
         lineHeight: fresh.lineHeight, letterSpacing: fresh.letterSpacing,
-      })
-      let lo = 4
-      let hi = 400
-      if (!measureText(spec(lo), doc).fits) {
-        this.mutate(el.id, (e) => { (e as TextElement).fontSize = lo }, true)
-        return
-      }
-      while (hi - lo > 0.5) {
-        const mid = (lo + hi) / 2
-        if (measureText(spec(mid), doc).fits) lo = mid
-        else hi = mid
-      }
-      this.mutate(el.id, (e) => { (e as TextElement).fontSize = Math.round(lo * 100) / 100 }, true)
+      }, this.store.doc)
+      this.mutate(el.id, (e) => { (e as TextElement).fontSize = size }, true)
     })
     this.host.appendChild(fitBtn)
+    this.row(t('Beim Verändern automatisch anpassen'), this.toggle(!!el.autoFitFontSize, (v) =>
+      this.mutate(el.id, (e) => {
+        if (v) (e as TextElement).autoFitFontSize = true
+        else delete (e as TextElement).autoFitFontSize
+      }, true)))
   }
 
   private buildTextProps(el: TextElement) {
@@ -1857,11 +1810,7 @@ export class PropsPanel {
     else if (isPie) this.buildChartPie(el, series)
 
     // The escape hatch: the full option as JSON, for anything the UI omits.
-    this.section(t('Advanced (JSON)'))
-    const hint = document.createElement('p')
-    hint.className = 'ed-hint'
-    hint.innerHTML = t('The full <b>chart option</b> as JSON (pure data — use template-string formatters like <code>{b}: {c}</code>, never functions). Tooltips and zoom run while presenting.')
-    this.host.appendChild(hint)
+    this.section(t('Advanced (JSON)'), 'The full chart option as JSON (pure data — use template-string formatters like {b}: {c}, never functions). Tooltips and zoom run while presenting.')
     const ta = document.createElement('textarea')
     ta.className = 'ed-chart-json'
     ta.rows = 12
@@ -2169,12 +2118,8 @@ export class PropsPanel {
       this.mini(t('Pad Y'), st.cellPadY, (v) => this.mutate(el.id, (e) =>
         { (e as TableElement).style.cellPadY = Math.max(v, 0) }, true)),
     )
+    this.hintOn(grid, 'Double-click a cell to edit. Tab moves across, Enter down.')
     this.host.appendChild(grid)
-
-    const hint = document.createElement('p')
-    hint.className = 'ed-hint'
-    hint.textContent = t('Double-click a cell to edit. Tab moves across, Enter down.')
-    this.host.appendChild(hint)
 
     const toChart = document.createElement('button')
     toChart.className = 'ed-btn ed-btn-block'
@@ -2292,21 +2237,15 @@ export class PropsPanel {
     this.section(t('Fit & corners'))
     this.row('Fit', this.select(['contain', 'cover', 'fill'], img.fit, (v) =>
       this.mutate(el.id, (e) => { (e as ImageElement).fit = v as ImageElement['fit'] }, true)))
-    if (img.crop) {
-      const note = document.createElement('p')
-      note.className = 'ed-hint'
-      note.textContent = t('Fit is ignored while a crop is set — reset the crop to use it again.')
-      this.host.appendChild(note)
-    }
     this.row('Corner radius', this.number(img.radius, 1, (v, fin) =>
       this.mutate(el.id, (e) => { (e as ImageElement).radius = Math.max(v, 0) }, fin)))
 
     this.section(t('Crop'))
     if (this.cropElId === el.id) {
-      const hint = document.createElement('p')
-      hint.className = 'ed-hint'
-      hint.textContent = t('Rahmen an den Ecken/Kanten ziehen, um den Ausschnitt zu ändern (das Bild bleibt dabei gleich groß) — oder innerhalb des Rahmens ziehen, um den Bildausschnitt zu verschieben.')
-      this.host.appendChild(hint)
+      const cropHeading = this.host.lastElementChild
+      if (cropHeading instanceof HTMLElement) {
+        this.hintOn(cropHeading, 'Rahmen an den Ecken/Kanten ziehen, um den Ausschnitt zu ändern (das Bild bleibt dabei gleich groß) — oder innerhalb des Rahmens ziehen, um den Bildausschnitt zu verschieben.')
+      }
       const actions = document.createElement('div')
       actions.className = 'ed-crop-actions'
       actions.innerHTML =
@@ -2339,10 +2278,7 @@ export class PropsPanel {
       })
       this.host.appendChild(cropBtn)
       if (!img.crop && img.fit === 'fill') {
-        const note = document.createElement('p')
-        note.className = 'ed-hint'
-        note.textContent = t('„fill“ verzerrt das Bild nicht-gleichmäßig, um den Rahmen exakt zu füllen — Zuschnitt kann das nicht nachbilden (Zuschnitt verzerrt nie, nur „fill“ tut das), daher sieht der erste Zuschnitt-Ausschnitt anders aus als die aktuelle Darstellung.')
-        this.host.appendChild(note)
+        this.hintOn(cropBtn, '„fill" verzerrt das Bild nicht-gleichmäßig, um den Rahmen exakt zu füllen — Zuschnitt kann das nicht nachbilden (Zuschnitt verzerrt nie, nur „fill" tut das), daher sieht der erste Zuschnitt-Ausschnitt anders aus als die aktuelle Darstellung.')
       }
       if (img.crop) {
         const reset = document.createElement('button')
@@ -2356,10 +2292,10 @@ export class PropsPanel {
 
     this.section(t('Freistellen'))
     if (this.maskElId === el.id) {
-      const hint = document.createElement('p')
-      hint.className = 'ed-hint'
-      hint.textContent = t('Zauberstab: Klick auf einen Bereich wählt ihn per Farbähnlichkeit aus. Radiergummi: klicken und ziehen. Box/Ellipse: aufziehen.')
-      this.host.appendChild(hint)
+      const maskHeading = this.host.lastElementChild
+      if (maskHeading instanceof HTMLElement) {
+        this.hintOn(maskHeading, 'Zauberstab: Klick auf einen Bereich wählt ihn per Farbähnlichkeit aus. Radiergummi: klicken und ziehen. Box/Ellipse: aufziehen.')
+      }
 
       const tools: Array<{ id: 'wand' | 'eraser' | 'box' | 'ellipse'; label: string }> = [
         { id: 'wand', label: t('Zauberstab') },
@@ -2408,10 +2344,6 @@ export class PropsPanel {
           this.maskExpand = Math.max(-40, Math.min(40, v))
           this.canvas.setMaskExpand(this.maskExpand)
         }))
-        const featherHint = document.createElement('p')
-        featherHint.className = 'ed-hint'
-        featherHint.textContent = t('Weicher Übergang am Rand statt hartem Ausschnitt — wirkt erst beim Übernehmen, die Vorschau beim Malen bleibt scharf. „Rand verschieben“ legt fest, wo dieser Übergang ansetzt: positiv erweitert die freigestellte Fläche zuerst (schützt feine Details am Motivrand, kann einen schmalen Saum des alten Hintergrunds mit einschließen), negativ verkleinert sie zuerst (entfernt einen Hintergrundsaum sicher, kann feine Motivkanten kappen).')
-        this.host.appendChild(featherHint)
       }
 
       const undoBtn = document.createElement('button')
@@ -2465,12 +2397,9 @@ export class PropsPanel {
     }
 
     if ((img.crop || img.mask) && this.cropElId !== el.id && this.maskElId !== el.id) {
-      const hint = document.createElement('p')
-      hint.className = 'ed-hint'
-      hint.textContent = img.mask
+      const bakeTooltip = img.mask
         ? t('Backt Zuschnitt und Freistellung in ein einzelnes, meist kleineres Bild — danach nicht mehr separat änderbar.')
         : t('Backt den Zuschnitt in ein einzelnes, kleineres Bild — danach nicht mehr separat änderbar.')
-      this.host.appendChild(hint)
       // Same underlying asset used by any OTHER element anywhere in the
       // document (a picture pasted/copied more than once, or two frames
       // sharing one asset via the PowerPoint importer's own
@@ -2488,6 +2417,7 @@ export class PropsPanel {
       }
       const bakeBtn = document.createElement('button')
       bakeBtn.className = 'ed-btn ed-btn-block'
+      bakeBtn.dataset.tooltip = bakeTooltip
       bakeBtn.textContent = img.mask
         ? t(srcSharedElsewhere ? 'Zuschnitt & Freistellung dauerhaft machen' : 'Zuschnitt & Freistellung dauerhaft machen (spart Speicher)')
         : t(srcSharedElsewhere ? 'Zuschnitt dauerhaft machen' : 'Zuschnitt dauerhaft machen (spart Speicher)')
@@ -2646,17 +2576,14 @@ export class PropsPanel {
       this.row(t('Ausrichtung'), this.select(['left', 'center', 'right'], c.captionAlign ?? 'right', (v) =>
         setCitation({ captionAlign: v as Citation['captionAlign'] })))
     }
-    this.row(t('Im Quellenverzeichnis sammeln'), this.toggle(
+    const collectToggle = this.toggle(
       c.collectInReferences !== false,
       (v) => setCitation({ collectInReferences: v }),
-    ))
-
-    const hint = document.createElement('p')
-    hint.className = 'ed-hint'
-    hint.textContent = t(host.type === 'text'
+    )
+    collectToggle.dataset.tooltip = t(host.type === 'text'
       ? 'Autor und Erstveröffentlichung erscheinen als kleine Unterschrift direkt unter dem Text auf der Folie. Quelle und Abrufdatum bleiben dort unsichtbar und werden stattdessen im Quellennachweise-Block gesammelt.'
       : 'Autor und Erstveröffentlichung erscheinen als kleine Unterschrift direkt unter dem Bild auf der Folie. Quelle und Abrufdatum bleiben dort unsichtbar und werden stattdessen im Quellennachweise-Block gesammelt.')
-    this.host.appendChild(hint)
+    this.row(t('Im Quellenverzeichnis sammeln'), collectToggle)
 
     this.row(t('Quelle'), (() => {
       const span = document.createElement('span')
@@ -2700,11 +2627,7 @@ export class PropsPanel {
 
   private buildMediaProps(el: MediaElement) {
     if (el.kind === 'camera') {
-      this.section(t('Camera'))
-      const note = document.createElement('p')
-      note.className = 'ed-hint'
-      note.textContent = t('Live camera feed, requested only while presenting — nothing to upload or link.')
-      this.host.appendChild(note)
+      this.section(t('Camera'), 'Live camera feed, requested only while presenting — nothing to upload or link.')
       this.row('Facing', this.select(['user', 'environment'], el.facing ?? 'user', (v) =>
         this.mutate(el.id, (e) => { (e as MediaElement).facing = v as MediaElement['facing'] }, true)))
       this.row('Fit', this.select(['contain', 'cover', 'fill'], el.fit ?? 'cover', (v) =>
@@ -2727,11 +2650,7 @@ export class PropsPanel {
           this.mutate(el.id, (e) => { (e as MediaElement).panY = Math.max(-0.5, Math.min(0.5, v)) }, fin)))
       }
 
-      this.section(t('Auf andere Folie kopieren'))
-      const copyHint = document.createElement('p')
-      copyHint.className = 'ed-hint'
-      copyHint.textContent = t('Legt eine Kopie mit denselben Einstellungen auf der Zielfolie an, verbunden über eine Morph-Kennung mit dieser Kamera — sie kann beim Folienwechsel nahtlos an ihre neue Position/Größe wandern statt neu zu erscheinen.')
-      this.host.appendChild(copyHint)
+      this.section(t('Auf andere Folie kopieren'), 'Legt eine Kopie mit denselben Einstellungen auf der Zielfolie an, verbunden über eine Morph-Kennung mit dieser Kamera — sie kann beim Folienwechsel nahtlos an ihre neue Position/Größe wandern statt neu zu erscheinen.')
       const otherSlides = this.store.doc.slides
         .map((s, i) => ({ id: s.id, label: `${t('Folie')} ${i + 1}${s.name ? ' — ' + s.name : ''}` }))
         .filter((s) => s.id !== this.store.slide.id)
@@ -2824,11 +2743,6 @@ export class PropsPanel {
     toggle('Autoplay', !!el.autoplay, (v) => this.mutate(el.id, (e) => { (e as MediaElement).autoplay = v || undefined }, true))
     toggle('Loop', !!el.loop, (v) => this.mutate(el.id, (e) => { (e as MediaElement).loop = v || undefined }, true))
     toggle('Muted', !!el.muted, (v) => this.mutate(el.id, (e) => { (e as MediaElement).muted = v || undefined }, true))
-    const note = document.createElement('p')
-    note.className = 'ed-hint'
-    note.textContent = t('Autoplay runs only while presenting; browsers require “muted” for video to autoplay.')
-    this.host.appendChild(note)
-
     if (el.kind === 'video') {
       this.row('Fit', this.select(['contain', 'cover', 'fill'], el.fit ?? 'contain', (v) =>
         this.mutate(el.id, (e) => { (e as MediaElement).fit = v as MediaElement['fit'] }, true)))
@@ -3072,6 +2986,14 @@ export class PropsPanel {
     if (tip && !input.dataset.tooltip) row.dataset.tooltip = t(tip)
     row.append(span, input)
     this.host.appendChild(row)
+  }
+
+  /** Sets a tooltip on an existing element instead of appending a separate,
+   *  always-visible <p class="ed-hint"> paragraph — the block the tooltip
+   *  appears on should already be in the DOM (usually the control the
+   *  explanation is actually about). */
+  private hintOn(el: HTMLElement, text: string) {
+    el.dataset.tooltip = t(text)
   }
 
   private mini(label: string, value: number, onChange: (v: number) => void): HTMLElement {
