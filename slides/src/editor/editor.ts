@@ -8,7 +8,7 @@ import {
   FORMAT_VERSION,
   MEDIA_EMBED_BUDGET,
   applyChartPalette, applyLayout, builtinLayouts, defaultChart, defaultImage, defaultMedia, defaultShape, defaultTable, defaultText,
-  instantiateLayout, internAsset, isLightBg, layoutElementIds, newDocId, parseDoc, readableInk, removeUnusedAssets, syncLinkedChart, uid,
+  instantiateLayout, internAsset, isLightBg, layoutElementIds, newDocId, parseDoc, readableInk, removeUnusedAssets, syncLinkedChart, uid, formatBytesMB,
   type ChartElement, type ShapeKind, type Slide, type SlideElement, type TableElement,
 } from '../model'
 import { THEME_CHOICES, setTheme, themeChoice } from '../../../kernel/src/theme.ts'
@@ -533,7 +533,7 @@ export class Editor {
     this.canvas = new SlideCanvas(canvasWrap, this.store)
     this.canvas.onCommentModeChange = (on) => commentB.classList.toggle('ed-btn-armed', on)
     this.canvas.onSlideNav = (dir) => this.store.goToLinear(dir)
-    this.panel = new PropsPanel(this.props, this.store, this.canvas, () => this.multiSelectedIds, (anchor) => this.openLayoutPickerForSelected(anchor), () => this.openLongReadEditor(this.store.slide.id))
+    this.panel = new PropsPanel(this.props, this.store, this.canvas, () => this.multiSelectedIds, (anchor) => this.openLayoutPickerForSelected(anchor), () => this.openLongReadEditor(this.store.slide.id), () => this.removeUnusedMedia())
 
     if (this.store.doc.collab?.role === 'reader') this.enterReaderMode()
   }
@@ -3533,14 +3533,6 @@ function div(cls: string): HTMLElement {
   return d
 }
 
-/** "6,6 MB" / "480 KB" — one decimal above 1 MB (fine-grained enough to
- *  notice a big paste or image import without being noisy), whole numbers
- *  below it. Used in the Moodle save toast so a slow/large save reads as
- *  "yes, that's a big file" rather than an unexplained wait. */
-function formatBytesMB(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`
-  return `${Math.round(bytes / 1024)} KB`
-}
 
 function btn(
   icon: string,

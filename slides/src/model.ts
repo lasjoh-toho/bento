@@ -1063,6 +1063,39 @@ export function internAsset(doc: BentoDoc, src: string): string {
   return `asset:${key}`
 }
 
+/** The MIME type a `data:` URI declares — `'image/png'` out of
+ *  `'data:image/png;base64,...'`. Falls back to `'application/octet-stream'`
+ *  for anything that doesn't parse (never expected in practice, since every
+ *  entry here came from internAsset() itself, but a display helper should
+ *  never throw over a malformed value it merely wants to describe). */
+export function dataUriMimeType(dataUri: string): string {
+  const m = /^data:([^;,]+)[;,]/.exec(dataUri)
+  return m ? m[1] : 'application/octet-stream'
+}
+
+/** The REAL decoded byte size of a `data:` URI's payload — accounting for
+ *  base64's ~4/3 expansion and its own `=` padding — rather than the raw
+ *  string length removeUnusedAssets() uses elsewhere as a cheap, "close
+ *  enough for a toast" approximation. Worth the extra couple of ops here:
+ *  callers displaying a size the person is meant to actually act on (the
+ *  Assets panel) should show the real number, not one inflated by ~33%. */
+export function dataUriByteSize(dataUri: string): number {
+  const comma = dataUri.indexOf(',')
+  if (comma < 0) return dataUri.length
+  const payload = dataUri.slice(comma + 1)
+  if (!/;base64$/.test(dataUri.slice(0, comma))) return payload.length // rare: percent-encoded, not base64
+  const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0
+  return Math.floor((payload.length * 3) / 4) - padding
+}
+
+/** "6,6 MB" / "480 KB" — one decimal above 1 MB (fine-grained enough to
+ *  notice a big paste or image import without being noisy), whole numbers
+ *  below it. */
+export function formatBytesMB(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`
+  return `${Math.round(bytes / 1024)} KB`
+}
+
 /** `"asset:<key>"` → `<key>`; anything else (a data: URI still not interned,
  *  an external URL, undefined) → null. Only image/media fields use this
  *  `asset:`-prefixed convention — svg/fonts store the bare key directly. */

@@ -7,7 +7,7 @@
 import type { Store } from '../store'
 import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, dataUriByteSize, dataUriMimeType, defaultChart, defaultText, formatBytesMB, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement, fitFontSizeToBox } from '../measure'
 import { isMacOS } from '../screens'
@@ -159,6 +159,12 @@ export class PropsPanel {
      *  footnotes actually live — a slide-wide surface, not something this
      *  per-element panel can host directly) — also lives in editor.ts. */
     private onOpenLongReadEditor: () => void = () => {},
+    /** "Remove unused media…" — the same action already reachable from the
+     *  ⋯ menu, exposed here too since the Assets section (bottom of this
+     *  panel) is exactly where someone seeing a large total would look for
+     *  it. Actual removal logic lives in editor.ts (removeUnusedMedia()),
+     *  not here — same reasoning as onOpenLongReadEditor above. */
+    private onRemoveUnusedMedia: () => void = () => {},
   ) {
     // Selection/slide switches always rebuild — the user acted outside the
     // panel, so whatever input was focused is obsolete. Doc mutations respect
@@ -692,6 +698,76 @@ export class PropsPanel {
     footnoteBtn.title = t('Öffnet den Zusatztext-Editor dieser Folie — dort lässt sich markierter Text als Fußnote einfügen, unter anderem.')
     footnoteBtn.addEventListener('click', () => this.onOpenLongReadEditor())
     this.host.appendChild(footnoteBtn)
+
+    this.buildAssetsSection()
+  }
+
+  /** Every embedded image/video/font (doc.assets, plus doc.fonts for the
+   *  family label) with its own real decoded size — largest first, so the
+   *  one thing actually worth doing something about is always on top.
+   *  Exists because doc.assets is the single biggest contributor to a
+   *  large saved file (see internAsset()'s own comment: "the ONE place
+   *  binary content lives"), and up to now there was no way to see WHICH
+   *  embed was large, or how large, short of exporting the whole document
+   *  and inspecting the raw JSON by hand. */
+  private buildAssetsSection() {
+    const doc = this.store.doc
+    const entries = Object.entries(doc.assets ?? {})
+    this.section(t('Assets'), 'Jedes eingebettete Bild, Video und jede Schriftart in dieser Datei — der größte Faktor für ihre Speichergröße. Größte zuerst.')
+    if (entries.length === 0) {
+      const empty = document.createElement('p')
+      empty.className = 'ed-hint'
+      empty.textContent = t('Keine eingebetteten Bilder, Videos oder Schriftarten.')
+      this.host.appendChild(empty)
+      return
+    }
+    const fontFamilyByAsset = new Map((doc.fonts ?? []).map((f) => [f.asset, f.family]))
+    const sized = entries
+      .map(([key, value]) => ({ key, value, bytes: dataUriByteSize(value) }))
+      .sort((a, b) => b.bytes - a.bytes)
+    const totalBytes = sized.reduce((sum, e) => sum + e.bytes, 0)
+
+    const total = document.createElement('div')
+    total.className = 'ed-assets-total'
+    total.textContent = t('{count} Element(e), {size} insgesamt', { count: String(sized.length), size: formatBytesMB(totalBytes) })
+    this.host.appendChild(total)
+
+    const list = document.createElement('div')
+    list.className = 'ed-assets-list'
+    for (const { key, value, bytes } of sized) {
+      const mime = dataUriMimeType(value)
+      const row = document.createElement('div')
+      row.className = 'ed-assets-row'
+      if (mime.startsWith('image/')) {
+        const thumb = document.createElement('img')
+        thumb.className = 'ed-assets-thumb'
+        thumb.src = value
+        thumb.loading = 'lazy'
+        row.appendChild(thumb)
+      } else {
+        const icon = document.createElement('span')
+        icon.className = 'ed-assets-thumb ed-assets-thumb-icon'
+        icon.textContent = mime.startsWith('video/') ? '▶' : mime.startsWith('font/') || mime.startsWith('application/font') ? 'Aa' : '?'
+        row.appendChild(icon)
+      }
+      const label = document.createElement('span')
+      label.className = 'ed-assets-label'
+      label.textContent = fontFamilyByAsset.has(key) ? t('Schriftart: {name}', { name: fontFamilyByAsset.get(key)! }) : mime
+      row.appendChild(label)
+      const size = document.createElement('span')
+      size.className = 'ed-assets-size'
+      size.textContent = formatBytesMB(bytes)
+      row.appendChild(size)
+      list.appendChild(row)
+    }
+    this.host.appendChild(list)
+
+    const cleanupBtn = document.createElement('button')
+    cleanupBtn.className = 'ed-btn ed-btn-block'
+    cleanupBtn.textContent = t('Nicht verwendete Medien entfernen…')
+    cleanupBtn.dataset.tooltip = t('Gibt den Speicherplatz von Bildern, Videos oder Schriftarten frei, die kein Element mehr verwendet (bleibt zurück, wenn eins entfernt oder ersetzt wurde) — ⌘Z macht es rückgängig.')
+    cleanupBtn.addEventListener('click', () => this.onRemoveUnusedMedia())
+    this.host.appendChild(cleanupBtn)
   }
 
   private buildMultiPanel(els: SlideElement[]) {
