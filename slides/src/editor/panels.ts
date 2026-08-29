@@ -204,6 +204,7 @@ export class PropsPanel {
   }
 
   private stale = false
+  private suppressNextRebuild = false
 
   /**
    * True only while the user is mid-edit in a control a rebuild would
@@ -235,6 +236,10 @@ export class PropsPanel {
   }
 
   rebuild(force = false) {
+    if (this.suppressNextRebuild) {
+      this.suppressNextRebuild = false
+      return
+    }
     if (!force && this.isActiveEditFocus()) {
       this.stale = true // don't rip the field out from under the user; catch up on focusout
       return
@@ -2510,12 +2515,23 @@ export class PropsPanel {
       hintBtn.className = 'ed-btn ed-btn-block'
       hintBtn.textContent = t('Fußnote: kurze Erklärung')
       hintBtn.dataset.tooltip = t('Markiertes Wort/Text wird leicht hervorgehoben; die Erklärung erscheint beim Hover darüber.')
+      let hintRange: Range | null = null
+      hintBtn.addEventListener('pointerdown', () => {
+        this.canvas.pauseBlurCommit()
+        hintRange = this.captureTextSelection()
+        if (!hintRange) this.canvas.resumeBlurCommit()
+      })
       hintBtn.addEventListener('click', () => {
-        const explanation = window.prompt(t('Kurze Erklärung für das markierte Wort:'))
-        if (explanation === null || !explanation.trim()) return
-        if (!this.wrapSelectionAsFootnote('hint', { hint: explanation.trim() })) {
+        if (!hintRange) {
           window.alert(t('Bitte zuerst ein Wort oder einen Textabschnitt markieren.'))
+          return
         }
+        const range = hintRange
+        hintRange = null
+        const explanation = window.prompt(t('Kurze Erklärung für das markierte Wort:'))
+        if (explanation === null || !explanation.trim()) { this.canvas.resumeBlurCommit(); return }
+        this.wrapSelectionAsFootnote(range, 'hint', { hint: explanation.trim() })
+        this.canvas.resumeBlurCommit()
       })
       this.host.appendChild(hintBtn)
 
@@ -2523,10 +2539,21 @@ export class PropsPanel {
       linkBtn.className = 'ed-btn ed-btn-block'
       linkBtn.textContent = t('Fußnote: Link zu Zusatztext')
       linkBtn.dataset.tooltip = t('Markiertes Wort/Text wird anklickbar und öffnet den Zusatztext-Editor dieser Folie.')
+      let linkRange: Range | null = null
+      linkBtn.addEventListener('pointerdown', () => {
+        this.canvas.pauseBlurCommit()
+        linkRange = this.captureTextSelection()
+        if (!linkRange) this.canvas.resumeBlurCommit()
+      })
       linkBtn.addEventListener('click', () => {
-        if (!this.wrapSelectionAsFootnote('link', { onLinkClick: () => this.onOpenLongReadEditor() })) {
+        if (!linkRange) {
           window.alert(t('Bitte zuerst ein Wort oder einen Textabschnitt markieren.'))
+          return
         }
+        const range = linkRange
+        linkRange = null
+        this.wrapSelectionAsFootnote(range, 'link', { onLinkClick: () => this.onOpenLongReadEditor() })
+        this.canvas.resumeBlurCommit()
       })
       this.host.appendChild(linkBtn)
     }
@@ -3153,7 +3180,9 @@ export class PropsPanel {
         after.selectNodeContents(span)
         sel?.addRange(after)
       },
-      end: () => this.canvas.resumeBlurCommit(),
+      end: () => {
+        if (this.canvas.resumeBlurCommit()) this.suppressNextRebuild = true
+      },
     }
   }
 
@@ -3165,18 +3194,13 @@ export class PropsPanel {
    *  first). A one-shot action, unlike startSelectionEditSession's own
    *  ongoing session — commits right away via pause/resumeBlurCommit
    *  around the single DOM change. */
-  private wrapSelectionAsFootnote(kind: 'hint' | 'link', extra: { hint?: string; onLinkClick?: () => void }): boolean {
-    const range = this.captureTextSelection()
-    if (!range) return false
-    this.canvas.pauseBlurCommit()
+  private wrapSelectionAsFootnote(range: Range, kind: 'hint' | 'link', extra: { hint?: string; onLinkClick?: () => void }) {
     const span = document.createElement('span')
     span.className = kind === 'hint' ? 'bento-footnote-hint' : 'bento-footnote-link'
     if (kind === 'hint' && extra.hint) span.dataset.tooltip = extra.hint
     if (kind === 'link') span.addEventListener('click', () => extra.onLinkClick?.())
     span.appendChild(range.extractContents())
     range.insertNode(span)
-    this.canvas.resumeBlurCommit()
-    return true
   }
 
   /** Strips a given CSS property from every inline style in an HTML
@@ -3227,6 +3251,9 @@ export class PropsPanel {
     wrap.appendChild(input)
     const recent = lsJson<string[]>(PropsPanel.RECENT_COLORS_KEY, [])
     if (recent.length) {
+      const bridge = document.createElement('div')
+      bridge.className = 'ed-color-recent-bridge'
+      wrap.appendChild(bridge)
       const popover = document.createElement('div')
       popover.className = 'ed-color-recent-popover'
       for (const hex of recent) {

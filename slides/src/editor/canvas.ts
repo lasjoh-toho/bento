@@ -1158,6 +1158,7 @@ export class SlideCanvas {
   startTextEdit(node: HTMLElement) {
     if (this.store.readOnly) return // live viewer — no inline editing
     if (this.editing === node) return
+    this.blurCommitPaused = false
     this.commitTextEdit()
     const inner = node.querySelector<HTMLElement>('.bento-text-inner')
     if (!inner) return
@@ -1236,9 +1237,13 @@ export class SlideCanvas {
    *  immediately if the field has already lost focus by then. */
   blurCommitPaused = false
   pauseBlurCommit() { this.blurCommitPaused = true }
-  resumeBlurCommit() {
+  resumeBlurCommit(): boolean {
     this.blurCommitPaused = false
-    if (this.editing && document.activeElement !== this.editing.querySelector('.bento-text-inner')) this.commitTextEdit()
+    if (this.editing && document.activeElement !== this.editing.querySelector('.bento-text-inner')) {
+      this.commitTextEdit()
+      return true
+    }
+    return false
   }
 
   /** collaborator presence: notified when text editing starts/stops */
