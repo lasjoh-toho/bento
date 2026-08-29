@@ -782,7 +782,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 }
 
 .ed-section {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -802,6 +802,33 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   cursor: help;
 }
 .ed-section-info::before { content: 'ⓘ'; }
+/* Custom tooltip mechanism — replaces native title="" tooltips, which
+   can't be styled at all (browser-default appearance, often low
+   contrast). Attach to any element via a data-tooltip attribute. */
+[data-tooltip] { position: relative; }
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 0;
+  z-index: 50;
+  width: max-content;
+  max-width: 280px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1e2a3a;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  box-shadow: 0 4px 18px rgb(0 0 0 / 0.18), 0 0 0 1px rgb(0 0 0 / 0.06);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease 0.35s;
+}
+[data-tooltip]:hover::after { opacity: 1; }
 .ed-section-collapsible {
   display: flex;
   align-items: center;
@@ -845,6 +872,33 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   border-radius: 6px;
   background: var(--field);
 }
+.ed-color-recent-wrap { position: relative; display: inline-block; }
+.ed-color-recent-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 51;
+  display: grid;
+  grid-template-columns: repeat(4, 20px);
+  gap: 5px;
+  padding: 8px;
+  border-radius: 9px;
+  background: #ffffff;
+  box-shadow: 0 4px 18px rgb(0 0 0 / 0.18), 0 0 0 1px rgb(0 0 0 / 0.06);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease 0.2s;
+}
+.ed-color-recent-wrap:hover .ed-color-recent-popover { opacity: 1; pointer-events: auto; }
+.ed-color-recent-swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid rgb(0 0 0 / 0.12);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.ed-color-recent-swatch:hover { transform: scale(1.12); }
 .ed-colorhex { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
 .ed-row .ed-colorhex input[type='color'] { width: 30px; flex: none; }
 .ed-colorhex-text {
@@ -855,6 +909,19 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   padding: 4px 6px;
   border: 1px solid var(--line);
   border-radius: 6px;
+}
+.bento-footnote-hint {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  background: color-mix(in srgb, var(--accent, #5b8def) 12%, transparent);
+  border-radius: 3px;
+  cursor: help;
+}
+.bento-footnote-link {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  color: var(--accent, #5b8def);
+  cursor: pointer;
 }
 
 .ed-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
@@ -1472,11 +1539,20 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 .ed-btn-armed:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
 
 /* collapsible panel sections */
-.ed-sec-toggle { cursor: pointer; user-select: none; position: relative; padding-inline-start: 14px; }
+.ed-sec-toggle {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  padding: 6px 10px 6px 20px;
+  margin-inline: -10px;
+  border-radius: 7px;
+  background: var(--field);
+}
+.ed-sec-toggle:hover { background: color-mix(in srgb, var(--field) 60%, var(--accent) 10%); }
 .ed-sec-toggle::before {
   content: '';
   position: absolute;
-  inset-inline-start: 1px;
+  inset-inline-start: 8px;
   top: 50%;
   width: 0; height: 0;
   border-left: 5px solid currentColor;

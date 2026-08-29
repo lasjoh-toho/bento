@@ -9,7 +9,7 @@ import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
 import { MEDIA_EMBED_BUDGET, applyChartPalette, defaultChart, defaultText, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
-import { measureElement } from '../measure'
+import { measureElement, measureText, type TextMeasureSpec } from '../measure'
 import { isMacOS } from '../screens'
 import { CHART_PRESETS } from '../charts'
 import { FONT_CHOICES, firstFamily, injectFonts } from '../fonts'
@@ -30,6 +30,7 @@ import { lsJson, lsSet } from '../../../kernel/src/storage.ts'
 const UNPAIR = '#unpair'
 
 const ROW_TIPS: Record<string, string> = {
+  'Folie ausblenden': 'Wird beim Präsentieren übersprungen (zählt auch nicht mit) — bleibt hier zum Bearbeiten normal erreichbar.',
   'Page size': 'Deck-wide slide size. Elements keep their positions — changing size reframes the canvas, never rescales your art.',
   'Width': 'Custom slide width in pixels',
   'Height': 'Custom slide height in pixels',
@@ -250,7 +251,7 @@ export class PropsPanel {
   }
 
   /** Collapsed by default until the user opens them (persisted per title). */
-  private static CLOSED_BY_DEFAULT = new Set(['Slideshow', 'Presenting', 'Interactivity', 'Layout', 'Advanced (JSON)', 'Referenzen', 'Morph'])
+  private static CLOSED_BY_DEFAULT = new Set(['Slideshow', 'Presenting', 'Interactivity', 'Layout', 'Advanced (JSON)', 'Referenzen', 'Morph', 'Position & size'])
 
   /**
    * Retrofit the flat panel into an accordion: every .ed-section header
@@ -310,49 +311,8 @@ export class PropsPanel {
           else delete this.store.slide.hidden
         }, true)
       }))
-      if (slide.hidden) {
-        const hiddenHint = document.createElement('p')
-        hiddenHint.className = 'ed-hint'
-        hiddenHint.textContent = t('Wird beim Präsentieren übersprungen (zählt auch nicht mit) — bleibt hier zum Bearbeiten normal erreichbar.')
-        this.host.appendChild(hiddenHint)
-      }
     }
 
-    const citeBtn = document.createElement('button')
-    citeBtn.className = 'ed-btn ed-btn-block'
-    citeBtn.textContent = t('Quellenverzeichnis aktualisieren')
-    citeBtn.title = t('Sammelt die Quellenangaben aller Bilder im gesamten Deck (Quelle + Abrufdatum, unabhängig davon, ob Autor/Ort gesetzt sind) in einem Quellennachweise-Block auf der letzten Folie. Erneutes Ausführen ersetzt die zuvor gesammelte Liste, statt sie zu verdoppeln.')
-    citeBtn.addEventListener('click', () => {
-      const lines: string[] = []
-      for (const s of this.store.doc.slides) {
-        for (const e of s.elements) {
-          if (e.type !== 'image' && e.type !== 'text') continue
-          if (!e.citation?.sourceUrl || e.citation.collectInReferences === false) continue
-          const parts = [[e.citation.author?.trim(), e.citation.title?.trim()].filter(Boolean).join(', '), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
-          lines.push(parts.filter(Boolean).join(', '))
-        }
-      }
-      if (!lines.length) {
-        window.alert(t('Keine Bilder oder Texte mit Quellenangabe im Deck gefunden.'))
-        return
-      }
-      this.edit(() => {
-        const slides = this.store.doc.slides
-        const last = slides[slides.length - 1]
-        if (!last.longRead) last.longRead = { blocks: [] }
-        // A stable id (not a fresh uid() each time) marks this as the
-        // auto-generated block specifically, so running this again UPDATES
-        // it in place rather than appending a second, stale copy.
-        const AUTO_ID = 'lr-auto-citations'
-        const idx = last.longRead.blocks.findIndex((b) => b.id === AUTO_ID)
-        const block: LongReadBlock = { id: AUTO_ID, type: 'references', text: lines.join('\n') }
-        if (idx >= 0) last.longRead.blocks[idx] = block
-        else last.longRead.blocks.push(block)
-      }, true)
-      this.rebuild(true)
-      window.alert(t('{n} Quellenangabe(n) in den Quellennachweise-Block der letzten Folie übernommen.', { n: String(lines.length) }))
-    })
-    this.host.appendChild(citeBtn)
     // deck-wide page size: presets + custom. Elements keep their absolute
     // positions — a size change reframes the canvas, it never rescales art.
     const { width: dw, height: dh } = this.store.doc.size
@@ -686,6 +646,41 @@ export class PropsPanel {
     this.host.appendChild(notes)
 
     this.section(t('Referenzen'))
+    const citeBtn = document.createElement('button')
+    citeBtn.className = 'ed-btn ed-btn-block'
+    citeBtn.textContent = t('Quellenverzeichnis aktualisieren')
+    citeBtn.title = t('Sammelt die Quellenangaben aller Bilder im gesamten Deck (Quelle + Abrufdatum, unabhängig davon, ob Autor/Ort gesetzt sind) in einem Quellennachweise-Block auf der letzten Folie. Erneutes Ausführen ersetzt die zuvor gesammelte Liste, statt sie zu verdoppeln.')
+    citeBtn.addEventListener('click', () => {
+      const lines: string[] = []
+      for (const s of this.store.doc.slides) {
+        for (const e of s.elements) {
+          if (e.type !== 'image' && e.type !== 'text') continue
+          if (!e.citation?.sourceUrl || e.citation.collectInReferences === false) continue
+          const parts = [[e.citation.author?.trim(), e.citation.title?.trim()].filter(Boolean).join(', '), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
+          lines.push(parts.filter(Boolean).join(', '))
+        }
+      }
+      if (!lines.length) {
+        window.alert(t('Keine Bilder oder Texte mit Quellenangabe im Deck gefunden.'))
+        return
+      }
+      this.edit(() => {
+        const slides = this.store.doc.slides
+        const last = slides[slides.length - 1]
+        if (!last.longRead) last.longRead = { blocks: [] }
+        // A stable id (not a fresh uid() each time) marks this as the
+        // auto-generated block specifically, so running this again UPDATES
+        // it in place rather than appending a second, stale copy.
+        const AUTO_ID = 'lr-auto-citations'
+        const idx = last.longRead.blocks.findIndex((b) => b.id === AUTO_ID)
+        const block: LongReadBlock = { id: AUTO_ID, type: 'references', text: lines.join('\n') }
+        if (idx >= 0) last.longRead.blocks[idx] = block
+        else last.longRead.blocks.push(block)
+      }, true)
+      this.rebuild(true)
+      window.alert(t('{n} Quellenangabe(n) in den Quellennachweise-Block der letzten Folie übernommen.', { n: String(lines.length) }))
+    })
+    this.host.appendChild(citeBtn)
     const tocBtn = document.createElement('button')
     tocBtn.className = 'ed-btn ed-btn-block'
     tocBtn.textContent = t('Inhaltsverzeichnis einfügen')
@@ -1002,6 +997,7 @@ export class PropsPanel {
         if (v === 'none') delete e.role
         else e.role = v
       }, true)))
+    this.arrangeRows([el])
 
     this.section(t('Effects'))
     const current = Object.entries(SHADOW_PRESETS).find(([, p]) => JSON.stringify(p) === JSON.stringify(el.shadow))?.[0]
@@ -1062,9 +1058,6 @@ export class PropsPanel {
         if (v === 'normal') delete e.blend
         else e.blend = v
       }, true)))
-
-    this.section(t('Arrange'))
-    this.arrangeRows([el])
 
     this.buildPresentingProps(el)
     this.buildMorphProps(el)
@@ -1462,9 +1455,45 @@ export class PropsPanel {
     this.host.appendChild(fit)
   }
 
+  /** Binary search over fontSize for the largest size whose wrapped text
+   *  still fits the box's current width and height — same principle as
+   *  https://pretextjs.dev/fit-text-to-container, using measureText's own
+   *  fits:boolean at each candidate size rather than DOM measurement of a
+   *  live element (this editor already has the former, not the latter). */
+  private buildFitFontSize(el: TextElement) {
+    if (!el.html?.trim()) return
+    const fitBtn = document.createElement('button')
+    fitBtn.className = 'ed-btn ed-btn-block'
+    fitBtn.textContent = t('Schrift an Rahmen anpassen')
+    fitBtn.dataset.tooltip = t('Findet die größtmögliche Schriftgröße, bei der der Text noch in die Box passt (Breite und Höhe).')
+    fitBtn.addEventListener('click', () => {
+      const fresh = this.store.element(el.id) as TextElement
+      const doc = this.store.doc
+      const spec = (fontSize: number): TextMeasureSpec => ({
+        html: fresh.html, w: fresh.w, h: fresh.h, fontSize,
+        fontFamily: fresh.fontFamily, fontWeight: fresh.fontWeight,
+        lineHeight: fresh.lineHeight, letterSpacing: fresh.letterSpacing,
+      })
+      let lo = 4
+      let hi = 400
+      if (!measureText(spec(lo), doc).fits) {
+        this.mutate(el.id, (e) => { (e as TextElement).fontSize = lo }, true)
+        return
+      }
+      while (hi - lo > 0.5) {
+        const mid = (lo + hi) / 2
+        if (measureText(spec(mid), doc).fits) lo = mid
+        else hi = mid
+      }
+      this.mutate(el.id, (e) => { (e as TextElement).fontSize = Math.round(lo * 100) / 100 }, true)
+    })
+    this.host.appendChild(fitBtn)
+  }
+
   private buildTextProps(el: TextElement) {
     this.section(t('Typography'), 'While editing: ⌘B/⌘I/⌘U · markdown auto-converts — **bold** *italic* `code` ~~strike~~ and "- " bullets; pasting markdown converts too. Escape with \\ or press ⌘Z right after to keep the literal characters.')
     this.buildFitHeight(el)
+    this.buildFitFontSize(el)
     this.row('Font', this.fontSelect(el))
     // Shown in POINTS (the unit office users know); the model stores slide-space
     // px. 1pt = 4/3 px at the slide's 96dpi space, so 32px = 24pt exactly.
@@ -2476,6 +2505,31 @@ export class PropsPanel {
    *  shared Citation type either way, just a different host element. */
   private buildCitationProps(host: ImageElement | TextElement) {
     this.section(t('Referenzen'))
+    if (host.type === 'text') {
+      const hintBtn = document.createElement('button')
+      hintBtn.className = 'ed-btn ed-btn-block'
+      hintBtn.textContent = t('Fußnote: kurze Erklärung')
+      hintBtn.dataset.tooltip = t('Markiertes Wort/Text wird leicht hervorgehoben; die Erklärung erscheint beim Hover darüber.')
+      hintBtn.addEventListener('click', () => {
+        const explanation = window.prompt(t('Kurze Erklärung für das markierte Wort:'))
+        if (explanation === null || !explanation.trim()) return
+        if (!this.wrapSelectionAsFootnote('hint', { hint: explanation.trim() })) {
+          window.alert(t('Bitte zuerst ein Wort oder einen Textabschnitt markieren.'))
+        }
+      })
+      this.host.appendChild(hintBtn)
+
+      const linkBtn = document.createElement('button')
+      linkBtn.className = 'ed-btn ed-btn-block'
+      linkBtn.textContent = t('Fußnote: Link zu Zusatztext')
+      linkBtn.dataset.tooltip = t('Markiertes Wort/Text wird anklickbar und öffnet den Zusatztext-Editor dieser Folie.')
+      linkBtn.addEventListener('click', () => {
+        if (!this.wrapSelectionAsFootnote('link', { onLinkClick: () => this.onOpenLongReadEditor() })) {
+          window.alert(t('Bitte zuerst ein Wort oder einen Textabschnitt markieren.'))
+        }
+      })
+      this.host.appendChild(linkBtn)
+    }
     if (!host.citation) {
       const addBtn = document.createElement('button')
       addBtn.className = 'ed-btn ed-btn-block'
@@ -2974,7 +3028,7 @@ export class PropsPanel {
     if (info) {
       const infoIcon = document.createElement('span')
       infoIcon.className = 'ed-section-info'
-      infoIcon.title = t(info)
+      infoIcon.dataset.tooltip = t(info)
       h.appendChild(infoIcon)
     }
     this.host.appendChild(h)
@@ -2988,7 +3042,7 @@ export class PropsPanel {
     // real help on hover (label + control): looked up by the RAW English label;
     // rows without an entry get no tooltip — never a useless label echo
     const tip = ROW_TIPS[label]
-    if (tip && !input.title) row.title = t(tip)
+    if (tip && !input.dataset.tooltip) row.dataset.tooltip = t(tip)
     row.append(span, input)
     this.host.appendChild(row)
   }
@@ -3103,6 +3157,28 @@ export class PropsPanel {
     }
   }
 
+  /** Wraps the current text selection as a footnote marker — 'hint' for a
+   *  hover explanation (word gets a subtle highlight + the explanation as
+   *  a data-tooltip), 'link' for a clickable jump to the slide's own
+   *  Zusatztext/longRead editor. Returns false when there's no real
+   *  selection to wrap (caller should tell the person to select a word
+   *  first). A one-shot action, unlike startSelectionEditSession's own
+   *  ongoing session — commits right away via pause/resumeBlurCommit
+   *  around the single DOM change. */
+  private wrapSelectionAsFootnote(kind: 'hint' | 'link', extra: { hint?: string; onLinkClick?: () => void }): boolean {
+    const range = this.captureTextSelection()
+    if (!range) return false
+    this.canvas.pauseBlurCommit()
+    const span = document.createElement('span')
+    span.className = kind === 'hint' ? 'bento-footnote-hint' : 'bento-footnote-link'
+    if (kind === 'hint' && extra.hint) span.dataset.tooltip = extra.hint
+    if (kind === 'link') span.addEventListener('click', () => extra.onLinkClick?.())
+    span.appendChild(range.extractContents())
+    range.insertNode(span)
+    this.canvas.resumeBlurCommit()
+    return true
+  }
+
   /** Strips a given CSS property from every inline style in an HTML
    *  fragment — used when a property is applied to the WHOLE element
    *  (nothing selected): any leftover per-character override of that
@@ -3120,6 +3196,13 @@ export class PropsPanel {
     return div.innerHTML
   }
 
+  private static RECENT_COLORS_KEY = 'bento-recent-colors'
+  private static pushRecentColor(hex: string) {
+    const list = lsJson<string[]>(PropsPanel.RECENT_COLORS_KEY, [])
+    const next = [hex, ...list.filter((c) => c.toLowerCase() !== hex.toLowerCase())].slice(0, 12)
+    lsSet(PropsPanel.RECENT_COLORS_KEY, JSON.stringify(next))
+  }
+
   private color(value: string, onEdit: (v: string, final: boolean) => void, selectionProp?: string): HTMLElement {
     const input = document.createElement('input')
     input.type = 'color'
@@ -3134,10 +3217,36 @@ export class PropsPanel {
     const emit = (final: boolean) => {
       if (session) { session.apply(input.value); return }
       onEdit(input.value, final)
+      if (final) PropsPanel.pushRecentColor(input.value)
     }
     input.addEventListener('input', () => emit(false))
     input.addEventListener('change', () => emit(true))
-    return input
+
+    const wrap = document.createElement('div')
+    wrap.className = 'ed-color-recent-wrap'
+    wrap.appendChild(input)
+    const recent = lsJson<string[]>(PropsPanel.RECENT_COLORS_KEY, [])
+    if (recent.length) {
+      const popover = document.createElement('div')
+      popover.className = 'ed-color-recent-popover'
+      for (const hex of recent) {
+        const sw = document.createElement('button')
+        sw.type = 'button'
+        sw.className = 'ed-color-recent-swatch'
+        sw.style.background = hex
+        sw.dataset.tooltip = hex
+        sw.addEventListener('click', (ev) => {
+          ev.preventDefault()
+          input.value = hex
+          if (session) { session.apply(hex); return }
+          onEdit(hex, true)
+          PropsPanel.pushRecentColor(hex)
+        })
+        popover.appendChild(sw)
+      }
+      wrap.appendChild(popover)
+    }
+    return wrap
   }
 
   /** Color swatch + opacity %. Native color inputs have no alpha channel, so
