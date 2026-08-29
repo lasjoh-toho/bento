@@ -802,9 +802,6 @@ export class Editor {
       item(ICONS.plus, t('Duplicate as new deck…'),
         t('A separate deck for you — same content, new identity; it never syncs with this one.'),
         () => this.saveAsNewDeck())
-      item(ICONS.trash, t('Remove unused media…'),
-        t('Frees up space taken by images, videos, or fonts no element uses anymore (left behind when one was removed or replaced) — ⌘Z undoes.'),
-        () => this.removeUnusedMedia())
       if (isEncryptionActive()) {
         item(ICONS.lock, t('Change password…'),
           t('Pick a new password for this file — takes effect on the next save.'),
@@ -2972,11 +2969,12 @@ export class Editor {
     }
   }
 
-  /** "Remove unused media…" — images/videos/fonts no element references
-   *  anymore (left behind when one was removed or replaced; internAsset()
-   *  never removes an entry on its own, only ever adds one). Mutates via
-   *  store.commit() so this is a normal, undoable edit like everything
-   *  else on this menu — ⌘Z brings a removed asset straight back. */
+  /** "Nicht verwendete Medien entfernen…" — images/videos/fonts no element
+   *  references anymore (left behind when one was removed or replaced;
+   *  internAsset() never removes an entry on its own, only ever adds one).
+   *  Called from the Medien panel section (panels.ts), via PropsPanel's own
+   *  onRemoveUnusedMedia callback. Mutates via store.commit() so this is a
+   *  normal, undoable edit — ⌘Z brings a removed asset straight back. */
   private removeUnusedMedia() {
     let removedCount = 0
     let freedBytes = 0

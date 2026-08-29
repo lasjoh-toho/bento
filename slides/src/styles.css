@@ -1014,6 +1014,17 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   font-variant-numeric: tabular-nums;
   flex: none;
 }
+.ed-assets-row-unused { background: rgba(192, 129, 43, 0.07); }
+.ed-assets-row-unused:hover { background: rgba(192, 129, 43, 0.13); }
+.ed-assets-badge {
+  font-size: 10px;
+  color: #8a6d55;
+  background: rgba(192, 129, 43, 0.15);
+  border-radius: 4px;
+  padding: 1px 6px;
+  flex: none;
+  white-space: nowrap;
+}
 
 .ed-btn-update {
   background: #FF9E8A !important;

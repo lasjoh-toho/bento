@@ -22,7 +22,7 @@ import { starterDoc } from './starterdeck'
 import { injectFonts } from './fonts'
 import { Store } from './store'
 import { Editor } from './editor/editor'
-import { moodleConfig } from './editor/moodle'
+import { moodleConfig, takeUnsavedMoodleDoc } from './editor/moodle'
 import { startPresentation } from './present'
 import { SyncSession } from './sync/session'
 import { onlineTransport, startSharing, stopSharing } from './sync/online'
@@ -69,7 +69,13 @@ const envelope = embedded ? parseEnvelope(embedded) : null
 if (envelope) {
   void passwordGate()
 } else {
-  bootWith((embedded && parseDoc(embedded)) || starterDoc())
+  void bootNonEncrypted(embedded)
+}
+
+async function bootNonEncrypted(embedded: string | null) {
+  const handoffJson = moodleConfig?.deckid ? await takeUnsavedMoodleDoc(moodleConfig.deckid) : null
+  const handoffDoc = handoffJson ? parseDoc(handoffJson) : null
+  bootWith(handoffDoc || (embedded && parseDoc(embedded)) || starterDoc())
 }
 
 /** Encrypted file: ask for the password (looping on failure), then boot. */

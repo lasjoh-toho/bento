@@ -162,3 +162,52 @@ export async function saveToMoodle(doc: unknown, onProgress?: (fraction: number)
   }
   return { bytes: serialized.length }
 }
+
+/** Must match mod_bento/bentoconvert.js's own BENTO_HANDOFF_DB/STORE
+ *  constants exactly — see this file's own doc comment above. */
+const HANDOFF_DB = 'bento-moodle-handoff'
+const HANDOFF_STORE = 'docs'
+
+/**
+ * Takes (reads AND deletes, one-time use) a pending not-yet-saved document
+ * stashed by manage.php's own ✎ edit button before it navigated here — see
+ * mod/bento/bentoconvert.js's own createEmptyDeckOnMoodle()/edit-button
+ * handler for the write side. Returns null whenever there's nothing to
+ * take: no deckid at all (the published master document, never eligible
+ * for this), IndexedDB unavailable (a locked-down browser/profile), or
+ * simply no matching entry (the normal case for every OTHER already-saved
+ * draft someone opens).
+ *
+ * Deleting immediately after reading (not on some later success signal)
+ * matches the old sessionStorage version's own reasoning: a page reload
+ * afterward must not resurrect stale content, and a stale/orphaned entry
+ * left behind by an abandoned session must never later reappear against
+ * an unrelated deck (deckid-keyed for exactly that reason too).
+ */
+export async function takeUnsavedMoodleDoc(deckid: number): Promise<string | null> {
+  if (!deckid || typeof indexedDB === 'undefined') return null
+  return new Promise((resolve) => {
+    const openReq = indexedDB.open(HANDOFF_DB, 1)
+    openReq.onupgradeneeded = () => {
+      // Only reached if bentoconvert.js's own write never ran first (this
+      // deckid was opened some other way) — an empty store either way,
+      // nothing here to migrate from a prior version.
+      openReq.result.createObjectStore(HANDOFF_STORE)
+    }
+    openReq.onerror = () => resolve(null)
+    openReq.onsuccess = () => {
+      const db = openReq.result
+      if (!db.objectStoreNames.contains(HANDOFF_STORE)) { db.close(); resolve(null); return }
+      const tx = db.transaction(HANDOFF_STORE, 'readwrite')
+      const store = tx.objectStore(HANDOFF_STORE)
+      const getReq = store.get(deckid)
+      getReq.onerror = () => { db.close(); resolve(null) }
+      getReq.onsuccess = () => {
+        const value: string | undefined = getReq.result
+        if (value !== undefined) store.delete(deckid)
+        tx.oncomplete = () => { db.close(); resolve(value ?? null) }
+        tx.onerror = () => { db.close(); resolve(value ?? null) }
+      }
+    }
+  })
+}

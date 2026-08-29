@@ -7,7 +7,7 @@
 import type { Store } from '../store'
 import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, dataUriByteSize, dataUriMimeType, defaultChart, defaultText, formatBytesMB, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, dataUriByteSize, dataUriMimeType, defaultChart, defaultText, findUsedAssetAndFontKeys, formatBytesMB, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement, fitFontSizeToBox } from '../measure'
 import { isMacOS } from '../screens'
@@ -267,7 +267,7 @@ export class PropsPanel {
   }
 
   /** Collapsed by default until the user opens them (persisted per title). */
-  private static CLOSED_BY_DEFAULT = new Set(['Slideshow', 'Presenting', 'Interactivity', 'Layout', 'Advanced (JSON)', 'Referenzen', 'Morph', 'Position & size'])
+  private static CLOSED_BY_DEFAULT = new Set(['Slideshow', 'Presenting', 'Interactivity', 'Layout', 'Advanced (JSON)', 'Referenzen', 'Morph', 'Position & size', 'Medien'])
 
   /**
    * Retrofit the flat panel into an accordion: every .ed-section header
@@ -711,33 +711,56 @@ export class PropsPanel {
    *  embed was large, or how large, short of exporting the whole document
    *  and inspecting the raw JSON by hand. */
   private buildAssetsSection() {
+    const header = this.section(t('Medien'), 'Jedes eingebettete Bild, Video und jede Schriftart in dieser Datei — der größte Faktor für ihre Speichergröße. Größte zuerst.')
+    const placeholder = document.createElement('div')
+    this.host.appendChild(placeholder)
+    // Deferred: this section sits at the very bottom and is closed by
+    // default (CLOSED_BY_DEFAULT above) — rebuild() runs on every 'doc'
+    // store event throughout the WHOLE document, so computing sizes/
+    // thumbnails/used-status here unconditionally would redo real work on
+    // every edit anywhere, even while this section stays collapsed the
+    // entire time. Populated once, the first time it's actually open —
+    // either already open on this very rebuild, or on its first click —
+    // never recomputed again until the next full rebuild() clears it.
+    const populateOnce = () => {
+      if (placeholder.dataset.populated) return
+      placeholder.dataset.populated = '1'
+      this.populateAssetsBody(placeholder)
+    }
+    const openState = lsJson<Record<string, boolean>>('bento-panel-open', {})
+    const isOpen = openState['Medien'] ?? !PropsPanel.CLOSED_BY_DEFAULT.has('Medien')
+    if (isOpen) populateOnce()
+    header.addEventListener('click', populateOnce)
+  }
+
+  private populateAssetsBody(container: HTMLElement) {
     const doc = this.store.doc
     const entries = Object.entries(doc.assets ?? {})
-    this.section(t('Assets'), 'Jedes eingebettete Bild, Video und jede Schriftart in dieser Datei — der größte Faktor für ihre Speichergröße. Größte zuerst.')
     if (entries.length === 0) {
       const empty = document.createElement('p')
       empty.className = 'ed-hint'
       empty.textContent = t('Keine eingebetteten Bilder, Videos oder Schriftarten.')
-      this.host.appendChild(empty)
+      container.appendChild(empty)
       return
     }
+    const { assetKeys: used } = findUsedAssetAndFontKeys(doc)
     const fontFamilyByAsset = new Map((doc.fonts ?? []).map((f) => [f.asset, f.family]))
     const sized = entries
-      .map(([key, value]) => ({ key, value, bytes: dataUriByteSize(value) }))
+      .map(([key, value]) => ({ key, value, bytes: dataUriByteSize(value), unused: !used.has(key) }))
       .sort((a, b) => b.bytes - a.bytes)
     const totalBytes = sized.reduce((sum, e) => sum + e.bytes, 0)
 
     const total = document.createElement('div')
     total.className = 'ed-assets-total'
     total.textContent = t('{count} Element(e), {size} insgesamt', { count: String(sized.length), size: formatBytesMB(totalBytes) })
-    this.host.appendChild(total)
+    container.appendChild(total)
 
     const list = document.createElement('div')
     list.className = 'ed-assets-list'
-    for (const { key, value, bytes } of sized) {
+    for (const { key, value, bytes, unused } of sized) {
       const mime = dataUriMimeType(value)
       const row = document.createElement('div')
-      row.className = 'ed-assets-row'
+      row.className = 'ed-assets-row' + (unused ? ' ed-assets-row-unused' : '')
       if (mime.startsWith('image/')) {
         const thumb = document.createElement('img')
         thumb.className = 'ed-assets-thumb'
@@ -754,20 +777,27 @@ export class PropsPanel {
       label.className = 'ed-assets-label'
       label.textContent = fontFamilyByAsset.has(key) ? t('Schriftart: {name}', { name: fontFamilyByAsset.get(key)! }) : mime
       row.appendChild(label)
+      if (unused) {
+        const badge = document.createElement('span')
+        badge.className = 'ed-assets-badge'
+        badge.textContent = t('nicht mehr verwendet')
+        badge.dataset.tooltip = t('Kein Element im Dokument verweist mehr hierauf — „Nicht verwendete Medien entfernen“ unten würde diesen Eintrag löschen.')
+        row.appendChild(badge)
+      }
       const size = document.createElement('span')
       size.className = 'ed-assets-size'
       size.textContent = formatBytesMB(bytes)
       row.appendChild(size)
       list.appendChild(row)
     }
-    this.host.appendChild(list)
+    container.appendChild(list)
 
     const cleanupBtn = document.createElement('button')
     cleanupBtn.className = 'ed-btn ed-btn-block'
     cleanupBtn.textContent = t('Nicht verwendete Medien entfernen…')
     cleanupBtn.dataset.tooltip = t('Gibt den Speicherplatz von Bildern, Videos oder Schriftarten frei, die kein Element mehr verwendet (bleibt zurück, wenn eins entfernt oder ersetzt wurde) — ⌘Z macht es rückgängig.')
     cleanupBtn.addEventListener('click', () => this.onRemoveUnusedMedia())
-    this.host.appendChild(cleanupBtn)
+    container.appendChild(cleanupBtn)
   }
 
   private buildMultiPanel(els: SlideElement[]) {
@@ -3049,6 +3079,7 @@ export class PropsPanel {
       h.appendChild(infoIcon)
     }
     this.host.appendChild(h)
+    return h
   }
 
   private row(label: string, input: HTMLElement) {

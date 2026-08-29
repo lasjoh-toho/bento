@@ -1117,7 +1117,7 @@ function assetKeyFrom(value: string | undefined): string | null {
  *  would otherwise go undetected and get deleted out from under it. Costs
  *  a few false-considered keys at worst (never a false removal), which is
  *  the safe direction to err in here. */
-function findUsedAssetAndFontKeys(doc: BentoDoc): { assetKeys: Set<string>; fontKeys: Set<string> } {
+export function findUsedAssetAndFontKeys(doc: BentoDoc): { assetKeys: Set<string>; fontKeys: Set<string> } {
   const assetKeys = new Set<string>()
   const fontFamiliesInUse = new Set<string>()
   if (doc.theme.fontFamily) fontFamiliesInUse.add(doc.theme.fontFamily)
