@@ -146,10 +146,11 @@ function playerMode(doc: BentoDoc) {
     const playlist = moodleConfig?.playlist ?? []
     let playlistPos = -1 // -1 = still on the original document itself
     let session: ReturnType<typeof startPresentation>
-    const startOne = (d: BentoDoc, startIndex: number) => {
+    const startOne = (d: BentoDoc, startIndex: number, opts: { fullscreen?: boolean } = {}) => {
       session = startPresentation(d, startIndex, () => {
         card.style.display = ''
       }, {
+        ...opts,
         onReachedEnd: playlist.length ? () => {
           playlistPos = (playlistPos + 1) % playlist.length
           const oldSession = session
@@ -165,7 +166,7 @@ function playerMode(doc: BentoDoc) {
         } : undefined,
       })
     }
-    startOne(doc, 0)
+    startOne(doc, 0, { fullscreen: false })
   }
   card.querySelector('.ed-playgo')!.addEventListener('click', start)
   card.querySelector('.ed-playcopy')!.addEventListener('click', () => {

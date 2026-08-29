@@ -424,10 +424,14 @@ export class Editor {
     // can change — keyboard arrows, present-mode swipe, all of it.
     this.store.on('current', () => { if (this.longReadEditor.active) this.longReadEditor.close() })
     // presenting lives in ONE split pill beside the zoom control: the main
-    // half starts the fullscreen show; its menu holds tab-fill and speaker view.
+    // half starts the show windowed — the corner fullscreen button (see
+    // present.ts) is the reliable way into fullscreen from there, since a
+    // fullscreen request tied to THIS click may no longer count as a fresh
+    // user gesture by the time any async work in between resolves; its
+    // menu holds a direct-to-fullscreen alternative and speaker view.
     const pill = div('ed-dropdown ed-present-pill')
-    const showB = btn(ICONS.slideshow, t('Slideshow'), () => this.present(false, true),
-      t('Start the slideshow fullscreen — F toggles fullscreen, S opens speaker view, Esc ends'))
+    const showB = btn(ICONS.slideshow, t('Slideshow'), () => this.present(false, false),
+      t('Start the slideshow — click the fullscreen button (top right) to go fullscreen; F toggles it, S opens speaker view, Esc ends'))
     showB.classList.add('ed-pill-main')
     // Nudge: newcomers don't always spot how to start a show — run the neon
     // runner around the Slideshow pill on EVERY editor load until they've
@@ -448,7 +452,7 @@ export class Editor {
       const b = btn(icon, label, () => { pill.classList.remove('open'); onClick() }, title)
       pmenu.appendChild(b)
     }
-    pItem(ICONS.window, t('Present in this tab'), t('Fills this tab instead of going fullscreen — handy for testing or sharing a window'), () => this.present(false, false))
+    pItem(ICONS.slideshow, t('Start fullscreen directly'), t('Skips the windowed view and goes straight to fullscreen'), () => this.present(false, true))
     pItem(ICONS.presenter, t('Open speaker view'), t('Notes, controls and slide thumbnails in a separate window — drag it to a second screen. On macOS, open it before going fullscreen.'), () => this.openSpeakerView())
     pill.append(showB, caret, pmenu)
     document.addEventListener('pointerdown', (ev) => {
@@ -2187,7 +2191,7 @@ export class Editor {
     if (!w) this.toast(t('Couldn’t open the speaker view — allow pop-ups for this site.'))
   }
 
-  present(fromStart = false, fullscreen = true) {
+  present(fromStart = false, fullscreen = false) {
     if (this.presenting) return
     // They've started a slideshow — retire the first-run nudge for good.
     lsSet('bento-slideshow-started', '1')
@@ -3021,7 +3025,7 @@ export class Editor {
       }
       if (ev.key === 'F5') {
         ev.preventDefault()
-        this.present(!ev.shiftKey)
+        this.present(!ev.shiftKey, false)
         return
       }
       if (inField) return

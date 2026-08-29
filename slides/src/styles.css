@@ -871,34 +871,69 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   border-radius: 6px;
   background: var(--field);
 }
-.ed-color-recent-wrap { position: relative; display: inline-block; }
-.ed-color-recent-bridge { position: absolute; left: 0; right: 0; bottom: 100%; height: 8px; }
-.ed-color-recent-popover {
+.ed-color-wrap { position: relative; display: inline-block; }
+.ed-color-swatch-btn {
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgb(0 0 0 / 0.15);
+  border-radius: 5px;
+  cursor: pointer;
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+}
+.ed-color-popover {
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
   z-index: 51;
-  display: grid;
-  grid-template-columns: repeat(4, 20px);
-  gap: 5px;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
   padding: 8px;
   border-radius: 9px;
-  background: #ffffff;
-  box-shadow: 0 4px 18px rgb(0 0 0 / 0.18), 0 0 0 1px rgb(0 0 0 / 0.06);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.1s ease 0.2s;
+  background: #000000;
+  box-shadow: 0 4px 18px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(0 0 0 / 0.5);
 }
-.ed-color-recent-wrap:hover .ed-color-recent-popover { opacity: 1; pointer-events: auto; }
-.ed-color-recent-swatch {
-  width: 20px;
-  height: 20px;
+.ed-color-popover.open { display: flex; }
+.ed-color-alpha-slider {
+  width: 100%;
+  accent-color: #ffffff;
+}
+.ed-color-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 22px);
+  grid-template-rows: repeat(10, 22px);
+  gap: 0;
+}
+.ed-color-grid .ed-color-swatch:nth-child(8n+1) { border-top-left-radius: 3px; border-bottom-left-radius: 3px; }
+.ed-color-swatch {
+  width: 22px;
+  height: 22px;
   padding: 0;
-  border: 1px solid rgb(0 0 0 / 0.12);
-  border-radius: 5px;
+  margin: 0;
+  border: none;
   cursor: pointer;
+  box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.15);
 }
-.ed-color-recent-swatch:hover { transform: scale(1.12); }
+.ed-color-swatch:hover { box-shadow: inset 0 0 0 1.5px #ffffff; z-index: 1; position: relative; }
+.ed-color-swatch-empty { background: #1a1a1a; cursor: default; }
+.ed-color-swatch-empty:hover { box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.15); }
+.ed-color-hex-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1a1a1a;
+  color: #ffffff;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  text-align: center;
+}
 .ed-colorhex { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
 .ed-row .ed-colorhex input[type='color'] { width: 30px; flex: none; }
 .ed-colorhex-text {
@@ -1230,6 +1265,31 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   z-index: 1000;
   background: #000;
 }
+.bento-fs-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 100001;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  background: rgb(18 26 40 / 0.75);
+  color: #f2f0ea;
+  opacity: 0.85;
+  transition: opacity 0.15s ease;
+}
+.bento-fs-btn:hover { opacity: 1; }
+.bento-fs-btn svg { width: 20px; height: 20px; }
+/* Hidden while actually in fullscreen — except on hover over its own
+   corner, so it stays reachable to exit fullscreen without being a
+   permanent on-screen distraction during a live presentation. */
+.bento-fs-btn:not(.bento-fs-btn-windowed) { opacity: 0; }
+.bento-fs-btn:not(.bento-fs-btn-windowed):hover { opacity: 1; }
 .bento-present-overlay .reveal,
 .bento-present-overlay .reveal-viewport {
   background: #000;

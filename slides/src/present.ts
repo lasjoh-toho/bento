@@ -8,6 +8,7 @@ import Reveal from 'reveal.js'
 import 'reveal.js/dist/reveal.css'
 import { anim, resetXform } from './anim'
 import { chartSnapshotSvg, mountChart } from './charts'
+import { ICONS } from './icons'
 import type { BentoDoc, DragTerm, GradientFill, PresentInkStroke, ShapeElement, Slide, SlideElement } from './model'
 import { morphKey, uid } from './model'
 import { applyElementFrame, gradientLineCoords, renderSlide, stopAllCameraStreams } from './render'
@@ -1292,19 +1293,41 @@ export function startPresentation(
     if (req) req.catch(() => {}).then(() => fullscreenSettled())
     else fullscreenSettled()
   }
+  // Set right before OUR OWN code calls exitFullscreen() below, so the
+  // fullscreenchange listener can tell "we just toggled it off ourselves"
+  // apart from "something external left fullscreen" — see onFsChange's own
+  // comment for why that distinction matters now.
+  let togglingOff = false
   const toggleFullscreen = () => {
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    if (document.fullscreenElement) { togglingOff = true; document.exitFullscreen().catch(() => {}) }
     else enterFullscreen()
   }
-  // leaving fullscreen — Esc, F, the browser's own UI, an OS gesture —
-  // ends the show outright; it never drops into tab-fill mode. (Tab mode
-  // is only ever entered deliberately, via the small present button.)
+  // Windowed "view" mode is now a normal, ongoing presentation state (the
+  // fullscreen button lets someone move freely between it and fullscreen
+  // throughout), so leaving fullscreen no longer always means "done
+  // presenting" — only a genuinely EXTERNAL fullscreen exit (the browser's
+  // own UI, an OS gesture — Escape is handled unconditionally elsewhere,
+  // never reaches here) still ends the show outright. Toggling it off via
+  // OUR OWN control (this button, or the F key — both call
+  // toggleFullscreen()) just returns to windowed view instead.
   let wentFullscreen = false
   const onFsChange = () => {
-    if (document.fullscreenElement === overlay) wentFullscreen = true
-    else if (wentFullscreen && !exited && !openingSpeaker) exit()
+    if (document.fullscreenElement === overlay) { wentFullscreen = true; fsBtn.classList.remove('bento-fs-btn-windowed') }
+    else {
+      fsBtn.classList.add('bento-fs-btn-windowed')
+      if (togglingOff) { togglingOff = false; return }
+      if (wentFullscreen && !exited && !openingSpeaker) exit()
+    }
   }
   document.addEventListener('fullscreenchange', onFsChange)
+  const fsBtn = document.createElement('button')
+  fsBtn.type = 'button'
+  fsBtn.className = 'bento-fs-btn bento-fs-btn-windowed'
+  fsBtn.setAttribute('aria-label', t('Fullscreen'))
+  fsBtn.dataset.tooltip = t('Vollbild (F)')
+  fsBtn.innerHTML = ICONS.fullscreen
+  fsBtn.addEventListener('click', toggleFullscreen)
+  overlay.appendChild(fsBtn)
   if (opts.fullscreen !== false) enterFullscreen()
   else fullscreenSettled()
   // If the editor already opened notes on the second screen, go live on that

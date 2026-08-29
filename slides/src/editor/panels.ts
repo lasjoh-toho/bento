@@ -1046,15 +1046,6 @@ export class PropsPanel {
     this.section(t({ text: 'Text', shape: 'Shape', image: 'Image', svg: 'Diagram', chart: 'Chart', table: 'Table', media: el.type === 'media' && el.kind === 'audio' ? 'Audio' : el.type === 'media' && el.kind === 'camera' ? 'Kamera' : 'Video' }[el.type]))
     this.opsRow([el])
 
-    // Lead with the element's OWN controls — the reason it was selected —
-    // then geometry, effects, arrange, and finally present-time behaviour.
-    if (el.type === 'text') this.buildTextProps(el)
-    if (el.type === 'shape') this.buildShapeProps(el)
-    if (el.type === 'image') this.buildImageProps(el)
-    if (el.type === 'chart') this.buildChartProps(el)
-    if (el.type === 'table') this.buildTableProps(el)
-    if (el.type === 'media') this.buildMediaProps(el)
-
     this.section(t('Position & size'))
     const geo = document.createElement('div')
     geo.className = 'ed-grid2'
@@ -1068,6 +1059,15 @@ export class PropsPanel {
         this.setNum(el.id, 'opacity', Math.min(Math.max(v / 100, 0), 1))),
     )
     this.host.appendChild(geo)
+
+    // Lead with the element's OWN controls — the reason it was selected —
+    // then effects, arrange, and finally present-time behaviour.
+    if (el.type === 'text') this.buildTextProps(el)
+    if (el.type === 'shape') this.buildShapeProps(el)
+    if (el.type === 'image') this.buildImageProps(el)
+    if (el.type === 'chart') this.buildChartProps(el)
+    if (el.type === 'table') this.buildTableProps(el)
+    if (el.type === 'media') this.buildMediaProps(el)
 
     this.row('Role', this.select(
       ['none', 'title', 'subtitle', 'body', 'kicker'],
@@ -1547,7 +1547,7 @@ export class PropsPanel {
       this.mutate(el.id, (e) => { (e as TextElement).fontSize = size }, true)
     })
     this.host.appendChild(fitBtn)
-    this.row(t('Beim Verändern automatisch anpassen'), this.toggle(!!el.autoFitFontSize, (v) =>
+    this.row(t('Automatisch anpassen'), this.toggle(!!el.autoFitFontSize, (v) =>
       this.mutate(el.id, (e) => {
         if (v) (e as TextElement).autoFitFontSize = true
         else delete (e as TextElement).autoFitFontSize
@@ -3256,52 +3256,109 @@ export class PropsPanel {
     lsSet(PropsPanel.RECENT_COLORS_KEY, JSON.stringify(next))
   }
 
+  /** Grayscale row, then 7 hues (columns) at decreasing lightness (rows) —
+   *  the same "grayscale + hue/lightness grid" structure most design tools
+   *  default to. Generated once via HSL->RGB and hardcoded here (a fixed,
+   *  curated default, not something recomputed at runtime). */
+  private static DEFAULT_PALETTE: string[][] = [
+    ['#ffffff', '#dbdbdb', '#b6b6b6', '#929292', '#6d6d6d', '#494949', '#242424', '#000000'],
+    ['#f2c0c0', '#f2d9c0', '#f2e9c0', '#c0f2d9', '#c0f2f2', '#c0d9f2', '#d9c0f2', '#f2c0e1'],
+    ['#e68989', '#e6b889', '#e6d789', '#89e6b8', '#89e6e6', '#89b8e6', '#b889e6', '#e689c7'],
+    ['#db5757', '#db9957', '#dbc557', '#57db99', '#57dbdb', '#5799db', '#9957db', '#db57af'],
+    ['#d22d2d', '#d2802d', '#d2b72d', '#2dd280', '#2dd2d2', '#2d80d2', '#802dd2', '#d22d9b'],
+    ['#a82424', '#a86624', '#a89224', '#24a866', '#24a8a8', '#2466a8', '#6624a8', '#a8247c'],
+    ['#7e1b1b', '#7e4d1b', '#7e6e1b', '#1b7e4d', '#1b7e7e', '#1b4d7e', '#4d1b7e', '#7e1b5d'],
+    ['#541212', '#543312', '#544912', '#125433', '#125454', '#123354', '#331254', '#54123e'],
+  ]
+
   private color(value: string, onEdit: (v: string, final: boolean) => void, selectionProp?: string): HTMLElement {
-    const input = document.createElement('input')
-    input.type = 'color'
-    input.value = /^#[0-9a-fA-F]{6}$/.test(value) ? value : parseColor(value).hex
+    const parsed = parseColor(value)
+    let hex = parsed.hex
+    let alpha = parsed.a
     let session: ReturnType<PropsPanel['startSelectionEditSession']> = null
-    if (selectionProp) {
-      input.addEventListener('pointerdown', () => {
-        if (!session) session = this.startSelectionEditSession(selectionProp)
-      })
-      input.addEventListener('blur', () => { session?.end(); session = null })
-    }
-    const emit = (final: boolean) => {
-      if (session) { session.apply(input.value); return }
-      onEdit(input.value, final)
-      if (final) PropsPanel.pushRecentColor(input.value)
-    }
-    input.addEventListener('input', () => emit(false))
-    input.addEventListener('change', () => emit(true))
 
     const wrap = document.createElement('div')
-    wrap.className = 'ed-color-recent-wrap'
-    wrap.appendChild(input)
-    const recent = lsJson<string[]>(PropsPanel.RECENT_COLORS_KEY, [])
-    if (recent.length) {
-      const bridge = document.createElement('div')
-      bridge.className = 'ed-color-recent-bridge'
-      wrap.appendChild(bridge)
-      const popover = document.createElement('div')
-      popover.className = 'ed-color-recent-popover'
-      for (const hex of recent) {
-        const sw = document.createElement('button')
-        sw.type = 'button'
-        sw.className = 'ed-color-recent-swatch'
-        sw.style.background = hex
-        sw.dataset.tooltip = hex
-        sw.addEventListener('click', (ev) => {
-          ev.preventDefault()
-          input.value = hex
-          if (session) { session.apply(hex); return }
-          onEdit(hex, true)
-          PropsPanel.pushRecentColor(hex)
-        })
-        popover.appendChild(sw)
-      }
-      wrap.appendChild(popover)
+    wrap.className = 'ed-color-wrap'
+    const swatch = document.createElement('button')
+    swatch.type = 'button'
+    swatch.className = 'ed-color-swatch-btn'
+    swatch.style.background = combineColor(hex, alpha)
+    wrap.appendChild(swatch)
+
+    const popover = document.createElement('div')
+    popover.className = 'ed-color-popover'
+
+    const closePopover = () => {
+      popover.classList.remove('open')
+      document.removeEventListener('pointerdown', onOutsideClick, true)
+      session?.end()
+      session = null
     }
+    const onOutsideClick = (ev: PointerEvent) => {
+      if (!wrap.contains(ev.target as Node)) closePopover()
+    }
+    swatch.addEventListener('pointerdown', () => {
+      if (selectionProp && !session) session = this.startSelectionEditSession(selectionProp)
+    })
+    swatch.addEventListener('click', () => {
+      if (popover.classList.contains('open')) { closePopover(); return }
+      popover.classList.add('open')
+      document.addEventListener('pointerdown', onOutsideClick, true)
+    })
+
+    const emit = (final: boolean) => {
+      const out = combineColor(hex, alpha)
+      swatch.style.background = out
+      if (session) { session.apply(out); return }
+      onEdit(out, final)
+      if (final) PropsPanel.pushRecentColor(hex)
+    }
+
+    const alphaSlider = document.createElement('input')
+    alphaSlider.type = 'range'
+    alphaSlider.min = '0'
+    alphaSlider.max = '100'
+    alphaSlider.value = String(Math.round(alpha * 100))
+    alphaSlider.className = 'ed-color-alpha-slider'
+    alphaSlider.dataset.tooltip = t('Transparenz')
+    alphaSlider.addEventListener('input', () => { alpha = parseInt(alphaSlider.value, 10) / 100; emit(false) })
+    alphaSlider.addEventListener('change', () => emit(true))
+    popover.appendChild(alphaSlider)
+
+    const grid = document.createElement('div')
+    grid.className = 'ed-color-grid'
+    const addSwatch = (swHex: string | null) => {
+      const sw = document.createElement('button')
+      sw.type = 'button'
+      sw.className = 'ed-color-swatch' + (swHex ? '' : ' ed-color-swatch-empty')
+      if (swHex) {
+        sw.style.background = swHex
+        sw.dataset.tooltip = swHex
+        sw.addEventListener('click', () => { hex = swHex; emit(true); closePopover() })
+      } else {
+        sw.disabled = true
+      }
+      grid.appendChild(sw)
+    }
+    for (const row of PropsPanel.DEFAULT_PALETTE) for (const swHex of row) addSwatch(swHex)
+    const recent = lsJson<string[]>(PropsPanel.RECENT_COLORS_KEY, [])
+    for (let i = 0; i < 16; i++) addSwatch(recent[i] ?? null)
+    popover.appendChild(grid)
+
+    const hexRow = document.createElement('input')
+    hexRow.type = 'text'
+    hexRow.className = 'ed-color-hex-input'
+    hexRow.value = hex
+    hexRow.spellcheck = false
+    hexRow.addEventListener('change', () => {
+      const next = /^#[0-9a-fA-F]{6}$/.test(hexRow.value) ? hexRow.value : parseColor(hexRow.value).hex
+      hex = next
+      hexRow.value = hex
+      emit(true)
+    })
+    popover.appendChild(hexRow)
+
+    wrap.appendChild(popover)
     return wrap
   }
 
