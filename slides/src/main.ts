@@ -223,27 +223,13 @@ const editor = new Editor(document.getElementById('app')!, store)
 const session = new SyncSession(store)
 editor.connectSync(session)
 
-// Opening a link ending in #present starts the show — but only after a
-// genuine click/keypress on THIS page, since requestFullscreen() requires
-// fresh transient user activation that a scripted navigation from another
-// page can never reliably carry over (confirmed: there is no browser-
-// guaranteed mechanism for that at all, no matter how synchronously the
-// navigation itself was triggered). This brief overlay bridges the gap —
-// any click or keypress anywhere on the page (not a specific button to
-// hunt for) starts the show immediately.
-if (location.hash === '#present') {
-  const overlay = document.createElement('div')
-  overlay.setAttribute('aria-hidden', 'true')
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:9998;display:grid;place-content:center;background:rgba(10,12,16,.55);color:#fff;font:600 15px/1.4 -apple-system,system-ui,sans-serif;cursor:pointer;'
-  overlay.textContent = t('Click anywhere to start the presentation')
-  document.body.appendChild(overlay)
-  const start = () => {
-    overlay.remove()
-    editor.present(true)
-  }
-  document.addEventListener('click', start, { once: true })
-  document.addEventListener('keydown', start, { once: true })
-}
+// Opening a link ending in #present starts the show immediately — no
+// gate/overlay needed here anymore, since present() now defaults to a
+// windowed view (no immediate requestFullscreen() call at all; the
+// corner fullscreen button in present.ts's own overlay is the reliable,
+// always-a-genuinely-fresh-gesture way into fullscreen, whenever the
+// person actually clicks it).
+if (location.hash === '#present') editor.present(true)
 
 // Dismiss the boot splash (inline in index.html so it paints before this
 // bundle parses). Hold it briefly so the assemble animation reads as a

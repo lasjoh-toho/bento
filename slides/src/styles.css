@@ -888,7 +888,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 .ed-color-popover {
   position: absolute;
   bottom: calc(100% + 8px);
-  left: 0;
+  right: 0;
   z-index: 51;
   display: none;
   flex-direction: column;
