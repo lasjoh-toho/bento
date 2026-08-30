@@ -794,6 +794,11 @@ export interface BentoDoc {
    * hand-out copy present-only for everyone who doesn't go digging.
    */
   readonly?: boolean
+  /** Whether the end-of-presentation screen (present.ts) shows the
+   *  auto-collected citations list below its heading. Defaults to shown
+   *  (opt-out) — matches Citation.collectInReferences's own !== false
+   *  convention elsewhere. */
+  showEndScreenReferences?: boolean
   slides: Slide[]
   modified: string
 }

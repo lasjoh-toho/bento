@@ -33,6 +33,7 @@ const ROW_TIPS: Record<string, string> = {
   'Autoplay': 'Runs only while presenting; browsers require "muted" for video to autoplay.',
   'Rand verschieben (px)': 'Weicher Übergang am Rand statt hartem Ausschnitt — wirkt erst beim Übernehmen, die Vorschau beim Malen bleibt scharf. Legt fest, wo dieser Übergang ansetzt: positiv erweitert die freigestellte Fläche zuerst (schützt feine Details am Motivrand, kann einen schmalen Saum des alten Hintergrunds mit einschließen), negativ verkleinert sie zuerst (entfernt einen Hintergrundsaum sicher, kann feine Motivkanten kappen).',
   'Schriftfarbe für alle Texte': 'Wirkt nur auf Textelemente (nicht Formen/Bilder); ein bestehender Farbverlauf im Text wird dabei entfernt.',
+  'Auf Abschlussfolie zeigen': 'Zeigt die automatisch gesammelten Quellenangaben (siehe oben) auf dem „Ende der Präsentation"-Bildschirm — unabhängig davon, ob „Quellenverzeichnis aktualisieren" je geklickt wurde.',
   'Anwenden auf': 'Bei "next": wird auf jede Folie angewendet, die du jetzt auswählst — so lange, bis du "Anwenden auf" wieder änderst.',
   'Anmerkungsoptionen': 'Zeigt im Präsentationsmodus einen Stift-Umschalter — zum Anschreiben auf einem Touch-/Stylus-Display. Striche und Begriffe lassen sich dort auch dauerhaft speichern (siehe Speichern-Symbol in der Werkzeugleiste).',
   'Folie ausblenden': 'Wird beim Präsentieren übersprungen (zählt auch nicht mit) — bleibt hier zum Bearbeiten normal erreichbar.',
@@ -660,6 +661,8 @@ export class PropsPanel {
       window.alert(t('{n} Quellenangabe(n) in den Quellennachweise-Block der letzten Folie übernommen.', { n: String(lines.length) }))
     })
     this.host.appendChild(citeBtn)
+    this.row(t('Auf Abschlussfolie zeigen'), this.toggle(this.store.doc.showEndScreenReferences !== false, (v) =>
+      this.edit(() => { this.store.doc.showEndScreenReferences = v }, true)))
     const tocBtn = document.createElement('button')
     tocBtn.className = 'ed-btn ed-btn-block'
     tocBtn.textContent = t('Inhaltsverzeichnis einfügen')
@@ -3172,6 +3175,7 @@ export class PropsPanel {
       onEdit(combined, final)
     }, openDown)
     wrap.appendChild(popoverApi.el)
+    this.attachHorizontalClamp(wrap, popoverApi.el)
     const bridge = document.createElement('div')
     bridge.className = 'ed-color-bridge' + (openDown ? ' ed-color-bridge-down' : '')
     wrap.appendChild(bridge)
@@ -3292,6 +3296,27 @@ export class PropsPanel {
    *  separate input (the native swatch, or colorHex()'s own visible text
    *  field) keep this popover's hex field in sync when IT changes the
    *  color instead. */
+  /** Keeps a color popover from overflowing past the viewport's left edge
+   *  — see this method's own call sites in color()/colorHex(). The panel
+   *  itself is user-resizable down to 190px (Editor.PANEL_BOUNDS), well
+   *  under the popover's own ~192px width, so the static right:0 CSS
+   *  anchor alone can't guarantee it fits at every possible panel width;
+   *  recomputed on every hover since that width can change between one
+   *  hover and the next. */
+  private attachHorizontalClamp(wrap: HTMLElement, popover: HTMLElement) {
+    const MARGIN = 6
+    wrap.addEventListener('mouseenter', () => {
+      popover.style.left = ''
+      popover.style.right = '0'
+      const popRect = popover.getBoundingClientRect()
+      if (popRect.left < MARGIN) {
+        const wrapRect = wrap.getBoundingClientRect()
+        popover.style.right = 'auto'
+        popover.style.left = `${MARGIN - wrapRect.left}px`
+      }
+    })
+  }
+
   private buildColorPopover(
     initial: string,
     onChange: (combined: string, final: boolean) => void,
@@ -3386,6 +3411,7 @@ export class PropsPanel {
       onEdit(combined, final)
     }, openDown)
     wrap.appendChild(popoverApi.el)
+    this.attachHorizontalClamp(wrap, popoverApi.el)
     const bridge = document.createElement('div')
     bridge.className = 'ed-color-bridge' + (openDown ? ' ed-color-bridge-down' : '')
     wrap.appendChild(bridge)

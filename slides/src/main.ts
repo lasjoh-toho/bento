@@ -154,6 +154,10 @@ function playerMode(doc: BentoDoc) {
         onReachedEnd: playlist.length ? () => {
           playlistPos = (playlistPos + 1) % playlist.length
           const oldSession = session
+          const spinner = document.createElement('div')
+          spinner.className = 'bento-playlist-loading'
+          spinner.innerHTML = '<div class="bento-spinner"></div>'
+          document.body.appendChild(spinner)
           fetch(playlist[playlistPos].url)
             .then((res) => res.json())
             .then((nextDoc: BentoDoc) => {
@@ -163,6 +167,7 @@ function playerMode(doc: BentoDoc) {
             .catch((e) => {
               console.error('[bento/present] failed to load next in playlist:', e)
             })
+            .finally(() => spinner.remove())
         } : undefined,
       })
     }

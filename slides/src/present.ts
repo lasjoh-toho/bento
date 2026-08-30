@@ -105,12 +105,14 @@ export function startPresentation(
     heading.textContent = t('Ende der Präsentation')
     el.appendChild(heading)
     const lines: string[] = []
-    for (const s of doc.slides) {
-      for (const e of s.elements) {
-        if (e.type !== 'image' && e.type !== 'text') continue
-        if (!e.citation?.sourceUrl || e.citation.collectInReferences === false) continue
-        const parts = [[e.citation.author?.trim(), e.citation.title?.trim()].filter(Boolean).join(', '), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
-        lines.push(parts.filter(Boolean).join(', '))
+    if (doc.showEndScreenReferences !== false) {
+      for (const s of doc.slides) {
+        for (const e of s.elements) {
+          if (e.type !== 'image' && e.type !== 'text') continue
+          if (!e.citation?.sourceUrl || e.citation.collectInReferences === false) continue
+          const parts = [[e.citation.author?.trim(), e.citation.title?.trim()].filter(Boolean).join(', '), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
+          lines.push(parts.filter(Boolean).join(', '))
+        }
       }
     }
     if (lines.length > 0) {
@@ -127,6 +129,12 @@ export function startPresentation(
       }
       el.appendChild(ul)
     }
+    const exitBtn = document.createElement('button')
+    exitBtn.type = 'button'
+    exitBtn.className = 'bento-end-exit-btn'
+    exitBtn.textContent = t('Verlassen')
+    exitBtn.addEventListener('click', () => exit())
+    el.appendChild(exitBtn)
     overlay.appendChild(el)
   }
   const goNext = () => {
