@@ -89,14 +89,57 @@ export function startPresentation(
     const p = doc.slides.findIndex((s) => s.id === pid)
     return p >= 0 ? p : i
   }
+  let endScreenShown = false
+  const hideEndScreen = () => {
+    if (!endScreenShown) return
+    endScreenShown = false
+    overlay.querySelector('.bento-end-screen')?.remove()
+  }
+  const showEndScreen = () => {
+    if (endScreenShown) return
+    endScreenShown = true
+    const el = document.createElement('div')
+    el.className = 'bento-end-screen'
+    const heading = document.createElement('div')
+    heading.className = 'bento-end-heading'
+    heading.textContent = t('Ende der Präsentation')
+    el.appendChild(heading)
+    const lines: string[] = []
+    for (const s of doc.slides) {
+      for (const e of s.elements) {
+        if (e.type !== 'image' && e.type !== 'text') continue
+        if (!e.citation?.sourceUrl || e.citation.collectInReferences === false) continue
+        const parts = [[e.citation.author?.trim(), e.citation.title?.trim()].filter(Boolean).join(', '), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
+        lines.push(parts.filter(Boolean).join(', '))
+      }
+    }
+    if (lines.length > 0) {
+      const refsHeading = document.createElement('div')
+      refsHeading.className = 'bento-end-refs-heading'
+      refsHeading.textContent = t('Quellen')
+      el.appendChild(refsHeading)
+      const ul = document.createElement('ul')
+      ul.className = 'bento-end-references'
+      for (const line of lines) {
+        const li = document.createElement('li')
+        li.textContent = line
+        ul.appendChild(li)
+      }
+      el.appendChild(ul)
+    }
+    overlay.appendChild(el)
+  }
   const goNext = () => {
+    hideEndScreen()
     const cur = deck.getIndices().h
     for (let i = (isSkipped(cur) ? anchorOf(cur) : cur) + 1; i < doc.slides.length; i++) {
       if (!isSkipped(i)) return deck.slide(i, 0)
     }
-    opts.onReachedEnd?.()
+    if (opts.onReachedEnd) { opts.onReachedEnd(); return }
+    showEndScreen()
   }
   const goPrev = () => {
+    if (endScreenShown) { hideEndScreen(); return }
     const cur = deck.getIndices().h
     if (isSkipped(cur)) return deck.slide(anchorOf(cur), 0)
     for (let i = cur - 1; i >= 0; i--) {
@@ -104,13 +147,7 @@ export function startPresentation(
     }
     if (hiddenTocIndex >= 0 && hiddenTocIndex !== cur) deck.slide(hiddenTocIndex, 0)
   }
-  const hasNext = () => {
-    const cur = deck.getIndices().h
-    for (let i = (isSkipped(cur) ? anchorOf(cur) : cur) + 1; i < doc.slides.length; i++) {
-      if (!isSkipped(i)) return true
-    }
-    return false
-  }
+  const hasNext = () => !endScreenShown
   const hasPrev = () => {
     const cur = deck.getIndices().h
     if (isSkipped(cur)) return true // right-swipe returns to the parent slide

@@ -350,7 +350,7 @@ export class PropsPanel {
         this.edit(() => { this.store.doc.size.height = Math.max(320, Math.min(4000, Math.round(v))) }, fin)))
     }
     this.row('Background', this.color(slide.background, (v, fin) =>
-      this.edit(() => { this.store.slide.background = v }, fin)))
+      this.edit(() => { this.store.slide.background = v }, fin), undefined, true))
     this.row('Transition', this.select(
       ['none', 'fade', 'slide', 'zoom', 'morph'],
       slide.transition,
@@ -3142,9 +3142,9 @@ export class PropsPanel {
   /** Native swatch (opens the browser's own color picker) plus a plain text
    *  field for typing/pasting a hex code (or any CSS color) directly — the
    *  plain `color()` picker below only offers the swatch. */
-  private colorHex(value: string, onEdit: (v: string, final: boolean) => void): HTMLElement {
+  private colorHex(value: string, onEdit: (v: string, final: boolean) => void, openDown = false): HTMLElement {
     const wrap = document.createElement('div')
-    wrap.className = 'ed-colorhex'
+    wrap.className = 'ed-colorhex ed-color-wrap'
     const hex = /^#[0-9a-fA-F]{6}$/.test(value) ? value : parseColor(value).hex
     const swatch = document.createElement('input')
     swatch.type = 'color'
@@ -3155,15 +3155,27 @@ export class PropsPanel {
     text.value = value
     text.spellcheck = false
     text.placeholder = '#rrggbb'
-    swatch.addEventListener('input', () => { text.value = swatch.value; onEdit(swatch.value, false) })
-    swatch.addEventListener('change', () => { text.value = swatch.value; onEdit(swatch.value, true) })
+    swatch.addEventListener('input', () => { text.value = swatch.value; popoverApi.syncFromOutside(swatch.value); onEdit(swatch.value, false) })
+    swatch.addEventListener('change', () => { text.value = swatch.value; popoverApi.syncFromOutside(swatch.value); onEdit(swatch.value, true) })
     text.addEventListener('change', () => {
       const v = text.value.trim()
       if (!v) return
       onEdit(v, true)
-      if (/^#[0-9a-fA-F]{6}$/.test(v)) swatch.value = v
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) { swatch.value = v; popoverApi.syncFromOutside(v) }
     })
     wrap.append(swatch, text)
+
+    const popoverApi = this.buildColorPopover(value, (combined, final) => {
+      const combinedHex = parseColor(combined).hex
+      swatch.value = combinedHex
+      text.value = combined
+      onEdit(combined, final)
+    }, openDown)
+    wrap.appendChild(popoverApi.el)
+    const bridge = document.createElement('div')
+    bridge.className = 'ed-color-bridge' + (openDown ? ' ed-color-bridge-down' : '')
+    wrap.appendChild(bridge)
+
     return wrap
   }
 
@@ -3271,48 +3283,26 @@ export class PropsPanel {
     ['#541212', '#543312', '#544912', '#125433', '#125454', '#123354', '#331254', '#54123e'],
   ]
 
-  private color(value: string, onEdit: (v: string, final: boolean) => void, selectionProp?: string): HTMLElement {
-    const parsed = parseColor(value)
+  /** Builds the hover-popover CONTENT shared between color() and
+   *  colorHex() — opacity slider, the 8x8 palette + 2 rows of recent
+   *  colors, and a hex text field. Owns its own hex/alpha state
+   *  internally (seeded from `initial`); calls onChange(combined, final)
+   *  — combineColor(hex, alpha) — whenever a swatch, the slider, or the
+   *  hex field changes it. `syncFromOutside(hex)` lets a caller's OWN
+   *  separate input (the native swatch, or colorHex()'s own visible text
+   *  field) keep this popover's hex field in sync when IT changes the
+   *  color instead. */
+  private buildColorPopover(
+    initial: string,
+    onChange: (combined: string, final: boolean) => void,
+    openDown: boolean,
+  ): { el: HTMLElement; syncFromOutside: (hex: string) => void } {
+    const parsed = parseColor(initial)
     let hex = parsed.hex
     let alpha = parsed.a
-    let session: ReturnType<PropsPanel['startSelectionEditSession']> = null
-
-    const wrap = document.createElement('div')
-    wrap.className = 'ed-color-wrap'
-    const swatch = document.createElement('button')
-    swatch.type = 'button'
-    swatch.className = 'ed-color-swatch-btn'
-    swatch.style.background = combineColor(hex, alpha)
-    wrap.appendChild(swatch)
 
     const popover = document.createElement('div')
-    popover.className = 'ed-color-popover'
-
-    const closePopover = () => {
-      popover.classList.remove('open')
-      document.removeEventListener('pointerdown', onOutsideClick, true)
-      session?.end()
-      session = null
-    }
-    const onOutsideClick = (ev: PointerEvent) => {
-      if (!wrap.contains(ev.target as Node)) closePopover()
-    }
-    swatch.addEventListener('pointerdown', () => {
-      if (selectionProp && !session) session = this.startSelectionEditSession(selectionProp)
-    })
-    swatch.addEventListener('click', () => {
-      if (popover.classList.contains('open')) { closePopover(); return }
-      popover.classList.add('open')
-      document.addEventListener('pointerdown', onOutsideClick, true)
-    })
-
-    const emit = (final: boolean) => {
-      const out = combineColor(hex, alpha)
-      swatch.style.background = out
-      if (session) { session.apply(out); return }
-      onEdit(out, final)
-      if (final) PropsPanel.pushRecentColor(hex)
-    }
+    popover.className = 'ed-color-popover' + (openDown ? ' ed-color-popover-down' : '')
 
     const alphaSlider = document.createElement('input')
     alphaSlider.type = 'range'
@@ -3321,8 +3311,8 @@ export class PropsPanel {
     alphaSlider.value = String(Math.round(alpha * 100))
     alphaSlider.className = 'ed-color-alpha-slider'
     alphaSlider.dataset.tooltip = t('Transparenz')
-    alphaSlider.addEventListener('input', () => { alpha = parseInt(alphaSlider.value, 10) / 100; emit(false) })
-    alphaSlider.addEventListener('change', () => emit(true))
+    alphaSlider.addEventListener('input', () => { alpha = parseInt(alphaSlider.value, 10) / 100; onChange(combineColor(hex, alpha), false) })
+    alphaSlider.addEventListener('change', () => onChange(combineColor(hex, alpha), true))
     popover.appendChild(alphaSlider)
 
     const grid = document.createElement('div')
@@ -3334,7 +3324,12 @@ export class PropsPanel {
       if (swHex) {
         sw.style.background = swHex
         sw.dataset.tooltip = swHex
-        sw.addEventListener('click', () => { hex = swHex; emit(true); closePopover() })
+        sw.addEventListener('click', () => {
+          hex = swHex
+          hexRow.value = hex
+          onChange(combineColor(hex, alpha), true)
+          PropsPanel.pushRecentColor(hex)
+        })
       } else {
         sw.disabled = true
       }
@@ -3351,14 +3346,50 @@ export class PropsPanel {
     hexRow.value = hex
     hexRow.spellcheck = false
     hexRow.addEventListener('change', () => {
-      const next = /^#[0-9a-fA-F]{6}$/.test(hexRow.value) ? hexRow.value : parseColor(hexRow.value).hex
-      hex = next
+      hex = /^#[0-9a-fA-F]{6}$/.test(hexRow.value) ? hexRow.value : parseColor(hexRow.value).hex
       hexRow.value = hex
-      emit(true)
+      onChange(combineColor(hex, alpha), true)
+      PropsPanel.pushRecentColor(hex)
     })
     popover.appendChild(hexRow)
 
-    wrap.appendChild(popover)
+    return { el: popover, syncFromOutside: (h) => { hex = h; hexRow.value = h } }
+  }
+
+  private color(value: string, onEdit: (v: string, final: boolean) => void, selectionProp?: string, openDown = false): HTMLElement {
+    const wrap = document.createElement('div')
+    wrap.className = 'ed-color-wrap'
+
+    const swatch = document.createElement('input')
+    swatch.type = 'color'
+    swatch.className = 'ed-color-swatch-btn'
+    swatch.value = /^#[0-9a-fA-F]{6}$/.test(value) ? value : parseColor(value).hex
+
+    let session: ReturnType<PropsPanel['startSelectionEditSession']> = null
+    if (selectionProp) {
+      swatch.addEventListener('pointerdown', () => { if (!session) session = this.startSelectionEditSession(selectionProp) })
+      swatch.addEventListener('blur', () => { session?.end(); session = null })
+    }
+    const emitFromSwatch = (final: boolean) => {
+      popoverApi.syncFromOutside(swatch.value)
+      if (session) { session.apply(swatch.value); return }
+      onEdit(swatch.value, final)
+      if (final) PropsPanel.pushRecentColor(swatch.value)
+    }
+    swatch.addEventListener('input', () => emitFromSwatch(false))
+    swatch.addEventListener('change', () => emitFromSwatch(true))
+    wrap.appendChild(swatch)
+
+    const popoverApi = this.buildColorPopover(value, (combined, final) => {
+      swatch.value = parseColor(combined).hex
+      if (session) { session.apply(combined); return }
+      onEdit(combined, final)
+    }, openDown)
+    wrap.appendChild(popoverApi.el)
+    const bridge = document.createElement('div')
+    bridge.className = 'ed-color-bridge' + (openDown ? ' ed-color-bridge-down' : '')
+    wrap.appendChild(bridge)
+
     return wrap
   }
 
