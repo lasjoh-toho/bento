@@ -7,12 +7,13 @@
 import type { Store } from '../store'
 import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, dataUriByteSize, dataUriMimeType, defaultChart, defaultText, findUsedAssetAndFontKeys, formatBytesMB, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, dataUriByteSize, dataUriMimeType, defaultChart, defaultText, downscaleImageDataUrl, findUsedAssetAndFontKeys, formatBytesMB, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement, fitFontSizeToBox } from '../measure'
 import { isMacOS } from '../screens'
 import { CHART_PRESETS } from '../charts'
 import { FONT_CHOICES, firstFamily, injectFonts } from '../fonts'
+import { imageDownscaleParams } from './moodle'
 import { ICONS } from '../icons'
 import { t } from '../i18n'
 import { lsJson, lsSet } from '../../../kernel/src/storage.ts'
@@ -787,10 +788,40 @@ export class PropsPanel {
         badge.dataset.tooltip = t('Kein Element im Dokument verweist mehr hierauf — „Nicht verwendete Medien entfernen“ unten würde diesen Eintrag löschen.')
         row.appendChild(badge)
       }
-      const size = document.createElement('span')
-      size.className = 'ed-assets-size'
-      size.textContent = formatBytesMB(bytes)
-      row.appendChild(size)
+      if (mime.startsWith('image/')) {
+        const sizeBtn = document.createElement('button')
+        sizeBtn.type = 'button'
+        sizeBtn.className = 'ed-assets-size ed-assets-size-btn'
+        sizeBtn.textContent = formatBytesMB(bytes)
+        let previewComputed = false
+        sizeBtn.addEventListener('mouseenter', () => {
+          if (previewComputed) return
+          previewComputed = true
+          const { maxDim, quality } = imageDownscaleParams()
+          void downscaleImageDataUrl(value, maxDim, quality).then((shrunk) => {
+            const newBytes = dataUriByteSize(shrunk)
+            sizeBtn.dataset.tooltip = newBytes < bytes
+              ? t('Verkleinern auf {size}', { size: formatBytesMB(newBytes) })
+              : t('Bereits optimal — Verkleinern würde nichts sparen')
+          })
+        })
+        sizeBtn.addEventListener('click', () => {
+          sizeBtn.disabled = true
+          const { maxDim, quality } = imageDownscaleParams()
+          void downscaleImageDataUrl(value, maxDim, quality).then((shrunk) => {
+            this.edit(() => {
+              const d = this.store.doc
+              if (d.assets) d.assets[key] = shrunk
+            }, true)
+          })
+        })
+        row.appendChild(sizeBtn)
+      } else {
+        const size = document.createElement('span')
+        size.className = 'ed-assets-size'
+        size.textContent = formatBytesMB(bytes)
+        row.appendChild(size)
+      }
       list.appendChild(row)
     }
     container.appendChild(list)

@@ -11,6 +11,7 @@
 
 import type { BentoDoc, Slide, SlideElement, TextElement } from '../model'
 import { uid, downscaleImageDataUrl } from '../model'
+import { imageDownscaleParams } from './moodle'
 import { firstFamily } from '../fonts'
 
 export interface ClipPayload {
@@ -156,7 +157,8 @@ function sanitizeInlineHtml(el: HTMLElement): string {
 }
 
 async function resolveImageSrc(src: string): Promise<string | null> {
-  if (src.startsWith('data:')) return downscaleImageDataUrl(src)
+  const { maxDim, quality } = imageDownscaleParams()
+  if (src.startsWith('data:')) return downscaleImageDataUrl(src, maxDim, quality)
   if (!/^https?:\/\//.test(src)) return null
   try {
     const res = await fetch(src, { mode: 'cors' })
@@ -169,7 +171,7 @@ async function resolveImageSrc(src: string): Promise<string | null> {
       reader.onerror = () => resolve(null)
       reader.readAsDataURL(blob)
     })
-    return dataUrl ? downscaleImageDataUrl(dataUrl) : null
+    return dataUrl ? downscaleImageDataUrl(dataUrl, maxDim, quality) : null
   } catch {
     return null // most cross-origin images without permissive CORS headers land here — silently skipped rather than left broken
   }

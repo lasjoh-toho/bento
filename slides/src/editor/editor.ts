@@ -20,7 +20,7 @@ import { PropsPanel } from './panels'
 import { LongReadEditor } from './longread'
 import { startPresentation, type PresentSession } from '../present'
 import { adoptFileHandle, canWriteInPlace, currentFileName, downloadFile, fileBase, hasFileHandle, isEncryptionActive, openedFileName, saveFile, serializeAuto, serializeFile, setEncryptionPassword, suggestedFileName, writeUpdatedFile, writeUpdatedFileAs } from '../save'
-import { moodleConfig, saveToMoodle } from './moodle'
+import { moodleConfig, saveToMoodle, imageDownscaleParams } from './moodle'
 import { addVersion, clearRecovery, clearVersions, docContentKey, getRecovery, listVersions, pruneOld, putRecovery, type Snapshot } from '../autosave'
 import { insertElements, insertSlides, parseClip, parseHtmlPaste, serializeElements, serializeSlides } from './clipboard'
 import { openSpeakerWindow, speakerIdleBody } from '../screens'
@@ -2071,7 +2071,8 @@ export class Editor {
           const scale = Math.min((dw * 0.5) / img.width, (dh * 0.5) / img.height, 1)
           const w = Math.round(img.width * scale)
           const h = Math.round(img.height * scale)
-          void downscaleImageDataUrl(src).then((finalSrc) => {
+          const { maxDim, quality } = imageDownscaleParams()
+          void downscaleImageDataUrl(src, maxDim, quality).then((finalSrc) => {
             this.canvas.insert(defaultImage(finalSrc, { w, h, x: (dw - w) / 2, y: (dh - h) / 2 }))
           })
         }
@@ -2349,7 +2350,8 @@ export class Editor {
         let w = img.naturalWidth || 400, h = img.naturalHeight || 300
         const sc = Math.min(1, 640 / w, 480 / h)
         w = Math.round(w * sc); h = Math.round(h * sc)
-        void downscaleImageDataUrl(src).then((finalSrc) => place(w, h, finalSrc))
+        const { maxDim, quality } = imageDownscaleParams()
+        void downscaleImageDataUrl(src, maxDim, quality).then((finalSrc) => place(w, h, finalSrc))
       }
       img.onerror = () => place(400, 300, src)
       img.src = src

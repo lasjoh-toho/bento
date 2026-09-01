@@ -25,6 +25,15 @@ export interface MoodleConfig {
    *  "Zeitüberschreitung beim Speichern") — falls back to 20 if somehow
    *  absent (an older mod_bento not yet carrying this field). */
   savetimeout?: number
+  /** Admin-configured defaults for the editor's own automatic image
+   *  downscaling (see downscaleImageDataUrl() in model.ts) — settings.php's
+   *  "Maximale Bildkantenlänge" / "Bildqualität beim automatischen
+   *  Verkleinern". Absent means an older mod_bento not yet carrying these
+   *  fields — callers fall back to the editor's own prior hardcoded
+   *  defaults (1920px / 85%), so an unconfigured/older site behaves
+   *  exactly as before either field existed. */
+  imagemaxdim?: number
+  imagequality?: number
   /** A sequence of OTHER decks to play through, one at a time, after this
    *  document's own last slide is reached — see view.php's own visible-
    *  decks query for how this list is built (every deck/document
@@ -210,4 +219,17 @@ export async function takeUnsavedMoodleDoc(deckid: number): Promise<string | nul
       }
     }
   })
+}
+
+/** The image-downscale params to actually use — the admin's own
+ *  settings.php values when present (moodleConfig), otherwise
+ *  downscaleImageDataUrl()'s own built-in defaults (1920px / 85%) for a
+ *  non-Moodle context or an older mod_bento not yet carrying these
+ *  fields. Every call site sources from this rather than hardcoding the
+ *  fallback numbers a second time. */
+export function imageDownscaleParams(): { maxDim: number; quality: number } {
+  return {
+    maxDim: moodleConfig?.imagemaxdim && moodleConfig.imagemaxdim > 0 ? moodleConfig.imagemaxdim : 1920,
+    quality: moodleConfig?.imagequality && moodleConfig.imagequality > 0 ? moodleConfig.imagequality / 100 : 0.85,
+  }
 }

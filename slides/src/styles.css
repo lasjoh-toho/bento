@@ -1052,6 +1052,15 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   font-variant-numeric: tabular-nums;
   flex: none;
 }
+.ed-assets-size-btn {
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.ed-assets-size-btn:hover { background: var(--chrome); color: var(--accent); }
+.ed-assets-size-btn:disabled { opacity: 0.5; cursor: default; }
 .ed-assets-row-unused { background: rgba(192, 129, 43, 0.07); }
 .ed-assets-row-unused:hover { background: rgba(192, 129, 43, 0.13); }
 .ed-assets-badge {
