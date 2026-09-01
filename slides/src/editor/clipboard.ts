@@ -10,7 +10,7 @@
 // remapped so nothing clobbers the target deck.
 
 import type { BentoDoc, Slide, SlideElement, TextElement } from '../model'
-import { uid } from '../model'
+import { uid, downscaleImageDataUrl } from '../model'
 import { firstFamily } from '../fonts'
 
 export interface ClipPayload {
@@ -156,19 +156,20 @@ function sanitizeInlineHtml(el: HTMLElement): string {
 }
 
 async function resolveImageSrc(src: string): Promise<string | null> {
-  if (src.startsWith('data:')) return src
+  if (src.startsWith('data:')) return downscaleImageDataUrl(src)
   if (!/^https?:\/\//.test(src)) return null
   try {
     const res = await fetch(src, { mode: 'cors' })
     if (!res.ok) return null
     const blob = await res.blob()
     if (!blob.type.startsWith('image/')) return null
-    return await new Promise((resolve) => {
+    const dataUrl = await new Promise<string | null>((resolve) => {
       const reader = new FileReader()
       reader.onload = () => resolve(String(reader.result))
       reader.onerror = () => resolve(null)
       reader.readAsDataURL(blob)
     })
+    return dataUrl ? downscaleImageDataUrl(dataUrl) : null
   } catch {
     return null // most cross-origin images without permissive CORS headers land here — silently skipped rather than left broken
   }

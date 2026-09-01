@@ -8,7 +8,7 @@ import {
   FORMAT_VERSION,
   MEDIA_EMBED_BUDGET,
   applyChartPalette, applyLayout, builtinLayouts, defaultChart, defaultImage, defaultMedia, defaultShape, defaultTable, defaultText,
-  instantiateLayout, internAsset, isLightBg, layoutElementIds, newDocId, parseDoc, readableInk, removeUnusedAssets, syncLinkedChart, uid, formatBytesMB,
+  instantiateLayout, internAsset, isLightBg, layoutElementIds, newDocId, parseDoc, readableInk, removeUnusedAssets, syncLinkedChart, uid, formatBytesMB, downscaleImageDataUrl,
   type ChartElement, type ShapeKind, type Slide, type SlideElement, type TableElement,
 } from '../model'
 import { THEME_CHOICES, setTheme, themeChoice } from '../../../kernel/src/theme.ts'
@@ -2071,7 +2071,9 @@ export class Editor {
           const scale = Math.min((dw * 0.5) / img.width, (dh * 0.5) / img.height, 1)
           const w = Math.round(img.width * scale)
           const h = Math.round(img.height * scale)
-          this.canvas.insert(defaultImage(src, { w, h, x: (dw - w) / 2, y: (dh - h) / 2 }))
+          void downscaleImageDataUrl(src).then((finalSrc) => {
+            this.canvas.insert(defaultImage(finalSrc, { w, h, x: (dw - w) / 2, y: (dh - h) / 2 }))
+          })
         }
         img.src = src
       }
@@ -2333,9 +2335,9 @@ export class Editor {
     const reader = new FileReader()
     reader.onload = () => {
       const src = String(reader.result)
-      const place = (w: number, h: number) => {
+      const place = (w: number, h: number, imgSrc: string) => {
         const { width, height } = this.store.doc.size
-        const el = defaultImage(src, { x: Math.round((width - w) / 2), y: Math.round((height - h) / 2), w, h, fit: 'contain' })
+        const el = defaultImage(imgSrc, { x: Math.round((width - w) / 2), y: Math.round((height - h) / 2), w, h, fit: 'contain' })
         // via canvas.insert, so a pasted photo is interned into doc.assets on
         // the same path as every other embed — otherwise it stays inline and
         // live collab can never send it.
@@ -2345,9 +2347,11 @@ export class Editor {
       const img = new Image()
       img.onload = () => {
         let w = img.naturalWidth || 400, h = img.naturalHeight || 300
-        const sc = Math.min(1, 640 / w, 480 / h); place(Math.round(w * sc), Math.round(h * sc))
+        const sc = Math.min(1, 640 / w, 480 / h)
+        w = Math.round(w * sc); h = Math.round(h * sc)
+        void downscaleImageDataUrl(src).then((finalSrc) => place(w, h, finalSrc))
       }
-      img.onerror = () => place(400, 300)
+      img.onerror = () => place(400, 300, src)
       img.src = src
     }
     reader.readAsDataURL(file)

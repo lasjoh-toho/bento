@@ -1101,6 +1101,32 @@ export function formatBytesMB(bytes: number): string {
   return `${Math.round(bytes / 1024)} KB`
 }
 
+/** Downscales an oversized image before it's embedded — a raw photo dropped
+ *  in at 6000px wide bloats the saved file for no visual benefit at normal
+ *  slide sizes. Re-encodes via an offscreen canvas; PNG stays PNG (keeps
+ *  transparency), everything else becomes JPEG. Resolves to the ORIGINAL
+ *  data URL unchanged if it's already small enough, or on any decode
+ *  failure — never blocks an insert over this. */
+export function downscaleImageDataUrl(dataUrl: string, maxDim = 1920, quality = 0.85): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight))
+      if (scale >= 1) { resolve(dataUrl); return }
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.naturalWidth * scale)
+      canvas.height = Math.round(img.naturalHeight * scale)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { resolve(dataUrl); return }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      const isPng = dataUrl.startsWith('data:image/png')
+      resolve(canvas.toDataURL(isPng ? 'image/png' : 'image/jpeg', quality))
+    }
+    img.onerror = () => resolve(dataUrl)
+    img.src = dataUrl
+  })
+}
+
 /** `"asset:<key>"` → `<key>`; anything else (a data: URI still not interned,
  *  an external URL, undefined) → null. Only image/media fields use this
  *  `asset:`-prefixed convention — svg/fonts store the bare key directly. */
