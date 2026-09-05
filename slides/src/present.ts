@@ -1432,6 +1432,7 @@ export function startPresentation(
       if (longReadOpen) { ev.preventDefault(); ev.stopPropagation(); closeLongRead(); return }
       if (imgZoomOpen) { ev.preventDefault(); ev.stopPropagation(); closeImgZoom(); return }
       if (deck.isOverview()) return // let Reveal close its overview first
+      if (document.fullscreenElement === overlay) { ev.preventDefault(); ev.stopPropagation(); toggleFullscreen(); return }
       ev.preventDefault()
       ev.stopPropagation()
       exit()
@@ -1923,12 +1924,14 @@ export function startPresentation(
     imgZoomClose.hidden = false
     imgZoomOpen = true
     chevronHint.hidden = true
+    fsBtn.hidden = true
   }
 
   function closeImgZoom() {
     imgZoomOverlay.hidden = true
     imgZoomClose.hidden = true
     imgZoomOpen = false
+    fsBtn.hidden = false
     updateLongReadHint(deck.getIndices().h)
   }
 

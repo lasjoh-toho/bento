@@ -1295,6 +1295,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   opacity: 0.85;
   transition: opacity 0.15s ease;
 }
+.bento-fs-btn[hidden] { display: none; }
 .bento-fs-btn:hover { opacity: 1; }
 .bento-fs-btn svg { width: 20px; height: 20px; }
 /* Hidden while actually in fullscreen — except on hover over its own
@@ -2440,7 +2441,7 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   position: fixed;
   top: 16px;
   right: 16px;
-  z-index: 101;
+  z-index: 100002;
   width: 40px;
   height: 40px;
   border-radius: 999px;
