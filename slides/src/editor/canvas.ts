@@ -31,6 +31,9 @@ export class SlideCanvas {
   private surface: HTMLElement | null = null
   private moveable: Moveable
   private selecto: Selecto
+  /** The anchor for Shift-click range-select — the last element clicked
+   *  with no modifier key held. See wireSelecto()'s own selectEnd handler. */
+  private rangeAnchorId: string | null = null
   private scale = 1
   private fitScale = 1
   /** user zoom, multiplier on the fitted scale (1 = fit to window) */
@@ -170,7 +173,7 @@ export class SlideCanvas {
       selectableTargets: ['.bento-el'],
       selectByClick: true,
       selectFromInside: false,
-      toggleContinueSelect: 'shift',
+      toggleContinueSelect: [['ctrl'], ['meta']],
       // A two-finger pinch (mobile Safari) must not start a marquee — it throws
       // off the selection box and has crashed the page. Only single-touch drags
       // rubber-band; the browser keeps its own gesture.
@@ -1172,7 +1175,24 @@ export class SlideCanvas {
       const ids = (e.selected as HTMLElement[])
         .map((n) => n.dataset.elId)
         .filter((id): id is string => !!id)
+      const inputEv = e.inputEvent as MouseEvent | undefined
+      if (e.isClick && inputEv?.shiftKey && this.rangeAnchorId && ids.length > 0) {
+        const elements = this.store.slide.elements
+        const anchorIdx = elements.findIndex((el) => el.id === this.rangeAnchorId)
+        const clickedIdx = elements.findIndex((el) => el.id === ids[ids.length - 1])
+        if (anchorIdx >= 0 && clickedIdx >= 0) {
+          const [lo, hi] = anchorIdx < clickedIdx ? [anchorIdx, clickedIdx] : [clickedIdx, anchorIdx]
+          const rangeIds = this.expandGroups(elements.slice(lo, hi + 1).map((el) => el.id))
+          this.store.select(rangeIds)
+          const nodes = rangeIds
+            .map((id) => this.surface?.querySelector<HTMLElement>(`[data-el-id="${CSS.escape(id)}"]`))
+            .filter((n): n is HTMLElement => !!n)
+          this.selecto.setSelectedTargets(nodes)
+          return
+        }
+      }
       this.store.select(this.expandGroups(ids))
+      if (e.isClick && ids.length === 1 && !inputEv?.shiftKey) this.rangeAnchorId = ids[0]
       if (e.isDragStartEnd) {
         e.inputEvent.preventDefault()
         this.moveable.waitToChangeTarget().then(() => {

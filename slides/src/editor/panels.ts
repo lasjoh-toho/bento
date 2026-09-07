@@ -124,6 +124,9 @@ export class PropsPanel {
    *  file is reopened), same as the crop/mask "what's currently shown"
    *  flags below. */
   private layersCollapsed = true
+  /** The anchor for Shift-click range-select in the Ebenen list — the
+   *  last row clicked with no modifier key held. */
+  private layersRangeAnchorId: string | null = null
 
   /** Which image element currently shows the Cancel/Apply crop controls in
    *  this panel (the interactive geometry itself — drag to pan, slider to
@@ -1021,7 +1024,23 @@ export class PropsPanel {
       label.className = 'ed-layer-label'
       label.textContent = this.layerLabel(el)
       row.append(icon, label)
-      row.addEventListener('click', () => this.store.select([el.id]))
+      row.addEventListener('click', (ev) => {
+        if (ev.ctrlKey || ev.metaKey) {
+          const sel = this.store.selection
+          this.store.select(sel.includes(el.id) ? sel.filter((id) => id !== el.id) : [...sel, el.id])
+          return
+        }
+        if (ev.shiftKey && this.layersRangeAnchorId) {
+          const anchorIdx = elements.findIndex((e) => e.id === this.layersRangeAnchorId)
+          if (anchorIdx >= 0) {
+            const [lo, hi] = anchorIdx < i ? [anchorIdx, i] : [i, anchorIdx]
+            this.store.select(elements.slice(lo, hi + 1).map((e) => e.id))
+            return
+          }
+        }
+        this.store.select([el.id])
+        this.layersRangeAnchorId = el.id
+      })
       row.addEventListener('dragstart', (e) => {
         e.dataTransfer?.setData('text/plain', el.id)
         row.classList.add('dragging')
@@ -1093,6 +1112,7 @@ export class PropsPanel {
         this.setNum(el.id, 'opacity', Math.min(Math.max(v / 100, 0), 1))),
     )
     this.host.appendChild(geo)
+    this.arrangeRows([el])
 
     // Lead with the element's OWN controls — the reason it was selected —
     // then effects, arrange, and finally present-time behaviour.
@@ -1110,7 +1130,6 @@ export class PropsPanel {
         if (v === 'none') delete e.role
         else e.role = v
       }, true)))
-    this.arrangeRows([el])
 
     this.section(t('Effects'))
     const current = Object.entries(SHADOW_PRESETS).find(([, p]) => JSON.stringify(p) === JSON.stringify(el.shadow))?.[0]
