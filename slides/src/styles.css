@@ -3389,13 +3389,28 @@ dialog.ed-pwdialog .ed-pwerr { color: #C33; }
   user-select: none;
 }
 .ed-layer-row:hover { background: #f1f3f8; }
-.ed-layer-row.active { background: rgb(91 141 239 / 0.14); color: #1a2540; font-weight: 600; }
+.ed-layer-row.active {
+  background: rgb(91 141 239 / 0.14);
+  color: #1a2540;
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 #5b8def;
+}
 .ed-layer-row.dragging { opacity: 0.4; }
 .ed-layer-icon { flex: none; display: flex; opacity: 0.85; }
 .ed-layer-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.ed-layer-rename {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: #ffffff;
+  border: 1px solid #5b8def;
+  border-radius: 4px;
+  padding: 1px 4px;
 }
 
 /* ————— tables ————— */

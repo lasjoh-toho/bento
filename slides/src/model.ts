@@ -21,6 +21,10 @@ export interface ElementBase {
    *  touching either's `id`. Omitted = fall back to `id` (the common case).
    *  Must not collide with another element's effective key on the SAME slide. */
   morphId?: string
+  /** Optional custom display name for the Ebenen (Layers) list — when set,
+   *  shown instead of the auto-derived label (element type / text content).
+   *  Purely a display convenience; nothing else reads this. */
+  name?: string
   x: number
   y: number
   w: number

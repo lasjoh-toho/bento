@@ -123,7 +123,7 @@ export class PropsPanel {
    *  choice persists for the rest of this panel's lifetime (i.e. until the
    *  file is reopened), same as the crop/mask "what's currently shown"
    *  flags below. */
-  private layersCollapsed = true
+  private layersCollapsed = false
   /** The anchor for Shift-click range-select in the Ebenen list — the
    *  last row clicked with no modifier key held. */
   private layersRangeAnchorId: string | null = null
@@ -1020,9 +1020,35 @@ export class PropsPanel {
       const icon = document.createElement('span')
       icon.className = 'ed-layer-icon'
       icon.innerHTML = this.layerIcon(el)
+      row.dataset.tooltip = t('Doppelklick zum Umbenennen')
       const label = document.createElement('span')
       label.className = 'ed-layer-label'
       label.textContent = this.layerLabel(el)
+      label.addEventListener('dblclick', (ev) => {
+        ev.stopPropagation()
+        const input = document.createElement('input')
+        input.type = 'text'
+        input.className = 'ed-layer-rename'
+        input.value = el.name?.trim() || this.layerLabel(el)
+        input.spellcheck = false
+        row.draggable = false
+        row.replaceChild(input, label)
+        input.focus()
+        input.select()
+        const commit = (save: boolean) => {
+          if (save) {
+            const next = input.value.trim()
+            this.mutate(el.id, (e) => { e.name = next || undefined }, true)
+          }
+          row.draggable = true
+          this.rebuild(true)
+        }
+        input.addEventListener('keydown', (kev) => {
+          if (kev.key === 'Enter') { kev.preventDefault(); commit(true) }
+          else if (kev.key === 'Escape') { kev.preventDefault(); commit(false) }
+        })
+        input.addEventListener('blur', () => commit(true))
+      })
       row.append(icon, label)
       row.addEventListener('click', (ev) => {
         if (ev.ctrlKey || ev.metaKey) {
@@ -1067,6 +1093,7 @@ export class PropsPanel {
   }
 
   private layerLabel(el: SlideElement): string {
+    if (el.name?.trim()) return el.name.trim()
     if (el.type === 'text') {
       const plain = el.html.replace(/<[^>]+>/g, '').trim()
       return plain || t('(leerer Text)')
