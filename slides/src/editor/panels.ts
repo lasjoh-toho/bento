@@ -123,7 +123,7 @@ export class PropsPanel {
    *  choice persists for the rest of this panel's lifetime (i.e. until the
    *  file is reopened), same as the crop/mask "what's currently shown"
    *  flags below. */
-  private layersCollapsed = false
+  private layersCollapsed = true
   /** The anchor for Shift-click range-select in the Ebenen list — the
    *  last row clicked with no modifier key held. */
   private layersRangeAnchorId: string | null = null
