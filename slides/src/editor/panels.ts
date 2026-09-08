@@ -2578,10 +2578,13 @@ export class PropsPanel {
       }
     }
 
-    if ((img.crop || img.mask) && this.cropElId !== el.id && this.maskElId !== el.id) {
-      const bakeTooltip = img.mask
+    if (img.crop || img.mask) {
+      const both = !!img.crop && !!img.mask
+      const bakeTooltip = both
         ? t('Backt Zuschnitt und Freistellung in ein einzelnes, meist kleineres Bild — danach nicht mehr separat änderbar.')
-        : t('Backt den Zuschnitt in ein einzelnes, kleineres Bild — danach nicht mehr separat änderbar.')
+        : img.mask
+          ? t('Backt die Freistellung in ein einzelnes, meist kleineres Bild — danach nicht mehr separat änderbar.')
+          : t('Backt den Zuschnitt in ein einzelnes, kleineres Bild — danach nicht mehr separat änderbar.')
       // Same underlying asset used by any OTHER element anywhere in the
       // document (a picture pasted/copied more than once, or two frames
       // sharing one asset via the PowerPoint importer's own
@@ -2597,16 +2600,24 @@ export class PropsPanel {
         sharedWarning.textContent = t('Dieses Bild wird noch von einem anderen Element verwendet — das dauerhafte Backen spart hier keinen Speicher, sondern legt zusätzlich eine eigene, gebackene Kopie an.')
         this.host.appendChild(sharedWarning)
       }
+      const label = both ? t('Zuschnitt & Freistellung dauerhaft machen') : img.mask ? t('Freistellung dauerhaft machen') : t('Zuschnitt dauerhaft machen')
       const bakeBtn = document.createElement('button')
       bakeBtn.className = 'ed-btn ed-btn-block'
       bakeBtn.dataset.tooltip = bakeTooltip
-      bakeBtn.textContent = img.mask
-        ? t(srcSharedElsewhere ? 'Zuschnitt & Freistellung dauerhaft machen' : 'Zuschnitt & Freistellung dauerhaft machen (spart Speicher)')
-        : t(srcSharedElsewhere ? 'Zuschnitt dauerhaft machen' : 'Zuschnitt dauerhaft machen (spart Speicher)')
+      bakeBtn.textContent = srcSharedElsewhere ? label : `${label} (spart Speicher)`
       bakeBtn.addEventListener('click', async () => {
         if (srcSharedElsewhere && !window.confirm(t('Dieses Bild wird noch von einem anderen Element verwendet — die gebackene Kopie kommt zusätzlich zum bestehenden Bild hinzu, statt Speicher zu sparen. Trotzdem fortfahren?'))) return
         bakeBtn.disabled = true
         bakeBtn.textContent = t('Wird verarbeitet…')
+        // Baking reads the already-committed img.crop/img.mask from the
+        // store — if a crop/mask edit is actively in progress (uncommitted
+        // drag adjustments), commit it first so baking reflects what's
+        // actually on screen right now, not stale prior data. Note this
+        // triggers its own synchronous panel rebuild (a new bake button
+        // node replaces this one) — harmless, since bakeImagePermanent()
+        // below doesn't touch this specific button reference again.
+        if (this.cropElId === el.id) { this.canvas.commitCrop(); this.cropElId = null }
+        if (this.maskElId === el.id) { this.canvas.commitMask(); this.maskElId = null }
         await bakeImagePermanent(this.store, el.id)
       })
       this.host.appendChild(bakeBtn)
