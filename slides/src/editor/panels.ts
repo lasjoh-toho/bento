@@ -1150,14 +1150,6 @@ export class PropsPanel {
     if (el.type === 'table') this.buildTableProps(el)
     if (el.type === 'media') this.buildMediaProps(el)
 
-    this.row('Role', this.select(
-      ['none', 'title', 'subtitle', 'body', 'kicker'],
-      el.role ?? 'none',
-      (v) => this.mutate(el.id, (e) => {
-        if (v === 'none') delete e.role
-        else e.role = v
-      }, true)))
-
     this.section(t('Effects'))
     const current = Object.entries(SHADOW_PRESETS).find(([, p]) => JSON.stringify(p) === JSON.stringify(el.shadow))?.[0]
       ?? (el.shadow ? 'custom' : 'none')
@@ -1636,6 +1628,13 @@ export class PropsPanel {
 
   private buildTextProps(el: TextElement) {
     this.section(t('Typography'), 'While editing: ⌘B/⌘I/⌘U · markdown auto-converts — **bold** *italic* `code` ~~strike~~ and "- " bullets; pasting markdown converts too. Escape with \\ or press ⌘Z right after to keep the literal characters.')
+    this.row('Role', this.select(
+      ['none', 'title', 'subtitle', 'body', 'kicker'],
+      el.role ?? 'none',
+      (v) => this.mutate(el.id, (e) => {
+        if (v === 'none') delete e.role
+        else e.role = v
+      }, true)))
     this.buildFitHeight(el)
     this.buildFitFontSize(el)
     this.row('Font', this.fontSelect(el))
@@ -2426,7 +2425,7 @@ export class PropsPanel {
     this.row('Corner radius', this.number(img.radius, 1, (v, fin) =>
       this.mutate(el.id, (e) => { (e as ImageElement).radius = Math.max(v, 0) }, fin)))
 
-    this.section(t('Crop'))
+    this.section(t('Ausschneiden und Freistellen'))
     if (this.cropElId === el.id) {
       const cropHeading = this.host.lastElementChild
       if (cropHeading instanceof HTMLElement) {
@@ -2451,33 +2450,7 @@ export class PropsPanel {
         // one regardless so the panel reliably drops back to the button.
         this.rebuild(true)
       })
-    } else {
-      const cropBtn = document.createElement('button')
-      cropBtn.className = 'ed-btn ed-btn-block'
-      cropBtn.textContent = img.crop ? t('Edit crop…') : t('Crop image…')
-      cropBtn.addEventListener('click', async () => {
-        if (img.mask && !window.confirm(t('Der Zuschnitt zu ändern entfernt die bestehende Freistellung dieses Bildes (sie passt sonst nicht mehr zum neuen Ausschnitt). Fortfahren?'))) return
-        if (!img.crop) await this.snapFrameToContainBounds(el.id, img)
-        this.cropElId = el.id
-        this.canvas.startCrop(el.id)
-        this.rebuild(true)
-      })
-      this.host.appendChild(cropBtn)
-      if (!img.crop && img.fit === 'fill') {
-        this.hintOn(cropBtn, '„fill" verzerrt das Bild nicht-gleichmäßig, um den Rahmen exakt zu füllen — Zuschnitt kann das nicht nachbilden (Zuschnitt verzerrt nie, nur „fill" tut das), daher sieht der erste Zuschnitt-Ausschnitt anders aus als die aktuelle Darstellung.')
-      }
-      if (img.crop) {
-        const reset = document.createElement('button')
-        reset.className = 'ed-btn ed-btn-block'
-        reset.textContent = t('Reset crop')
-        reset.addEventListener('click', () =>
-          this.mutate(el.id, (e) => { delete (e as ImageElement).crop }, true))
-        this.host.appendChild(reset)
-      }
-    }
-
-    this.section(t('Freistellen'))
-    if (this.maskElId === el.id) {
+    } else if (this.maskElId === el.id) {
       const maskHeading = this.host.lastElementChild
       if (maskHeading instanceof HTMLElement) {
         this.hintOn(maskHeading, 'Zauberstab: Klick auf einen Bereich wählt ihn per Farbähnlichkeit aus. Radiergummi: klicken und ziehen. Box/Ellipse: aufziehen.')
@@ -2556,6 +2529,29 @@ export class PropsPanel {
         this.rebuild(true)
       })
     } else {
+      const cropBtn = document.createElement('button')
+      cropBtn.className = 'ed-btn ed-btn-block'
+      cropBtn.textContent = img.crop ? t('Edit crop…') : t('Crop image…')
+      cropBtn.addEventListener('click', async () => {
+        if (img.mask && !window.confirm(t('Der Zuschnitt zu ändern entfernt die bestehende Freistellung dieses Bildes (sie passt sonst nicht mehr zum neuen Ausschnitt). Fortfahren?'))) return
+        if (!img.crop) await this.snapFrameToContainBounds(el.id, img)
+        this.cropElId = el.id
+        this.canvas.startCrop(el.id)
+        this.rebuild(true)
+      })
+      this.host.appendChild(cropBtn)
+      if (!img.crop && img.fit === 'fill') {
+        this.hintOn(cropBtn, '„fill" verzerrt das Bild nicht-gleichmäßig, um den Rahmen exakt zu füllen — Zuschnitt kann das nicht nachbilden (Zuschnitt verzerrt nie, nur „fill" tut das), daher sieht der erste Zuschnitt-Ausschnitt anders aus als die aktuelle Darstellung.')
+      }
+      if (img.crop) {
+        const reset = document.createElement('button')
+        reset.className = 'ed-btn ed-btn-block'
+        reset.textContent = t('Reset crop')
+        reset.addEventListener('click', () =>
+          this.mutate(el.id, (e) => { delete (e as ImageElement).crop }, true))
+        this.host.appendChild(reset)
+      }
+
       const maskBtn = document.createElement('button')
       maskBtn.className = 'ed-btn ed-btn-block'
       maskBtn.textContent = img.mask ? t('Freistellen bearbeiten…') : t('Freistellen…')

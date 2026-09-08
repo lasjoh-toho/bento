@@ -1176,6 +1176,15 @@ export class SlideCanvas {
         .map((n) => n.dataset.elId)
         .filter((id): id is string => !!id)
       const inputEv = e.inputEvent as MouseEvent | undefined
+      if (e.isClick && (inputEv?.ctrlKey || inputEv?.metaKey)) {
+        const clickedId = (inputEv?.target as HTMLElement | null)?.closest<HTMLElement>('[data-el-id]')?.dataset.elId
+        if (clickedId) {
+          const prevSel = this.store.selection
+          const nextSel = prevSel.includes(clickedId) ? prevSel.filter((id) => id !== clickedId) : [...prevSel, clickedId]
+          this.store.select(this.expandGroups(nextSel))
+          return
+        }
+      }
       if (e.isClick && inputEv?.shiftKey && this.rangeAnchorId && ids.length > 0) {
         const elements = this.store.slide.elements
         const anchorIdx = elements.findIndex((el) => el.id === this.rangeAnchorId)
