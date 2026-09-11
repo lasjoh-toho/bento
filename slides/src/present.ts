@@ -32,7 +32,14 @@ export function startPresentation(
   doc: BentoDoc,
   startIndex: number,
   onExit: (lastIndex: number) => void,
-  opts: { fullscreen?: boolean; onSaveTerms?: (slideIndex: number, terms: DragTerm[]) => void; onReachedEnd?: () => void } = {},
+  opts: {
+    fullscreen?: boolean
+    onSaveTerms?: (slideIndex: number, terms: DragTerm[]) => void
+    onReachedEnd?: () => void
+    autoAdvanceMs?: number
+    loop?: boolean
+    exitInsteadOfEndScreen?: boolean
+  } = {},
 ): PresentSession {
   const overlay = document.createElement('div')
   overlay.className = 'bento-present-overlay'
@@ -137,17 +144,33 @@ export function startPresentation(
     el.appendChild(exitBtn)
     overlay.appendChild(el)
   }
+  let autoAdvanceTimer: ReturnType<typeof setInterval> | null = null
+  const resetAutoAdvance = () => {
+    if (autoAdvanceTimer) clearInterval(autoAdvanceTimer)
+    autoAdvanceTimer = opts.autoAdvanceMs && opts.autoAdvanceMs > 0
+      ? setInterval(() => goNext(), opts.autoAdvanceMs)
+      : null
+  }
   const goNext = () => {
     hideEndScreen()
+    resetAutoAdvance()
     const cur = deck.getIndices().h
     for (let i = (isSkipped(cur) ? anchorOf(cur) : cur) + 1; i < doc.slides.length; i++) {
       if (!isSkipped(i)) return deck.slide(i, 0)
     }
+    if (opts.loop) {
+      for (let i = 0; i < doc.slides.length; i++) {
+        if (!isSkipped(i)) return deck.slide(i, 0)
+      }
+      return // every slide is hidden/skipped — nowhere to loop to
+    }
     if (opts.onReachedEnd) { opts.onReachedEnd(); return }
+    if (opts.exitInsteadOfEndScreen) { exit(); return }
     showEndScreen()
   }
   const goPrev = () => {
     if (endScreenShown) { hideEndScreen(); return }
+    resetAutoAdvance()
     const cur = deck.getIndices().h
     if (isSkipped(cur)) return deck.slide(anchorOf(cur), 0)
     for (let i = cur - 1; i >= 0; i--) {
@@ -1383,6 +1406,7 @@ export function startPresentation(
   const exit = (opts: { keepFullscreen?: boolean } = {}) => {
     if (exited) return
     exited = true
+    if (autoAdvanceTimer) clearInterval(autoAdvanceTimer)
     // measurements are keyed by slide INDEX, so they'd be wrong for the next
     // show if the deck was edited in between — never carry them across
     symCache.clear()
@@ -2071,6 +2095,7 @@ export function startPresentation(
     }
   })
 
+  resetAutoAdvance()
   return { exit, fullscreenReady }
 }
 

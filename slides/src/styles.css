@@ -810,9 +810,10 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   content: attr(data-tooltip);
   position: absolute;
   top: 0;
-  right: calc(100% + 7px);
+  left: var(--tooltip-left, auto);
+  right: var(--tooltip-right, calc(100% + 7px));
   z-index: 50;
-  width: 100%;
+  width: var(--tooltip-width, 100%);
   padding: 7px 10px;
   border-radius: 8px;
   background: #ffffff;

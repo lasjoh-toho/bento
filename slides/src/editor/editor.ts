@@ -131,7 +131,33 @@ export class Editor {
     document.addEventListener('bento:apply-layout', ((ev: CustomEvent) => {
       this.openLayoutPicker(ev.detail.anchor as HTMLElement, { kind: 'apply' })
     }) as EventListener)
+    this.wireTooltipWidth()
     this.rebuildSidebar()
+  }
+
+  /** See this method's own call site in the constructor for why this
+   *  exists. Delegated on 'pointerover' (capture) rather than attached per
+   *  element, since [data-tooltip] appears on hundreds of elements
+   *  throughout the sidebar, added/removed constantly as panels rebuild —
+   *  one listener here covers all of them, present and future, with no
+   *  per-element wiring needed anywhere else. Elements outside a
+   *  .ed-props/.ed-sidebar panel (toolbar buttons, menus, etc.) are left
+   *  entirely alone — the lookup below finds no panel for them, and the
+   *  CSS custom properties this sets simply aren't touched, so those
+   *  tooltips keep their original (narrow, trigger-sized) behavior. */
+  private wireTooltipWidth() {
+    const MARGIN_PX = (0.5 / 2.54) * 96 // 0.5cm at the standard 96 CSS px/inch
+    document.addEventListener('pointerover', (ev) => {
+      const target = (ev.target as HTMLElement | null)?.closest?.('[data-tooltip]') as HTMLElement | null
+      if (!target) return
+      const panel = target.closest<HTMLElement>('.ed-props, .ed-sidebar')
+      if (!panel) return
+      const panelRect = panel.getBoundingClientRect()
+      const targetRect = target.getBoundingClientRect()
+      target.style.setProperty('--tooltip-left', `${panelRect.left + MARGIN_PX - targetRect.left}px`)
+      target.style.setProperty('--tooltip-width', `${panelRect.width - MARGIN_PX}px`)
+      target.style.setProperty('--tooltip-right', 'auto')
+    }, true)
   }
 
   /** wire the live-collaboration session (avatars, remote selections, relay) */

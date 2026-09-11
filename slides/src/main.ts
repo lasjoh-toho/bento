@@ -133,6 +133,10 @@ function playerMode(doc: BentoDoc) {
   document.title = `${doc.title} — ${appConfig().appName}`
   if (doc.fonts?.length) injectFonts(doc)
   document.getElementById('bento-splash')?.remove()
+  const params = new URLSearchParams(location.search)
+  const autostart = params.has('autostart') || params.has('kiosk')
+  const intervalSeconds = parseFloat(params.get('interval') ?? '')
+  const loop = params.has('loop')
   const card = document.createElement('div')
   card.className = 'ed-player'
   card.innerHTML =
@@ -150,7 +154,11 @@ function playerMode(doc: BentoDoc) {
       session = startPresentation(d, startIndex, () => {
         card.style.display = ''
       }, {
+        fullscreen: false,
         ...opts,
+        autoAdvanceMs: intervalSeconds > 0 ? intervalSeconds * 1000 : undefined,
+        loop,
+        exitInsteadOfEndScreen: autostart,
         onReachedEnd: playlist.length ? () => {
           playlistPos = (playlistPos + 1) % playlist.length
           const oldSession = session
@@ -171,13 +179,14 @@ function playerMode(doc: BentoDoc) {
         } : undefined,
       })
     }
-    startOne(doc, 0, { fullscreen: false })
+    startOne(doc, 0)
   }
   card.querySelector('.ed-playgo')!.addEventListener('click', start)
   card.querySelector('.ed-playcopy')!.addEventListener('click', () => {
     void serializeAuto(doc).then((html) => downloadFile(html, suggestedFileName(doc)))
   })
   ;(window as any).bento = { format: doc.format, doc, readonly: true }
+  if (autostart) start()
 }
 
 function editorMode(doc: BentoDoc) {
