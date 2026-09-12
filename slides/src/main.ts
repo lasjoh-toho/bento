@@ -134,7 +134,14 @@ function playerMode(doc: BentoDoc) {
   if (doc.fonts?.length) injectFonts(doc)
   document.getElementById('bento-splash')?.remove()
   const params = new URLSearchParams(location.search)
-  const autostart = params.has('autostart') || params.has('kiosk')
+  // Autostart is the DEFAULT for a standalone player file — a plain open
+  // (no query string at all) starts presenting immediately, no splash
+  // card first. ?startscreen=yes opts back into the splash card
+  // (Present / Save a copy) instead, for anyone who wants that as the
+  // landing experience. ?interval=N (seconds) and ?loop are unaffected
+  // by this either way.
+  const wantsStartScreen = ['yes', '1', 'true'].includes((params.get('startscreen') ?? '').toLowerCase())
+  const autostart = !wantsStartScreen
   const intervalSeconds = parseFloat(params.get('interval') ?? '')
   const loop = params.has('loop')
   const card = document.createElement('div')
