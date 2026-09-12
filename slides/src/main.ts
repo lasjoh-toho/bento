@@ -134,14 +134,20 @@ function playerMode(doc: BentoDoc) {
   if (doc.fonts?.length) injectFonts(doc)
   document.getElementById('bento-splash')?.remove()
   const params = new URLSearchParams(location.search)
-  // Autostart is the DEFAULT for a standalone player file — a plain open
-  // (no query string at all) starts presenting immediately, no splash
-  // card first. ?startscreen=yes opts back into the splash card
-  // (Present / Save a copy) instead, for anyone who wants that as the
-  // landing experience. ?interval=N (seconds) and ?loop are unaffected
-  // by this either way.
-  const wantsStartScreen = ['yes', '1', 'true'].includes((params.get('startscreen') ?? '').toLowerCase())
-  const autostart = !wantsStartScreen
+  // Autostart's own default depends on context — see this variable's own
+  // definition below for the full reasoning (standalone file vs.
+  // Moodle-embedded view).
+  const explicitStartScreen = ['yes', '1', 'true'].includes((params.get('startscreen') ?? '').toLowerCase())
+  const explicitAutostart = ['yes', '1', 'true'].includes((params.get('autostart') ?? '').toLowerCase()) || params.has('kiosk')
+  // A genuinely standalone file (no Moodle embedding at all — moodleConfig
+  // absent) defaults to autostart: a bare .bento.html link is inherently
+  // kiosk-ready. Embedded within Moodle (view.php/submission.php render
+  // every regular student-facing activity view through this exact same
+  // playerMode too), the existing click-to-present splash card stays the
+  // default, completely unaffected by this — only an explicit
+  // ?autostart/?kiosk param overrides that, for anyone who genuinely wants
+  // a Moodle-hosted activity to behave like a kiosk too.
+  const autostart = explicitStartScreen ? false : explicitAutostart ? true : !moodleConfig
   const intervalSeconds = parseFloat(params.get('interval') ?? '')
   const loop = params.has('loop')
   const card = document.createElement('div')
