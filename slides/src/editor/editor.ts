@@ -131,6 +131,7 @@ export class Editor {
     document.addEventListener('bento:apply-layout', ((ev: CustomEvent) => {
       this.openLayoutPicker(ev.detail.anchor as HTMLElement, { kind: 'apply' })
     }) as EventListener)
+    document.body.classList.toggle('ed-tooltips-hidden', lsJson<boolean>('bento-tooltips-hidden', false))
     this.wireTooltipWidth()
     this.rebuildSidebar()
   }
@@ -146,7 +147,7 @@ export class Editor {
    *  CSS custom properties this sets simply aren't touched, so those
    *  tooltips keep their original (narrow, trigger-sized) behavior. */
   private wireTooltipWidth() {
-    const MARGIN_PX = (0.5 / 2.54) * 96 // 0.5cm at the standard 96 CSS px/inch
+    const RIGHT_MARGIN_PX = (0.2 / 2.54) * 96 // a slim gap from the panel's own right edge
     document.addEventListener('pointerover', (ev) => {
       const target = (ev.target as HTMLElement | null)?.closest?.('[data-tooltip]') as HTMLElement | null
       if (!target) return
@@ -154,8 +155,9 @@ export class Editor {
       if (!panel) return
       const panelRect = panel.getBoundingClientRect()
       const targetRect = target.getBoundingClientRect()
-      target.style.setProperty('--tooltip-left', `${panelRect.left + MARGIN_PX - targetRect.left}px`)
-      target.style.setProperty('--tooltip-width', `${panelRect.width - MARGIN_PX}px`)
+      target.style.setProperty('--tooltip-top', 'calc(100% + 6px)')
+      target.style.setProperty('--tooltip-left', '0px')
+      target.style.setProperty('--tooltip-width', `${panelRect.right - targetRect.left - RIGHT_MARGIN_PX}px`)
       target.style.setProperty('--tooltip-right', 'auto')
     }, true)
   }

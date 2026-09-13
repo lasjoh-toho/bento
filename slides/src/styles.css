@@ -809,7 +809,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 [data-tooltip]::after {
   content: attr(data-tooltip);
   position: absolute;
-  top: 0;
+  top: var(--tooltip-top, 0px);
   left: var(--tooltip-left, auto);
   right: var(--tooltip-right, calc(100% + 7px));
   z-index: 50;
@@ -829,6 +829,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   transition: opacity 0.1s ease 0.35s;
 }
 [data-tooltip]:hover::after { opacity: 1; }
+.ed-tooltips-hidden [data-tooltip]:hover::after { opacity: 0; }
 .ed-section-collapsible {
   display: flex;
   align-items: center;

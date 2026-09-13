@@ -707,6 +707,12 @@ export class PropsPanel {
     this.host.appendChild(footnoteBtn)
 
     this.buildAssetsSection()
+
+    this.section(t('Oberfläche'))
+    this.row(t('Tooltips ausblenden'), this.toggle(lsJson<boolean>('bento-tooltips-hidden', false), (v) => {
+      lsSet('bento-tooltips-hidden', JSON.stringify(v))
+      document.body.classList.toggle('ed-tooltips-hidden', v)
+    }))
   }
 
   /** Every embedded image/video/font (doc.assets, plus doc.fonts for the
@@ -2435,7 +2441,7 @@ export class PropsPanel {
       actions.className = 'ed-crop-actions'
       actions.innerHTML =
         `<button class="ed-crop-cancel ed-btn">${t('Cancel')}</button>` +
-        `<button class="ed-crop-apply ed-btn ed-btn-primary">${t('Apply crop')}</button>`
+        `<button class="ed-crop-apply ed-btn ed-btn-primary">${t('Ausschnitt übernehmen')}</button>`
       this.host.appendChild(actions)
       actions.querySelector('.ed-crop-cancel')!.addEventListener('click', () => {
         this.canvas.cancelCrop()
@@ -2531,7 +2537,7 @@ export class PropsPanel {
     } else {
       const cropBtn = document.createElement('button')
       cropBtn.className = 'ed-btn ed-btn-block'
-      cropBtn.textContent = img.crop ? t('Edit crop…') : t('Crop image…')
+      cropBtn.textContent = img.crop ? t('Ausschnitt bearbeiten…') : t('Ausschneiden…')
       cropBtn.addEventListener('click', async () => {
         if (img.mask && !window.confirm(t('Der Zuschnitt zu ändern entfernt die bestehende Freistellung dieses Bildes (sie passt sonst nicht mehr zum neuen Ausschnitt). Fortfahren?'))) return
         if (!img.crop) await this.snapFrameToContainBounds(el.id, img)
@@ -2546,7 +2552,7 @@ export class PropsPanel {
       if (img.crop) {
         const reset = document.createElement('button')
         reset.className = 'ed-btn ed-btn-block'
-        reset.textContent = t('Reset crop')
+        reset.textContent = t('Zuschnitt zurücksetzen')
         reset.addEventListener('click', () =>
           this.mutate(el.id, (e) => { delete (e as ImageElement).crop }, true))
         this.host.appendChild(reset)
