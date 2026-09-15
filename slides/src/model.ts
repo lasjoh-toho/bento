@@ -107,7 +107,12 @@ export interface ElementBase {
           speeds?: number[]
         }
   }
-  /** while presenting, clicking this element jumps to the slide with this id */
+  /**
+   * Click target while presenting: a slide id (jump there — the state-slide
+   * idiom), or an http(s) URL (opens in a NEW tab, never navigating the deck
+   * away; `isWebUrl` is the whole scheme test, so `javascript:` and `data:`
+   * are not links). Editor clicks never follow it.
+   */
   link?: string
   /** semantic group tag — hover focus and multi-element behaviours target it */
   group?: string
@@ -1356,6 +1361,17 @@ export function defaultMedia(
     ...partial,
   }
 }
+
+/**
+ * The one scheme test for anything that opens or loads a web page — an
+ * element `link`, a text `<a href>`. http and https only, bounded, no quote
+ * or angle bracket (attribute breakout); a URL that is merely well-formed
+ * but `javascript:`/`data:`/`file:` is not one.
+ */
+export const isWebUrl = (v: unknown): v is string =>
+  // (the quote characters are written as escapes: a bare quote inside a regex
+  // literal reads as an unterminated string to some source-shape tooling)
+  typeof v === 'string' && v.length <= 2048 && /^https?:\/\/[^\s\x22\x27<>]+$/i.test(v)
 
 export function emptySlide(partial: Partial<Slide> = {}): Slide {
   return {

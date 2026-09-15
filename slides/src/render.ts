@@ -4,7 +4,7 @@
 // editor canvas, sidebar thumbnails, and Reveal.js sections.
 
 import type { BentoDoc, ShapeElement, Slide, SlideElement, SvgElement, TableElement, TextElement } from './model'
-import { morphKey } from './model'
+import { morphKey, isWebUrl } from './model'
 import { chartSnapshotSvg } from './charts'
 import temml from 'temml'
 
@@ -479,7 +479,7 @@ export function resolveMath(html: string): string {
   return out.replace(/\\\$/g, '$') // the escape has done its job
 }
 
-const ALLOWED_TAGS = new Set(['B', 'I', 'U', 'BR', 'SPAN', 'DIV', 'P', 'STRONG', 'EM', 'S', 'CODE'])
+const ALLOWED_TAGS = new Set(['B', 'I', 'U', 'BR', 'SPAN', 'DIV', 'P', 'STRONG', 'EM', 'S', 'CODE', 'A'])
 
 /** CSS properties this editor's own partial-selection formatting can set on
  *  a SPAN, each with a strict value pattern — never trust the raw string,
@@ -518,7 +518,11 @@ export function sanitizeHtml(html: string): string {
       if (child.nodeType === Node.ELEMENT_NODE) {
         const elChild = child as HTMLElement
         if (!ALLOWED_TAGS.has(elChild.tagName)) {
-          // unwrap unknown elements, keep their text
+          // unwrap unknown elements, keep their text — walk first, so any
+          // attribute-bearing content further down (an anchor's href, say)
+          // is held to the same rule as everything else, not skipped just
+          // because it happened to sit inside a disallowed wrapper tag
+          walk(elChild)
           while (elChild.firstChild) node.insertBefore(elChild.firstChild, elChild)
           elChild.remove()
           continue
@@ -526,8 +530,16 @@ export function sanitizeHtml(html: string): string {
         const safeStyle = elChild.tagName === 'SPAN' && elChild.hasAttribute('style')
           ? sanitizeSpanStyle(elChild.getAttribute('style') ?? '')
           : ''
+        // No attribute survives — except an anchor's href when it is a web
+        // URL (isWebUrl: http/https only, so javascript:/data: never land in
+        // a document). target/rel are decided at click time, never stored.
+        const href = elChild.tagName === 'A' ? elChild.getAttribute('href') : null
         for (const attr of Array.from(elChild.attributes)) elChild.removeAttribute(attr.name)
         if (safeStyle) elChild.setAttribute('style', safeStyle)
+        if (elChild.tagName === 'A') {
+          if (isWebUrl(href)) elChild.setAttribute('href', href)
+          else { walk(elChild); while (elChild.firstChild) node.insertBefore(elChild.firstChild, elChild); elChild.remove(); continue }
+        }
         walk(elChild)
       } else if (child.nodeType !== Node.TEXT_NODE) {
         child.remove()

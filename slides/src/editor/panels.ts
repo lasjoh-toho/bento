@@ -7,7 +7,7 @@
 import type { Store } from '../store'
 import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, dataUriByteSize, dataUriMimeType, defaultChart, defaultText, downscaleImageDataUrl, findUsedAssetAndFontKeys, formatBytesMB, internAsset, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, dataUriByteSize, dataUriMimeType, defaultChart, defaultText, downscaleImageDataUrl, findUsedAssetAndFontKeys, formatBytesMB, internAsset, isWebUrl, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement, fitFontSizeToBox } from '../measure'
 import { isMacOS } from '../screens'
@@ -72,6 +72,7 @@ const ROW_TIPS: Record<string, string> = {
   'Show on hover': 'Puts this element in a hover set — visible only while that set is active',
   'Group': 'Presentation group — with focus-group hover, the other groups dim',
   'Link to': 'Clicking this element during the show jumps to the chosen slide',
+  'Web-Link': 'Klick auf dieses Element während der Präsentation öffnet diese Webseite in einem neuen Tab (nur https://)',
   'Font': 'Typeface for this text',
   'Size (pt)': 'Font size in points',
   'Weight': 'Font weight — 400 regular, 700 bold',
@@ -1486,12 +1487,37 @@ export class PropsPanel {
       if (el.link === s.id) o.selected = true
       sel.appendChild(o)
     })
+    if (isWebUrl(el.link)) {
+      const web = document.createElement('option')
+      web.value = el.link
+      web.textContent = t('Webseite (unten)')
+      web.selected = true
+      sel.appendChild(web)
+    }
     sel.addEventListener('change', () =>
       this.mutate(el.id, (e) => {
         if (sel.value) e.link = sel.value
         else delete e.link
       }, true))
     this.row('Link to', sel)
+    // Oder eine Webseite: öffnet während der Präsentation in einem neuen Tab.
+    const url = document.createElement('input')
+    url.type = 'url'
+    url.placeholder = 'https://…'
+    url.value = isWebUrl(el.link) ? el.link : ''
+    url.addEventListener('change', () => {
+      const v = url.value.trim()
+      if (v && !isWebUrl(v)) {
+        this.toast(t('Das sieht nicht wie eine Webadresse aus — sie sollte mit https:// beginnen'))
+        url.value = isWebUrl(el.link) ? el.link : ''
+        return
+      }
+      this.mutate(el.id, (e) => {
+        if (v) e.link = v
+        else if (isWebUrl(e.link)) delete e.link
+      }, true)
+    })
+    this.row('Web-Link', url)
 
     // one-click interactivity: duplicate this slide as a hidden state
     // (element ids preserved ⇒ it morphs) and link this element to it

@@ -10,12 +10,13 @@ import { anim, resetXform } from './anim'
 import { chartSnapshotSvg, mountChart } from './charts'
 import { ICONS } from './icons'
 import type { BentoDoc, DragTerm, GradientFill, PresentInkStroke, ShapeElement, Slide, SlideElement } from './model'
-import { morphKey, uid } from './model'
+import { morphKey, uid, isWebUrl } from './model'
 import { applyElementFrame, gradientLineCoords, renderSlide, stopAllCameraStreams } from './render'
 import { paintSpeaker, setSpeakerWindow, speakerIdleBody, speakerWindow } from './screens'
 import { t } from './i18n'
 import { lsGet, lsSet } from '../../kernel/src/storage.ts'
 import { StepState, stepOf, shownAt } from './steps'
+import { offlineEnabled } from './update'
 
 const MORPH_DURATION = 0.65
 const MORPH_EASE = 'power2.inOut'
@@ -62,6 +63,11 @@ export function startPresentation(
     section.dataset.transition = slide.transition === 'morph' ? 'none' : slide.transition
     if (slide.stateOf) section.dataset.bentoState = '1' // dimmed in overview
     const surface = renderSlide(slide, doc, { hidePlaceholders: true, liveMedia: true, liveCamera: true })
+    // Web links: rel set AT MOUNT, in the show only, never stored — a click
+    // goes through openWeb, but the browser's own routes to an anchor (the
+    // context menu's "open in new tab", a drag) do not, and on a hosted deck
+    // they would otherwise send this page's location as the referrer.
+    for (const a of Array.from(surface.querySelectorAll<HTMLAnchorElement>('a[href]'))) a.rel = 'noopener noreferrer'
     // reveal slides start with only the default hover set visible
     if (slide.hover?.type === 'reveal') applyRevealSet(surface, slide.hover.default ?? null, slide.hover.default)
     section.appendChild(surface)
@@ -1916,14 +1922,41 @@ export function startPresentation(
     updateLongReadHint(deck.getIndices().h)
   }
 
+  // Open a web page from the show — always a NEW tab, never navigating the
+  // deck away (the file IS the presentation; a same-tab navigation would end
+  // it and, on a file:// deck, leave nothing to come back to). noopener so the
+  // page cannot reach this window; noreferrer so the deck's location is not
+  // sent. The offline switch is honoured: a viewer who asked for no network
+  // activity does not get a browser tab making a request on a click.
+  const openWeb = (url: string) => {
+    if (offlineEnabled()) { flashPresentMsg(t('Links sind im Offline-Modus deaktiviert')); return }
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
   // Clicking an element with a link jumps to its target slide — and, if
   // it also carries data-link-anchor (a TOC sub-entry for an anchored
   // heading — see renderTocHtml), opens that slide's longRead and
-  // smooth-scrolls to the matching heading once it's rendered.
+  // smooth-scrolls to the matching heading once it's rendered. An element
+  // link may now ALSO be a web URL (opens like any other web link); an
+  // <a href> inside text (the [caption](url) markdown) opens too.
   slidesEl.addEventListener('click', (ev) => {
+    const anchor = (ev.target as HTMLElement).closest<HTMLAnchorElement>('a[href]')
+    if (anchor && slidesEl.contains(anchor)) {
+      ev.preventDefault()
+      ev.stopPropagation()
+      const href = anchor.getAttribute('href') ?? ''
+      if (isWebUrl(href)) openWeb(href)
+      return
+    }
     const target = (ev.target as HTMLElement).closest<HTMLElement>('[data-link]')
     if (!target) return
-    const idx = doc.slides.findIndex((s) => s.id === target.dataset.link)
+    const link = target.dataset.link ?? ''
+    if (isWebUrl(link)) {
+      ev.preventDefault()
+      ev.stopPropagation()
+      openWeb(link)
+      return
+    }
+    const idx = doc.slides.findIndex((s) => s.id === link)
     if (idx >= 0) {
       ev.preventDefault()
       ev.stopPropagation()
@@ -1934,6 +1967,19 @@ export function startPresentation(
         const heading = longReadInner.querySelector('#lr-anchor-' + CSS.escape(anchorBlockId))
         heading?.scrollIntoView({ block: 'start' }) // no smooth behavior here — the reading view has JUST opened, an animated scroll on top of its own open transition reads as janky rather than helpful
       }
+    }
+  })
+  // A middle-click fires `auxclick`, not `click`, and the browser's default
+  // for it on an anchor is "open in a new tab" — straight past the offline
+  // gate and the noreferrer flag. Route it through the same door.
+  slidesEl.addEventListener('auxclick', (ev) => {
+    const anchor = (ev.target as HTMLElement).closest<HTMLAnchorElement>('a[href]')
+    if (!anchor) return
+    ev.preventDefault()
+    ev.stopPropagation()
+    if ((ev as MouseEvent).button === 1) {
+      const href = anchor.getAttribute('href') ?? ''
+      if (isWebUrl(href)) openWeb(href)
     }
   })
 
