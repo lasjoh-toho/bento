@@ -56,6 +56,7 @@ const ROW_TIPS: Record<string, string> = {
   'Color': 'Colour with opacity — pick with the swatch, the % field is how opaque it is',
   'Enter': 'Entrance animation when the slide appears (plays on non-morph entries; equal order = together)',
   'Enter secs': 'How long the entrance takes, in seconds',
+  'Schritt': 'Versteckt bis zum n-ten Weiter-Klick auf dieser Folie (0 = erscheint mit der Folie). Die eigene Eintritts-Animation läuft dann, sonst eine einfache Einblendung.',
   'Count up': 'Numbers in this text count up from zero when the slide enters',
   'Ambient': 'Continuous motion while the slide is on screen — Ken Burns drift or zoom',
   'Zoom': 'Ken Burns direction — drift, settle out, or settle in',
@@ -1340,7 +1341,7 @@ export class PropsPanel {
     const setFx = (patch: Partial<NonNullable<SlideElement['fx']>>) =>
       this.mutate(el.id, (e) => {
         const fx = { ...(e.fx ?? {}), ...patch }
-        if (!fx.enter && !fx.countUp && !fx.ambient && !fx.loop) delete e.fx
+        if (!fx.enter && !fx.countUp && !fx.ambient && !fx.loop && !fx.step) delete e.fx
         else e.fx = fx
       }, true)
 
@@ -1355,6 +1356,16 @@ export class PropsPanel {
       this.row('Enter secs', this.number(
         el.fx.enterDur ?? (el.fx.enter.startsWith('slide-') ? 0.75 : 0.55), 0.05,
         (v, fin) => { if (fin) setFx({ enterDur: Math.max(v, 0.05) }) }))
+    }
+    // "Animate on click": hidden until the n-th → on this slide (0 = with the
+    // slide). The element's own Enter plays when its step comes, or a plain fade.
+    this.row('Schritt', this.number(el.fx?.step ?? 0, 1,
+      (v, fin) => { if (fin) setFx({ step: v >= 1 ? Math.floor(v) : undefined }) }))
+    if (el.fx?.step) {
+      const hint = document.createElement('p')
+      hint.className = 'ed-hint'
+      hint.textContent = t('Versteckt, bis in der Präsentation → zum {n}. Mal auf dieser Folie gedrückt wird.', { n: String(el.fx.step) })
+      this.host.appendChild(hint)
     }
     this.row('Count up', this.select(
       ['off', 'on'], el.fx?.countUp ? 'on' : 'off',

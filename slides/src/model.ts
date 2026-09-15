@@ -59,6 +59,16 @@ export interface ElementBase {
     enterDur?: number
     /** stagger step within the entrance sequence; equal values enter together */
     order?: number
+    /**
+     * Reveal step ("animate on click"): 1 or more means the element is
+     * HIDDEN when the slide appears and revealed on the n-th → — running its
+     * `enter` then, or a plain fade when it has none; ← hides it again; →
+     * leaves the slide only once every step is shown. Arriving backward
+     * shows every step. Absent/0 = shown with the slide. Presentation state,
+     * not slides: one slide, one page number, one morph pairing. An older
+     * shell shows every element at once. Decisions in src/steps.ts.
+     */
+    step?: number
     /** animate numeric parts of the text from `countFrom` (default 0,
      *  negative allowed — counts up toward zero or down from it) to their
      *  final value written in the text itself. */

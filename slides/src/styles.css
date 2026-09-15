@@ -1279,6 +1279,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   z-index: 1000;
   background: #000;
 }
+.bento-step-hidden { visibility: hidden; }
 .bento-fs-btn {
   position: absolute;
   top: 16px;
