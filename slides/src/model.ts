@@ -1250,6 +1250,56 @@ export function removeUnusedAssets(doc: BentoDoc): { removedCount: number; freed
   return { removedCount, freedBytes }
 }
 
+/** A copy of `doc` with every asset/font/blob nothing refers to removed —
+ *  what a SAVE should actually write, so a deck that once embedded a huge
+ *  image and later had it deleted doesn't keep silently growing forever
+ *  (doc.assets is otherwise append-only in practice — nothing else ever
+ *  drops a stale entry). The live document itself is never touched: undo
+ *  after a save still brings a deleted element (and the asset it pointed
+ *  at) back, and the following save keeps that asset since it's referenced
+ *  again. See save.ts's own serializeAuto/serializeFile wrappers, which
+ *  apply this to every path that actually writes a .bento.html.
+ *
+ *  Ported from upstream nyblnet/bento's own #447 ("a save drops the assets
+ *  nothing refers to") — reimplemented on top of this fork's own
+ *  findUsedAssetAndFontKeys() rather than importing their separate
+ *  assets.ts, since that function is already more complete for this fork's
+ *  own feature set (it already correctly protects image.mask — the
+ *  Freistellen/cutout feature — and chart-embedded asset refs, neither of
+ *  which upstream's own standalone referencedAssetKeys() handles; importing
+ *  theirs as-is would have silently pruned live mask/chart assets as
+ *  "unreferenced" on every save).
+ *
+ *  Returns the SAME object (no allocation) when there's nothing to drop —
+ *  the common case — so a caller can tell an untouched document from a
+ *  pruned copy if it needs to. */
+export function pruneUnusedAssets(doc: BentoDoc): BentoDoc {
+  if (!doc.assets) return doc
+  const { assetKeys: used, fontKeys: usedFonts } = findUsedAssetAndFontKeys(doc)
+  const fontAssetKeys = new Set((doc.fonts ?? []).map((f) => f.asset))
+  let dropped = false
+  const assets: Record<string, string> = {}
+  for (const [key, value] of Object.entries(doc.assets)) {
+    if (used.has(key) || fontAssetKeys.has(key)) assets[key] = value
+    else dropped = true
+  }
+  const fonts = doc.fonts?.filter((f) => {
+    if (usedFonts.has(f.asset)) return true
+    dropped = true
+    return false
+  })
+  if (!dropped) return doc
+  const out: BentoDoc = { ...doc, assets }
+  if (Object.keys(assets).length === 0) delete out.assets
+  if (fonts) out.fonts = fonts
+  if (doc.blobs) {
+    const blobs = Object.fromEntries(Object.entries(doc.blobs).filter(([key]) => assets[key] !== undefined))
+    if (Object.keys(blobs).length) out.blobs = blobs
+    else delete out.blobs
+  }
+  return out
+}
+
 /** Soft ceiling for embedding media as a data URI (bytes). Above this the
  *  editor warns — a big embed makes the .bento.html slow to open and save. */
 export const MEDIA_EMBED_BUDGET = 8 * 1024 * 1024 // 8 MB
