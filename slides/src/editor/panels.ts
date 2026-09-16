@@ -13,6 +13,7 @@ import { measureElement, fitFontSizeToBox } from '../measure'
 import { isMacOS } from '../screens'
 import { CHART_PRESETS } from '../charts'
 import { FONT_CHOICES, firstFamily, injectFonts } from '../fonts'
+import { DATE_PRESETS, TIME_PRESETS, OTHER_FIELDS, formatDate } from '../datefmt'
 import { imageDownscaleParams } from './moodle'
 import { ICONS } from '../icons'
 import { t } from '../i18n'
@@ -1669,6 +1670,39 @@ export class PropsPanel {
       }, true)))
   }
 
+  /** "Feld einfügen": drops a {{token}} at the end of the text (discussion
+   *  #381 — the tokens resolved since long before this, but nothing in the
+   *  editor said so). Date and time offer presets whose labels show TODAY in
+   *  that shape, so the choice is made by eye; the pattern is in the token
+   *  for anyone who wants to edit it. Appends rather than inserts at a caret:
+   *  choosing from the panel blurs the text box and commits the edit, so
+   *  there is no caret to honour — the token lands at the end, inside the
+   *  last block, and the author moves it like any other text. */
+  private buildFieldPicker(el: TextElement) {
+    const now = new Date()
+    const fmt = (token: string) => { const m = /^\{\{(?:date|time):(.*)\}\}$/.exec(token); return m ? formatDate(now, m[1]) : '' }
+    const pairs: Array<[string, string]> = [['', t('Feld einfügen…')]]
+    for (const p of DATE_PRESETS) pairs.push([p.token, p.token === '{{date}}' ? t(p.label) : `${t('Datum')} — ${fmt(p.token)}`])
+    for (const p of TIME_PRESETS) pairs.push([p.token, p.token === '{{time}}' ? t(p.label) : `${t('Uhrzeit')} — ${fmt(p.token)}`])
+    for (const p of OTHER_FIELDS) pairs.push([p.token, t(p.label)])
+    const sel = this.labeledSelect(pairs, '', (token) => {
+      if (!token) return
+      this.mutate(el.id, (e) => {
+        const tx = e as TextElement
+        const html = tx.html ?? ''
+        // inside the last block if there is one, so the token joins the last
+        // line rather than starting a stray one after </p>
+        const m = /<\/(p|div|li)>\s*$/i.exec(html)
+        const at = m ? m.index : html.length
+        const sep = at > 0 && !/[\s>]$/.test(html.slice(0, at)) ? ' ' : ''
+        tx.html = html.slice(0, at) + sep + token + html.slice(at)
+      }, true)
+      sel.value = ''
+    })
+    sel.title = t('Seitenzahl, Datum, Uhrzeit, Titel und Dokumenteigenschaften — werden beim Anzeigen der Folie aufgelöst. Datum und Uhrzeit können ein Format festlegen: {{date:M/D/YY}}; im Text direkt bearbeitbar.')
+    this.row('Feld', sel)
+  }
+
   private buildTextProps(el: TextElement) {
     this.section(t('Typography'), 'While editing: ⌘B/⌘I/⌘U · markdown auto-converts — **bold** *italic* `code` ~~strike~~ and "- " bullets; pasting markdown converts too. Escape with \\ or press ⌘Z right after to keep the literal characters.')
     this.row('Role', this.select(
@@ -1679,6 +1713,7 @@ export class PropsPanel {
         else e.role = v
       }, true)))
     this.buildFitHeight(el)
+    this.buildFieldPicker(el)
     this.buildFitFontSize(el)
     this.row('Font', this.fontSelect(el))
     // Shown in POINTS (the unit office users know); the model stores slide-space
