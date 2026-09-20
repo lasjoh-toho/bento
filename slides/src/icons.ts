@@ -51,6 +51,7 @@ export const ICONS = {
   triangle: svg('<path d="M12 4 21 20H3z"/>'),
   arrow: svg('<line x1="3" y1="12" x2="19" y2="12"/><polyline points="13 6 19 12 13 18"/>'),
   line: svg('<line x1="4" y1="19" x2="20" y2="5"/>'),
+  eyedropper: svg('<path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/>'),
 } as const
 
 export type IconName = keyof typeof ICONS

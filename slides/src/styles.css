@@ -939,6 +939,23 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   font-family: ui-monospace, monospace;
   text-align: center;
 }
+.ed-color-hexrow { display: flex; align-items: center; gap: 6px; }
+.ed-color-hexrow .ed-color-hex-input { flex: 1; min-width: 0; }
+.ed-color-eyedropper {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: #1a1a1a;
+  color: #ffffff;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.ed-color-eyedropper:hover { background: #2a2a2a; }
 .ed-colorhex { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
 .ed-row .ed-colorhex input[type='color'] { width: 30px; flex: none; }
 .ed-colorhex-text {
