@@ -2083,7 +2083,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 /* color + alpha pair, and gradient stop rows */
 .ed-coloralpha { display: flex; align-items: center; gap: 6px; }
 .ed-coloralpha input[type='number'] { width: 52px; }
-.ed-gradstop { display: flex; align-items: center; gap: 6px; }
+.ed-gradstop { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .ed-gradstop > input[type='number'] { width: 44px; }
 .ed-gradstop .ed-btn-icon { padding: 2px 6px; }
 
