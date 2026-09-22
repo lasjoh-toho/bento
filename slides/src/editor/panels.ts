@@ -3538,7 +3538,36 @@ export class PropsPanel {
       onChange(combineColor(hex, alpha), true)
       PropsPanel.pushRecentColor(hex)
     })
-    popover.appendChild(hexRow)
+
+    const hexRowWrap = document.createElement('div')
+    hexRowWrap.className = 'ed-color-hexrow'
+    hexRowWrap.appendChild(hexRow)
+
+    // Eyedropper — samples a color anywhere on screen (including the slide
+    // itself), via the browser's native picker. Only Chromium browsers
+    // support it (as of writing); feature-detected so the button simply
+    // doesn't appear elsewhere rather than throwing at click time.
+    if (typeof (window as any).EyeDropper === 'function') {
+      const dropBtn = document.createElement('button')
+      dropBtn.type = 'button'
+      dropBtn.className = 'ed-color-eyedropper'
+      dropBtn.innerHTML = ICONS.eyedropper
+      dropBtn.dataset.tooltip = t('Pick a color from the slide')
+      dropBtn.addEventListener('click', async () => {
+        try {
+          const result = await new (window as any).EyeDropper().open()
+          hex = result.sRGBHex
+          hexRow.value = hex
+          onChange(combineColor(hex, alpha), true)
+          PropsPanel.pushRecentColor(hex)
+        } catch {
+          // user cancelled (Esc / clicked away) — nothing to do
+        }
+      })
+      hexRowWrap.appendChild(dropBtn)
+    }
+
+    popover.appendChild(hexRowWrap)
 
     return { el: popover, syncFromOutside: (h) => { hex = h; hexRow.value = h } }
   }

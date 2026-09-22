@@ -156,6 +156,7 @@ export const de: Catalog = {
   "Notes for presenter view (press S while presenting)…": "Notizen für die Referentenansicht (S während der Präsentation)…",
   "Opacity": "Deckkraft",
   "Opacity %": "Deckkraft %",
+  "Pick a color from the slide": "Farbe von der Folie aufnehmen",
   "Open comment(s)": "Kommentar(e) öffnen",
   "Paste document JSON here…": "Dokument-JSON hier einfügen…",
   "Path": "Pfad",
