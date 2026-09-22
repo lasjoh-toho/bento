@@ -3635,6 +3635,29 @@ export class PropsPanel {
     col.addEventListener('change', () => emit(true))
     alpha.addEventListener('change', () => emit(true))
     wrap.append(col, alpha)
+
+    // Eyedropper — same feature-detected native picker as buildColorPopover's,
+    // added here too since colorAlpha() is its own separate control (no
+    // popover) and doesn't get one for free.
+    if (typeof (window as any).EyeDropper === 'function') {
+      const dropBtn = document.createElement('button')
+      dropBtn.type = 'button'
+      dropBtn.className = 'ed-color-eyedropper'
+      dropBtn.innerHTML = ICONS.eyedropper
+      dropBtn.dataset.tooltip = t('Pick a color from the slide')
+      dropBtn.addEventListener('click', async () => {
+        try {
+          const result = await new (window as any).EyeDropper().open()
+          col.value = result.sRGBHex
+          emit(true)
+          PropsPanel.pushRecentColor(result.sRGBHex)
+        } catch {
+          // user cancelled (Esc / clicked away) — nothing to do
+        }
+      })
+      wrap.appendChild(dropBtn)
+    }
+
     return wrap
   }
 
