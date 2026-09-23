@@ -1,16 +1,26 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The Bento authors
-// Generic external-host integration, parallel to moodle.ts: when a page
-// embedding this app declares a <meta name="bento-host-config"> tag, Save
-// posts the full rebuilt file back to that host's own saveUrl instead of
-// downloading a copy or (absent a local file handle) doing nothing in
-// place. Unlike moodle.ts this carries NO url-pathname restriction — any
-// host that writes the meta tag into a page it serves gets this behaviour,
-// since there is no single fixed mount point (moodle.ts's own "mod/bento"
-// check) to key off. First consumer: Infomaster's bento.php — a deck saved
-// there embeds this meta tag pointing back at itself, so reopening that
-// exact file and saving again overwrites it in place on the server, the
-// same way a Moodle mod/bento activity does.
+// Generic external-host integration, parallel to moodle.ts (which this file
+// never touches — see that file's own doc comment for why its "mod/bento"
+// detection must stay exactly as is): when a page embedding this app is
+// served from a path containing "/bentos/" AND declares a
+// <meta name="bento-host-config"> tag, Save posts the full rebuilt file back
+// to that host's own saveUrl instead of downloading a copy or (absent a
+// local file handle) doing nothing in place.
+//
+// The path check mirrors moodle.ts's own "mod/bento" one exactly (coarse
+// gate first, meta tag second) rather than trusting the meta tag alone —
+// same reasoning: a bare meta tag is something ANY page could embed, so the
+// URL itself is what actually ties this behaviour to a host that put the
+// file where it's expected to live. Unlike moodle.ts's fixed "mod/bento"
+// literal, this checks for a "bentos" path SEGMENT (not a substring) so it
+// isn't tied to one specific host's folder name at the same fixed depth —
+// still coarse, still mirrors the same two-layer shape.
+//
+// First consumer: Infomaster's bento.php, which saves editable decks under
+// media/bentos/ — a deck saved there embeds this meta tag pointing back at
+// itself, so reopening that exact file and saving again overwrites it in
+// place on the server, the same way a Moodle mod/bento activity does.
 import type { BentoDoc } from '../model'
 import { serializeAuto, suggestedFileName } from '../save'
 
@@ -29,8 +39,19 @@ export interface HostConfig {
 }
 
 function readHostConfig(): HostConfig | null {
+  // Literal check asked for, mirroring moodle.ts's own "mod/bento" one: a
+  // path SEGMENT named "bentos" is what decides whether this is "Bento
+  // running under a host that saves editable decks" at all — the meta tag
+  // lookup below only matters once that's already true.
+  if (!location.pathname.split('/').includes('bentos')) {
+    console.log('[bento/host] not detected — URL pathname has no "bentos" segment:', location.pathname)
+    return null
+  }
   const meta = document.querySelector('meta[name="bento-host-config"]')
-  if (!meta) return null
+  if (!meta) {
+    console.log('[bento/host] "bentos" is in the URL, but no <meta name="bento-host-config"> tag was found in <head> — Save will use normal local-file behaviour.')
+    return null
+  }
   const content = meta.getAttribute('content')
   if (!content) {
     console.log('[bento/host] the meta tag exists but has no content attribute.')
