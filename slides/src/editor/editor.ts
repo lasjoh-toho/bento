@@ -15,6 +15,7 @@ import { THEME_CHOICES, setTheme, themeChoice } from '../../../kernel/src/theme.
 import { APP_VERSION, applyUpdate, applyUpdateInPlace, autoCheckEnabled, canUpdateInPlace, checkForUpdates, compareVersions, offlineEnabled, setAutoCheck, setOffline } from '../update'
 import { CHART_PRESETS } from '../charts'
 import { renderSlide, renderThumbnail } from '../render'
+import { openExportImagesDialog } from './exportimages'
 import { SlideCanvas } from './canvas'
 import { PropsPanel } from './panels'
 import { LongReadEditor } from './longread'
@@ -834,6 +835,8 @@ export class Editor {
       item(ICONS.plus, t('Duplicate as new deck…'),
         t('A separate deck for you — same content, new identity; it never syncs with this one.'),
         () => this.saveAsNewDeck())
+      // the dialog explains itself; a tooltip here would say the same twice
+      item(ICONS.image, t('Export slides as images…'), '', () => this.exportImages())
       if (isEncryptionActive()) {
         item(ICONS.lock, t('Change password…'),
           t('Pick a new password for this file — takes effect on the next save.'),
@@ -2079,6 +2082,12 @@ export class Editor {
     window.addEventListener('afterprint', cleanup)
     // give the freshly-inserted images a beat to decode before printing
     setTimeout(() => window.print(), 250)
+  }
+
+  /** Slides as PNG/JPEG files — editor/exportimages.ts. */
+  exportImages() {
+    this.canvas.commitTextEdit()
+    openExportImagesDialog(this.store.doc, this.store.slide, (m) => this.toast(m))
   }
 
   // --- insert image ------------------------------------------------------------------

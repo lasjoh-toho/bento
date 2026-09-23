@@ -3326,8 +3326,8 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
 }
 .ed-pwerr { color: #FF8A7A; font-size: 13px; min-height: 18px; }
 
-/* password dialog (set/change) */
-dialog.ed-pwdialog {
+/* shared native <dialog> chrome — password dialog and export-images dialog */
+dialog.ed-dialog {
   border: 0;
   border-radius: 14px;
   box-shadow: 0 18px 50px rgb(15 23 36 / 0.3);
@@ -3336,9 +3336,9 @@ dialog.ed-pwdialog {
   font-size: 13px;
   font-family: inherit;
 }
-dialog.ed-pwdialog::backdrop { background: rgb(15 23 36 / 0.38); }
-dialog.ed-pwdialog h2 { font-size: 15px; margin-bottom: 8px; }
-dialog.ed-pwdialog p { color: #667; line-height: 1.5; margin-bottom: 10px; }
+dialog.ed-dialog::backdrop { background: rgb(15 23 36 / 0.38); }
+dialog.ed-dialog h2 { font-size: 15px; margin-bottom: 8px; }
+dialog.ed-dialog p { color: #667; line-height: 1.5; margin-bottom: 10px; }
 dialog.ed-pwdialog label {
   display: block;
   margin: 8px 0 2px;
@@ -3355,6 +3355,14 @@ dialog.ed-pwdialog input {
   font-size: 14px;
 }
 dialog.ed-pwdialog .ed-pwerr { color: #C33; }
+dialog.ed-exportimages-dialog .ed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0;
+}
+dialog.ed-exportimages-dialog .ed-row select { flex: none; min-width: 140px; }
 .ed-dialog-actions {
   display: flex;
   justify-content: flex-end;

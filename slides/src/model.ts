@@ -611,6 +611,11 @@ export interface Slide {
   inkStrokes?: PresentInkStroke[]
 }
 
+/** A slide reachable by plain next/prev — the print set, and the pages an
+ *  image export produces: a state variant is reached only via a link, and
+ *  a hidden slide was never handed to the audience. */
+export const inLinearFlow = (s: Slide): boolean => !s.stateOf && !s.hidden
+
 /** One block within a slide's longRead (see Slide.longRead) — plain text,
  *  no nested formatting; the reading view styles each purely by `type`. */
 export interface LongReadBlock {
