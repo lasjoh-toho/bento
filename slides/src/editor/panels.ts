@@ -3479,6 +3479,23 @@ export class PropsPanel {
     })
   }
 
+  /** The eyedropper's actual picker: the browser's native one where it
+   *  exists (Chromium — window.EyeDropper), else canvas.pickColorFromSlide()
+   *  (Firefox, Safari — rasterize the slide once, sample the clicked pixel).
+   *  Same {sRGBHex}-shaped result, or null on cancel, either way — every
+   *  dropBtn click handler calls this instead of branching on EyeDropper
+   *  support itself. */
+  private async pickColor(): Promise<{ sRGBHex: string } | null> {
+    if (typeof (window as any).EyeDropper === 'function') {
+      try {
+        return await new (window as any).EyeDropper().open()
+      } catch {
+        return null // user cancelled (Esc / clicked away)
+      }
+    }
+    return this.canvas.pickColorFromSlide()
+  }
+
   private buildColorPopover(
     initial: string,
     onChange: (combined: string, final: boolean) => void,
@@ -3543,29 +3560,21 @@ export class PropsPanel {
     hexRowWrap.className = 'ed-color-hexrow'
     hexRowWrap.appendChild(hexRow)
 
-    // Eyedropper — samples a color anywhere on screen (including the slide
-    // itself), via the browser's native picker. Only Chromium browsers
-    // support it (as of writing); feature-detected so the button simply
-    // doesn't appear elsewhere rather than throwing at click time.
-    if (typeof (window as any).EyeDropper === 'function') {
-      const dropBtn = document.createElement('button')
-      dropBtn.type = 'button'
-      dropBtn.className = 'ed-color-eyedropper'
-      dropBtn.innerHTML = ICONS.eyedropper
-      dropBtn.dataset.tooltip = t('Pick a color from the slide')
-      dropBtn.addEventListener('click', async () => {
-        try {
-          const result = await new (window as any).EyeDropper().open()
-          hex = result.sRGBHex
-          hexRow.value = hex
-          onChange(combineColor(hex, alpha), true)
-          PropsPanel.pushRecentColor(hex)
-        } catch {
-          // user cancelled (Esc / clicked away) — nothing to do
-        }
-      })
-      hexRowWrap.appendChild(dropBtn)
-    }
+    // Eyedropper — see pickColor() for which picker actually runs.
+    const dropBtn = document.createElement('button')
+    dropBtn.type = 'button'
+    dropBtn.className = 'ed-color-eyedropper'
+    dropBtn.innerHTML = ICONS.eyedropper
+    dropBtn.dataset.tooltip = t('Pick a color from the slide')
+    dropBtn.addEventListener('click', async () => {
+      const result = await this.pickColor()
+      if (!result) return
+      hex = result.sRGBHex
+      hexRow.value = hex
+      onChange(combineColor(hex, alpha), true)
+      PropsPanel.pushRecentColor(hex)
+    })
+    hexRowWrap.appendChild(dropBtn)
 
     popover.appendChild(hexRowWrap)
 
@@ -3636,24 +3645,20 @@ export class PropsPanel {
     alpha.addEventListener('change', () => emit(true))
     wrap.append(col, alpha)
 
-    // Eyedropper — same feature-detected native picker as buildColorPopover's,
-    // added here too since colorAlpha() is its own separate control (no
-    // popover) and doesn't get one for free.
-    if (typeof (window as any).EyeDropper === 'function') {
+    // Eyedropper — see pickColor(); added here too since colorAlpha() is its
+    // own separate control (no popover) and doesn't get one for free.
+    {
       const dropBtn = document.createElement('button')
       dropBtn.type = 'button'
       dropBtn.className = 'ed-color-eyedropper'
       dropBtn.innerHTML = ICONS.eyedropper
       dropBtn.dataset.tooltip = t('Pick a color from the slide')
       dropBtn.addEventListener('click', async () => {
-        try {
-          const result = await new (window as any).EyeDropper().open()
-          col.value = result.sRGBHex
-          emit(true)
-          PropsPanel.pushRecentColor(result.sRGBHex)
-        } catch {
-          // user cancelled (Esc / clicked away) — nothing to do
-        }
+        const result = await this.pickColor()
+        if (!result) return
+        col.value = result.sRGBHex
+        emit(true)
+        PropsPanel.pushRecentColor(result.sRGBHex)
       })
       wrap.appendChild(dropBtn)
     }

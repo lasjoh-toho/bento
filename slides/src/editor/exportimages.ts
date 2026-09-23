@@ -51,11 +51,19 @@ function runtimeCss(): string {
   return out.join('\n')
 }
 
-/** Draw one slide at `scale` and encode it. Rejects (SecurityError) when the
- *  canvas is tainted — see the header for when that happens. */
-export async function rasterizeSlide(doc: BentoDoc, slide: Slide, format: ImageFormat, scale: ImageScale): Promise<Blob> {
+/** Draw one slide at `scale` onto an offscreen canvas — the shared step
+ *  between the PNG/JPEG export below (which encodes it) and the eyedropper's
+ *  browser-independent fallback (editor/panels.ts pickColor — Chromium has a
+ *  native picker; elsewhere this same raster is sampled by clicked pixel
+ *  instead). `matte` paints a background color UNDER the render before the
+ *  image is drawn (JPEG has no alpha — see matteFor); pass null to leave it
+ *  transparent. Reading pixels back (getImageData) can throw SecurityError
+ *  under the same tainted-canvas condition rasterizeSlide's own doc block
+ *  describes — callers that read pixels should expect that. */
+export async function rasterizeSlideToCanvas(doc: BentoDoc, slide: Slide, scale: number, matte: string | null): Promise<HTMLCanvasElement> {
   const { width: w, height: h } = doc.size
-  const { width: pw, height: ph } = pixelSize(doc, scale)
+  const pw = Math.round(w * scale)
+  const ph = Math.round(h * scale)
   const surface = renderSlide(slide, doc, { svgAsImage: true, hidePlaceholders: true })
   const css = runtimeCss() + '\n' + (document.getElementById('bento-fonts')?.textContent ?? '')
   const xhtml = new XMLSerializer().serializeToString(surface)
@@ -70,9 +78,15 @@ export async function rasterizeSlide(doc: BentoDoc, slide: Slide, format: ImageF
   canvas.width = pw
   canvas.height = ph
   const ctx = canvas.getContext('2d')!
-  const matte = matteFor(format)
   if (matte) { ctx.fillStyle = matte; ctx.fillRect(0, 0, pw, ph) }
   ctx.drawImage(img, 0, 0, pw, ph)
+  return canvas
+}
+
+/** Draw one slide at `scale` and encode it. Rejects (SecurityError) when the
+ *  canvas is tainted — see the header for when that happens. */
+export async function rasterizeSlide(doc: BentoDoc, slide: Slide, format: ImageFormat, scale: ImageScale): Promise<Blob> {
+  const canvas = await rasterizeSlideToCanvas(doc, slide, scale, matteFor(format))
   return new Promise((resolve, reject) => {
     try {
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('encode'))), mimeOf(format), 0.92)

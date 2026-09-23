@@ -22,6 +22,7 @@ import { simplifyPoints } from './patheditor'
 const SVG_NS = 'http://www.w3.org/2000/svg'
 type DrawKind = 'line' | 'path' | 'connector' | 'free' | 'poly'
 import { CommentsUI } from './comments'
+import { rasterizeSlideToCanvas } from './exportimages'
 import type { Peer } from '../sync/session'
 
 export class SlideCanvas {
@@ -59,6 +60,12 @@ export class SlideCanvas {
   private imageCropEditor!: ImageCropEditor
   private imageMaskEditor!: ImageMaskEditor
   private drawOverlay: HTMLElement | null = null
+  /** Runs once, inside cancelDraw() — lets whatever armed drawOverlay learn
+   *  it was torn down regardless of WHY (its own finish, another armDraw
+   *  call, or the global Escape handler already wired to isDrawing/cancelDraw).
+   *  pickColorFromSlide is the one user so far: it has no drag/finish path of
+   *  its own, so this is the only way it learns of an Escape cancel. */
+  private onDrawCancelled: (() => void) | null = null
   private comments!: CommentsUI
 
   constructor(
@@ -1153,6 +1160,10 @@ export class SlideCanvas {
         e.stop() // the path overlay owns the pointer while editing
         return
       }
+      if (this.isDrawing) {
+        e.stop() // armDraw / pickColorFromSlide's own overlay owns the pointer
+        return
+      }
       if (this.editing) {
         // editing a table cell: clicking a DIFFERENT cell switches to it
         if (this.editingCell) {
@@ -1629,6 +1640,56 @@ export class SlideCanvas {
   cancelDraw() {
     this.drawOverlay?.remove()
     this.drawOverlay = null
+    const hook = this.onDrawCancelled
+    this.onDrawCancelled = null
+    hook?.()
+  }
+
+  /** Browser-independent eyedropper fallback (Firefox, Safari — no
+   *  window.EyeDropper): rasterizes the current slide once (the same
+   *  foreignObject renderer 'export slides as images' uses) and lets one
+   *  click on it sample that pixel's color, via a crosshair overlay in the
+   *  same drawOverlay slot armDraw uses — so the existing Escape-cancels-
+   *  drawOverlay wiring in editor.ts's keydown handler covers this for free.
+   *  Resolves an EyeDropper-shaped {sRGBHex} (or null if cancelled), so
+   *  panels.ts's pickColor() can treat both pickers identically. */
+  async pickColorFromSlide(): Promise<{ sRGBHex: string } | null> {
+    this.cancelDraw()
+    const { width, height } = this.store.doc.size
+    const RASTER_SCALE = 2
+    let raster: HTMLCanvasElement
+    try {
+      raster = await rasterizeSlideToCanvas(this.store.doc, this.store.slide, RASTER_SCALE, null)
+    } catch {
+      return null
+    }
+    const ctx = raster.getContext('2d')!
+    return new Promise((resolve) => {
+      const ov = document.createElement('div')
+      ov.style.cssText = `position:absolute;left:0;top:0;width:${width}px;height:${height}px;z-index:60;cursor:crosshair`
+      this.scaleHost.appendChild(ov)
+      this.drawOverlay = ov
+      let result: { sRGBHex: string } | null = null
+      this.onDrawCancelled = () => resolve(result)
+      ov.addEventListener('click', (ev: MouseEvent) => {
+        ev.preventDefault()
+        ev.stopPropagation()
+        const rect = this.scaleHost.getBoundingClientRect()
+        const x = (ev.clientX - rect.left) / this.scale
+        const y = (ev.clientY - rect.top) / this.scale
+        if (x >= 0 && y >= 0 && x <= width && y <= height) {
+          try {
+            const px = Math.min(raster.width - 1, Math.max(0, Math.round(x * RASTER_SCALE)))
+            const py = Math.min(raster.height - 1, Math.max(0, Math.round(y * RASTER_SCALE)))
+            const [r, g, b] = ctx.getImageData(px, py, 1, 1).data
+            result = { sRGBHex: '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('') }
+          } catch {
+            // tainted canvas (a web-linked image on the slide) — no sample, same as a cancel
+          }
+        }
+        this.cancelDraw()
+      })
+    })
   }
 
   /** SVG path 'd' for a gentle bow between two points (curve preview + default). */
