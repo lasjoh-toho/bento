@@ -14,6 +14,33 @@ Decision. Why. Pointers.
 
 ---
 
+## 2026-09-23 — present-mode auto-advance is a generic opt-in, not a Moodle-only one
+
+`MoodleConfig.playlist` (present mode's "fetch the next document once the last
+slide is reached" hook, `onReachedEnd` in `main.ts`/`editor.ts`) used to be
+reachable only through `editor/moodle.ts`'s `readMoodleConfig()`, gated on the
+URL containing `mod/bento`. That gate exists to protect the SAVE half of
+`MoodleConfig` (`sesskey`/`wwwroot`, an actual Moodle web-service call) — the
+playlist half is just "here are some URLs, fetch+parse the next one as JSON",
+nothing Moodle-specific about it, and the URL check blocked every other host
+from using it even though the mechanism was already generic underneath.
+
+**Decision:** added `editor/playlist.ts` — a second, neutrally-named
+`<meta name="bento-playlist" content='{"items":[{"url":"..."}]}'>` tag, gated
+only on its own presence (no URL shape required). Both call sites now do
+`moodleConfig?.playlist ?? playlistConfig?.items ?? []`, so Moodle keeps its
+existing behavior unchanged and any other host (e.g. `bento-pronto`'s `hub/`,
+chaining through several standalone `.bento.html` modules) can opt into the
+same auto-advance by injecting the new tag. Zero risk to the Moodle path —
+purely additive, verified via `tsc -b` + `build:single` + inflating the built
+shell's deflated bundle to confirm both markers are present.
+
+**What this does NOT decide.** `bento-pronto/hub`'s own server-side wiring
+(a raw-JSON module endpoint + injecting this tag) is a separate, ownerless-of-
+this-repo change in that project, not covered here.
+
+---
+
 ## 2026-08-02 — dash budgets BYTES with consent, not rows with a refusal
 
 **Supersedes the hard stop proposed in the dash design doc §3.2** (refuse at
