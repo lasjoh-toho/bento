@@ -23,6 +23,7 @@ import { injectFonts } from './fonts'
 import { Store } from './store'
 import { Editor } from './editor/editor'
 import { moodleConfig, takeUnsavedMoodleDoc } from './editor/moodle'
+import { playlistConfig } from './editor/playlist'
 import { startPresentation } from './present'
 import { SyncSession } from './sync/session'
 import { onlineTransport, startSharing, stopSharing } from './sync/online'
@@ -160,7 +161,7 @@ function playerMode(doc: BentoDoc) {
   document.body.appendChild(card)
   const start = () => {
     card.style.display = 'none'
-    const playlist = moodleConfig?.playlist ?? []
+    const playlist = moodleConfig?.playlist ?? playlistConfig?.items ?? []
     let playlistPos = -1 // -1 = still on the original document itself
     let session: ReturnType<typeof startPresentation>
     const startOne = (d: BentoDoc, startIndex: number, opts: { fullscreen?: boolean } = {}) => {

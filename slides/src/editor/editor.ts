@@ -22,6 +22,7 @@ import { LongReadEditor } from './longread'
 import { startPresentation, type PresentSession } from '../present'
 import { adoptFileHandle, canWriteInPlace, currentFileName, downloadFile, fileBase, hasFileHandle, isEncryptionActive, openedFileName, saveFile, serializeAuto, serializeFile, setEncryptionPassword, suggestedFileName, writeUpdatedFile, writeUpdatedFileAs } from '../save'
 import { moodleConfig, saveToMoodle, imageDownscaleParams } from './moodle'
+import { playlistConfig } from './playlist'
 import { addVersion, clearRecovery, clearVersions, docContentKey, getRecovery, listVersions, pruneOld, putRecovery, type Snapshot } from '../autosave'
 import { insertElements, insertSlides, parseClip, parseHtmlPaste, serializeElements, serializeSlides } from './clipboard'
 import { openSpeakerWindow, speakerIdleBody } from '../screens'
@@ -2238,7 +2239,7 @@ export class Editor {
     document.querySelector('.ed-hint-pulse')?.classList.remove('ed-hint-pulse')
     this.canvas.commitTextEdit()
     this.presenting = true
-    const playlist = moodleConfig?.playlist ?? []
+    const playlist = moodleConfig?.playlist ?? playlistConfig?.items ?? []
     let playlistPos = -1 // -1 = still on the original document itself
     let session: PresentSession
     let generation = 0
