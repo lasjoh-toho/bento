@@ -22,6 +22,7 @@ import { LongReadEditor } from './longread'
 import { startPresentation, type PresentSession } from '../present'
 import { adoptFileHandle, canWriteInPlace, currentFileName, downloadFile, fileBase, hasFileHandle, isEncryptionActive, openedFileName, saveFile, serializeAuto, serializeFile, setEncryptionPassword, suggestedFileName, writeUpdatedFile, writeUpdatedFileAs } from '../save'
 import { moodleConfig, saveToMoodle, imageDownscaleParams } from './moodle'
+import { hostConfig, saveToHost } from './hostsave'
 import { playlistConfig } from './playlist'
 import { addVersion, clearRecovery, clearVersions, docContentKey, getRecovery, listVersions, pruneOld, putRecovery, type Snapshot } from '../autosave'
 import { insertElements, insertSlides, parseClip, parseHtmlPaste, serializeElements, serializeSlides } from './clipboard'
@@ -118,7 +119,7 @@ export class Editor {
     store.on('doc', () => this.scheduleThumbs())
     store.on('dirty', () => {
       this.dirtyDot.classList.toggle('on', store.dirty)
-      if (moodleConfig && this.savedIndicator) {
+      if ((moodleConfig || hostConfig) && this.savedIndicator) {
         this.saveBtn.style.display = store.dirty ? '' : 'none'
         this.savedIndicator.style.display = store.dirty ? 'none' : ''
       }
@@ -281,9 +282,20 @@ export class Editor {
       `<rect x="14" y="5" width="13" height="10" rx="2.5" fill="#FF9E8A"/>` +
       `<rect x="14" y="17" width="13" height="10" rx="2.5" fill="#F0EBE0"/>` +
       `</svg> <b>bento<span style="color:#FF9E8A">/</span>slides</b>`
-    logo.title = t('About bento/slides — version, updates, licenses')
+    // A host embedding this app (see hostsave.ts) repurposes the wordmark as
+    // a Home button back to itself — the natural "the app came from
+    // somewhere, take me back there" gesture — instead of opening About,
+    // mirroring how a hosted deployment already suppresses the self-update
+    // machinery About would otherwise offer (see moodleConfig/hostConfig
+    // guards further down in this file).
+    logo.title = hostConfig
+      ? (hostConfig.homeLabel ? t('Back to {host}', { host: hostConfig.homeLabel }) : t('Back'))
+      : t('About bento/slides — version, updates, licenses')
     logo.style.cursor = 'pointer'
-    logo.addEventListener('click', () => this.openAbout())
+    logo.addEventListener('click', () => {
+      if (hostConfig) { location.href = hostConfig.homeUrl; return }
+      this.openAbout()
+    })
     const title = document.createElement('input')
     title.className = 'ed-title'
     title.title = t('Deck title — shown in the tab, on {{title}} fields, and as the suggested file name')
@@ -340,7 +352,7 @@ export class Editor {
     this.updatesB = btn(ICONS.sync, '', () => this.openAbout(true), t('Check for updates'))
     this.updatesB.style.display = 'none'
     setTimeout(async () => {
-      if (!autoCheckEnabled() || offlineEnabled() || moodleConfig) return
+      if (!autoCheckEnabled() || offlineEnabled() || moodleConfig || hostConfig) return
       const r = await checkForUpdates()
       this.lastAutoCheck = r
       if (r.status === 'update') {
@@ -358,24 +370,26 @@ export class Editor {
     const redoB = btn(ICONS.redo, '', () => this.store.redo(), t('Redo (⇧⌘Z)'))
     const saveB = btn(ICONS.save, t('Save'), () => this.save(false), moodleConfig
       ? t('Save — writes back into this Moodle activity (⌘S)')
-      : canWriteInPlace()
-        ? t('Save — rewrite this file in place (⌘S)')
-        : t('Save — download an updated copy (⌘S). This browser can’t rewrite the open file.'))
+      : hostConfig
+        ? t('Save — writes back onto the server (⌘S)')
+        : canWriteInPlace()
+          ? t('Save — rewrite this file in place (⌘S)')
+          : t('Save — download an updated copy (⌘S). This browser can’t rewrite the open file.'))
     saveB.classList.add('ed-save-btn')
     this.saveBtn = saveB
     this.saveBtnLabel = saveB.querySelector('span')!
     this.saveProgressBar = div('ed-save-progress')
     saveB.appendChild(this.saveProgressBar)
     saveB.appendChild(this.dirtyDot) // the amber unsaved-changes dot lives ON Save
-    // Moodle only: a "Gespeichert" checkmark that swaps places with the
-    // Save button itself when there's genuinely nothing to save — rather
-    // than a button sitting there permanently inviting a click that would
-    // just re-save the exact same content. The local-file Save button
-    // (no moodleConfig) stays always-visible instead: its own dirty-dot
-    // already communicates "nothing changed" without needing to vanish
-    // entirely, and re-saving a local file in place is a much cheaper,
-    // less surprising no-op than a full Moodle upload round-trip would be.
-    if (moodleConfig) {
+    // Moodle/hosted only: a "Gespeichert" checkmark that swaps places with
+    // the Save button itself when there's genuinely nothing to save —
+    // rather than a button sitting there permanently inviting a click that
+    // would just re-save the exact same content. The local-file Save button
+    // (no moodleConfig/hostConfig) stays always-visible instead: its own
+    // dirty-dot already communicates "nothing changed" without needing to
+    // vanish entirely, and re-saving a local file in place is a much
+    // cheaper, less surprising no-op than a full server upload round-trip.
+    if (moodleConfig || hostConfig) {
       this.savedIndicator = document.createElement('span')
       this.savedIndicator.className = 'ed-saved-indicator'
       this.savedIndicator.textContent = '✓ ' + t('Saved')
@@ -829,8 +843,10 @@ export class Editor {
       item(ICONS.copy, t('Save a copy…'),
         moodleConfig
           ? t('Downloads a self-contained file with everything as it is right now — works even if saving to Moodle is slow or fails.')
-          : t('A backup of this deck for yourself — same deck, same live session.'),
-        moodleConfig
+          : hostConfig
+            ? t('Downloads a self-contained file with everything as it is right now — works even if saving to the server is slow or fails.')
+            : t('A backup of this deck for yourself — same deck, same live session.'),
+        (moodleConfig || hostConfig)
           ? () => void this.downloadCopy()
           : () => void this.save(true))
       item(ICONS.plus, t('Duplicate as new deck…'),
@@ -2255,6 +2271,7 @@ export class Editor {
         onSaveTerms: () => {
           this.store.touch()
           if (moodleConfig) void saveToMoodle(this.store.doc)
+          else if (hostConfig) void saveToHost(this.store.doc)
         },
         onReachedEnd: playlist.length ? () => {
           playlistPos = (playlistPos + 1) % playlist.length
@@ -2717,7 +2734,7 @@ export class Editor {
   }
 
   private noticeIfCannotWriteInPlace() {
-    if (moodleConfig) return // saves go to Moodle's server here — this notice is about local file rewriting, not applicable
+    if (moodleConfig || hostConfig) return // saves go to a server here — this notice is about local file rewriting, not applicable
     if (canWriteInPlace()) return
     if (lsGet(SAVE_NOTICE_KEY) === 'seen') return
     const bar = div('ed-recover')
@@ -2955,6 +2972,39 @@ export class Editor {
         this.store.setDirty(false)
         markFileSaved()
         this.toast(t('Saved to Moodle ({size})', { size: formatBytesMB(bytes) }), 'success')
+      } catch (err) {
+        console.error('[bento/save] failed:', err)
+        this.toast(t('Save failed — see console'), 'error')
+      } finally {
+        this.saveBtn.classList.remove('ed-saving')
+        this.saveProgressBar.classList.remove('ed-save-progress-active')
+        this.saveProgressBar.style.width = '0'
+        this.saveBtnLabel.textContent = t('Save')
+        activeThumb?.classList.remove('ed-thumb-saving')
+      }
+      return
+    }
+
+    if (hostConfig) {
+      // Mirrors the moodleConfig branch above exactly (same reasoning: no
+      // local file handle to rewrite, the "file" lives on the embedding
+      // host's own server, reached over its own saveUrl — see hostsave.ts).
+      try {
+        this.canvas.commitTextEdit()
+        this.session?.stampInto(this.store.doc)
+        const { bytes } = await saveToHost(
+          this.store.doc,
+          (fraction) => {
+            this.saveProgressBar.classList.add('ed-save-progress-active')
+            this.saveProgressBar.style.width = `${Math.round(fraction * 100)}%`
+          },
+          (totalBytes) => {
+            this.saveBtnLabel.textContent = formatBytesMB(totalBytes)
+          },
+        )
+        this.store.setDirty(false)
+        markFileSaved()
+        this.toast(t('Saved to server ({size})', { size: formatBytesMB(bytes) }), 'success')
       } catch (err) {
         console.error('[bento/save] failed:', err)
         this.toast(t('Save failed — see console'), 'error')
@@ -3246,14 +3296,16 @@ export class Editor {
     const status = div('ed-about-status')
     status.textContent = moodleConfig
       ? t('This presentation is managed by your Moodle site — updates to the app itself are handled there, not here.')
-      : this.lastAutoCheck?.status === 'current'
-        ? t("Checked automatically at launch — you're on the latest version (v{v}).", { v: APP_VERSION })
-        : this.lastAutoCheck?.status === 'error'
-          ? t("Launch check couldn't reach the release server ({m}). Check manually below.", { m: this.lastAutoCheck.message })
-          : t('This file carries its own app — it works offline, forever, as is.')
+      : hostConfig
+        ? t('This presentation is managed by its hosting server — updates to the app itself are handled there, not here.')
+        : this.lastAutoCheck?.status === 'current'
+          ? t("Checked automatically at launch — you're on the latest version (v{v}).", { v: APP_VERSION })
+          : this.lastAutoCheck?.status === 'error'
+            ? t("Launch check couldn't reach the release server ({m}). Check manually below.", { m: this.lastAutoCheck.message })
+            : t('This file carries its own app — it works offline, forever, as is.')
 
     let checkBRef: HTMLButtonElement | undefined
-    if (!moodleConfig) {
+    if (!moodleConfig && !hostConfig) {
     const row = div('ed-about-row')
     const checkB = document.createElement('button')
     checkBRef = checkB
@@ -3409,7 +3461,7 @@ export class Editor {
     autoCb.checked = autoCheckEnabled()
     autoCb.addEventListener('change', () => setAutoCheck(autoCb.checked))
     autoRow.append(autoCb, document.createTextNode(' ' + t('Check for updates automatically at launch')))
-    if (!moodleConfig) box.appendChild(autoRow)
+    if (!moodleConfig && !hostConfig) box.appendChild(autoRow)
 
     // the hard no-network switch: blocks update checks AND online
     // collaboration for this browser. Same-machine tab sync is not
@@ -3488,7 +3540,7 @@ export class Editor {
     })
     document.addEventListener('keydown', onKey, true)
     document.body.appendChild(overlay)
-    if (!moodleConfig && (runCheck || this.updateFound)) checkBRef?.click()
+    if (!moodleConfig && !hostConfig && (runCheck || this.updateFound)) checkBRef?.click()
   }
 
   toast(message: string, kind: 'neutral' | 'success' | 'error' = 'neutral') {
