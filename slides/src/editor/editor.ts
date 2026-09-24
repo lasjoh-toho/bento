@@ -2248,7 +2248,7 @@ export class Editor {
     if (!w) this.toast(t('Couldn’t open the speaker view — allow pop-ups for this site.'))
   }
 
-  present(fromStart = false, fullscreen = false) {
+  present(fromStart = false, fullscreen = false, opts: { autoAdvanceMs?: number; loop?: boolean } = {}) {
     if (this.presenting) return
     // They've started a slideshow — retire the first-run nudge for good.
     lsSet('bento-slideshow-started', '1')
@@ -2268,6 +2268,8 @@ export class Editor {
         this.canvas.render()
       }, {
         fullscreen,
+        autoAdvanceMs: opts.autoAdvanceMs,
+        loop: opts.loop,
         onSaveTerms: () => {
           this.store.touch()
           if (moodleConfig) void saveToMoodle(this.store.doc)
