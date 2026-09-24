@@ -257,7 +257,18 @@ editor.connectSync(session)
 // corner fullscreen button in present.ts's own overlay is the reliable,
 // always-a-genuinely-fresh-gesture way into fullscreen, whenever the
 // person actually clicks it).
-if (location.hash === '#present') editor.present(true)
+if (location.hash === '#present') {
+  // Same ?interval=<seconds>&loop query params as playerMode() (readonly
+  // player files) above — lets a link into a regular, still-editable deck
+  // ALSO auto-cycle (e.g. a folder-embedded monitor link), without requiring
+  // the "Save as presentation package" (readonly) step first.
+  const presentParams = new URLSearchParams(location.search)
+  const presentIntervalSeconds = parseFloat(presentParams.get('interval') ?? '')
+  editor.present(true, false, {
+    autoAdvanceMs: presentIntervalSeconds > 0 ? presentIntervalSeconds * 1000 : undefined,
+    loop: presentParams.has('loop'),
+  })
+}
 
 // Dismiss the boot splash (inline in index.html so it paints before this
 // bundle parses). Hold it briefly so the assemble animation reads as a
