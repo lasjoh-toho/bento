@@ -116,6 +116,7 @@ export interface HtmlPasteBlock {
   kind: 'text' | 'image'
   html?: string // sanitized inner HTML, text blocks only
   src?: string // a usable image src (data: URI, or a fetched-and-inlined one), image blocks only
+  alt?: string // the source <img alt>, image blocks only
 }
 
 const HTML_PASTE_BLOCK_TAGS = new Set(['p', 'div', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'img'])
@@ -193,7 +194,8 @@ export async function parseHtmlPaste(html: string): Promise<HtmlPasteBlock[]> {
       const src = node.getAttribute('src')
       if (!src) continue
       const resolved = await resolveImageSrc(src)
-      if (resolved) blocks.push({ kind: 'image', src: resolved })
+      const alt = (node.getAttribute('alt') ?? '').trim()
+      if (resolved) blocks.push({ kind: 'image', src: resolved, ...(alt ? { alt } : {}) })
       continue
     }
     const inner = sanitizeInlineHtml(node)
@@ -202,6 +204,58 @@ export async function parseHtmlPaste(html: string): Promise<HtmlPasteBlock[]> {
   return blocks
 }
 
+
+const MAX_PASTE_ROWS = 200
+const MAX_PASTE_COLS = 30
+
+/**
+ * A copied spreadsheet range (Excel, LibreOffice Calc, Google Sheets,
+ * Numbers) as rows of plain cell text — or null when the clipboard is not
+ * one. Excel also puts a PICTURE of the range on the clipboard, so this has
+ * to be asked BEFORE the image paste path, or every range lands as a
+ * screenshot.
+ *
+ * The HTML <table> wins over the tab-separated plain text: it keeps empty
+ * cells and merged cells (expanded by colspan) where TSV collapses quoting.
+ * A web page that merely CONTAINS a table (an article with a data box) is
+ * not a range: the table must carry nearly all of the pasted text.
+ */
+export function parseSpreadsheetPaste(html: string, text: string): string[][] | null {
+  const clean = (s: string) => s.replace(/\s+/g, ' ').trim()
+  const shaped = (grid: string[][]) => {
+    const rows = grid.filter((r) => r.some((c) => c !== '')).slice(0, MAX_PASTE_ROWS).map((r) => r.slice(0, MAX_PASTE_COLS))
+    return rows.length >= 2 && rows.some((r) => r.length >= 2) ? rows : null
+  }
+  if (html && /<table[\s>]/i.test(html)) {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const table = doc.querySelector('table')
+    if (table) {
+      const all = clean(doc.body?.textContent ?? '')
+      const inTable = clean(table.textContent ?? '')
+      if (all.length === 0 || inTable.length / all.length >= 0.9) {
+        const grid: string[][] = []
+        for (const tr of Array.from(table.querySelectorAll('tr'))) {
+          const row: string[] = []
+          for (const cell of Array.from(tr.querySelectorAll('td,th'))) {
+            row.push(clean(cell.textContent ?? ''))
+            const span = Math.min(MAX_PASTE_COLS, parseInt(cell.getAttribute('colspan') ?? '1', 10) || 1)
+            for (let i = 1; i < span; i++) row.push('')
+          }
+          grid.push(row)
+        }
+        const got = shaped(grid)
+        if (got) return got
+      }
+    }
+  }
+  if (text && text.includes('\t')) {
+    const lines = text.replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n')
+    if (lines.length >= 2 && lines.filter((l) => l.includes('\t')).length >= Math.ceil(lines.length / 2)) {
+      return shaped(lines.map((l) => l.split('\t').map((c) => clean(c.replace(/^"(.*)"$/s, '$1').replace(/""/g, '"')))))
+    }
+  }
+  return null
+}
 
 export function insertElements(payload: ClipPayload, doc: BentoDoc, slide: Slide): SlideElement[] {
   const remap = mergeAssets(payload, doc)

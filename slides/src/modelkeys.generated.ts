@@ -10,19 +10,19 @@
 // a typo just means the styling does not apply.
 
 export const MODEL_KEYS = {
-    "doc": ["assets", "blobs", "collab", "docId", "fonts", "format", "layouts", "meta", "modified", "present", "readonly", "size", "slides", "template", "theme", "title", "version"],
+    "doc": ["assets", "blobs", "collab", "docId", "fonts", "format", "layouts", "meta", "modified", "present", "readonly", "showEndScreenReferences", "size", "slides", "template", "theme", "title", "version"],
     "slide": ["annotate", "background", "backgroundGradient", "comments", "dragTerms", "elements", "hidden", "hover", "id", "inkStrokes", "longRead", "name", "notes", "stateOf", "transition"],
     "comment": ["at", "author", "elementId", "id", "replies", "resolved", "text", "x", "y"],
     "element": {
-      "text": ["align", "backdropFilter", "blend", "blur", "color", "colorGradient", "fontFamily", "fontSize", "fontWeight", "fx", "group", "groupId", "h", "html", "id", "letterSpacing", "lineHeight", "link", "morphId", "opacity", "placeholder", "role", "rotation", "shadow", "showOnHover", "textStroke", "toc", "type", "valign", "w", "x", "y"],
-      "shape": ["backdropFilter", "blend", "blur", "d", "fill", "fillGradient", "from", "fx", "group", "groupId", "h", "id", "lineEnd", "lineStart", "link", "morphId", "opacity", "pathBox", "radius", "role", "rotation", "shadow", "shape", "showOnHover", "stroke", "strokeDash", "strokeStyle", "strokeWidth", "to", "type", "w", "x", "y"],
-      "image": ["backdropFilter", "blend", "blur", "citation", "crop", "fit", "fx", "group", "groupId", "h", "id", "link", "mask", "morphId", "opacity", "radius", "role", "rotation", "shadow", "showOnHover", "src", "type", "w", "x", "y"],
-      "svg": ["asset", "backdropFilter", "blend", "blur", "css", "fx", "group", "groupId", "h", "id", "link", "markup", "morphId", "opacity", "role", "rotation", "shadow", "showOnHover", "type", "w", "x", "y"],
-      "chart": ["backdropFilter", "blend", "blur", "fx", "group", "groupId", "h", "id", "link", "morphId", "opacity", "option", "preset", "role", "rotation", "shadow", "showOnHover", "source", "type", "w", "x", "y"],
-      "table": ["backdropFilter", "blend", "blur", "columns", "fx", "group", "groupId", "h", "header", "id", "link", "morphId", "opacity", "role", "rotation", "rows", "shadow", "showOnHover", "style", "type", "w", "x", "y"],
-      "media": ["autoplay", "backdropFilter", "blend", "blur", "controls", "fit", "fx", "group", "groupId", "h", "id", "kind", "link", "loop", "morphId", "muted", "opacity", "poster", "radius", "role", "rotation", "shadow", "showOnHover", "src", "type", "w", "x", "y"],
+      "text": ["align", "anchorLink", "autoFitFontSize", "backdropFilter", "blend", "blur", "citation", "color", "colorGradient", "fontFamily", "fontSize", "fontWeight", "fx", "group", "groupId", "h", "html", "id", "letterSpacing", "lineHeight", "link", "morphId", "name", "opacity", "placeholder", "role", "rotation", "shadow", "showOnHover", "textStroke", "toc", "type", "valign", "w", "x", "y"],
+      "shape": ["backdropFilter", "blend", "blur", "d", "fill", "fillGradient", "from", "fx", "group", "groupId", "h", "id", "lineEnd", "lineStart", "link", "morphId", "name", "opacity", "pathBox", "radius", "role", "rotation", "shadow", "shape", "showOnHover", "sides", "stroke", "strokeDash", "strokeStyle", "strokeWidth", "to", "type", "w", "x", "y"],
+      "image": ["alt", "backdropFilter", "blend", "blur", "citation", "crop", "fit", "fx", "group", "groupId", "h", "id", "link", "mask", "morphId", "name", "opacity", "radius", "role", "rotation", "shadow", "showOnHover", "src", "type", "w", "x", "y"],
+      "svg": ["asset", "backdropFilter", "blend", "blur", "css", "fx", "group", "groupId", "h", "id", "link", "markup", "morphId", "name", "opacity", "role", "rotation", "shadow", "showOnHover", "type", "w", "x", "y"],
+      "chart": ["backdropFilter", "blend", "blur", "fx", "group", "groupId", "h", "id", "link", "morphId", "name", "opacity", "option", "preset", "role", "rotation", "shadow", "showOnHover", "source", "type", "w", "x", "y"],
+      "table": ["backdropFilter", "blend", "blur", "columns", "fx", "group", "groupId", "h", "header", "id", "link", "morphId", "name", "opacity", "role", "rotation", "rows", "shadow", "showOnHover", "style", "type", "w", "x", "y"],
+      "media": ["autoplay", "backdropFilter", "blend", "blur", "controls", "facing", "fit", "fx", "group", "groupId", "h", "id", "kind", "link", "loop", "maskShape", "morphId", "muted", "name", "opacity", "panX", "panY", "poster", "radius", "role", "rotation", "shadow", "showOnHover", "src", "type", "w", "x", "y", "zoom"],
     },
-    "fx": ["ambient", "countFrom", "countUp", "enter", "enterDur", "ken", "loop", "order"],
+    "fx": ["ambient", "countDuration", "countFrom", "countUp", "enter", "enterDur", "ken", "loop", "order", "step"],
     "fxKen": ["dir", "duration", "scale"],
     "fxLoop": ["delay", "distance", "duration", "ease", "path", "speeds", "type"],
     "shadow": ["blur", "color", "x", "y"],

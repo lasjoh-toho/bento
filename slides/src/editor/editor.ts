@@ -9,6 +9,7 @@ import {
   MEDIA_EMBED_BUDGET,
   applyChartPalette, applyLayout, builtinLayouts, defaultChart, defaultImage, defaultMedia, defaultShape, defaultTable, defaultText,
   instantiateLayout, internAsset, isLightBg, layoutElementIds, newDocId, parseDoc, readableInk, removeUnusedAssets, syncLinkedChart, uid, formatBytesMB, downscaleImageDataUrl,
+  chartOptionFromTable, gridToTableContent, tableChartColumns,
   type ChartElement, type ShapeKind, type Slide, type SlideElement, type TableElement,
 } from '../model'
 import { THEME_CHOICES, setTheme, themeChoice } from '../../../kernel/src/theme.ts'
@@ -24,7 +25,7 @@ import { adoptFileHandle, canWriteInPlace, currentFileName, downloadFile, fileBa
 import { moodleConfig, saveToMoodle, imageDownscaleParams } from './moodle'
 import { playlistConfig } from './playlist'
 import { addVersion, clearRecovery, clearVersions, docContentKey, getRecovery, listVersions, pruneOld, putRecovery, type Snapshot } from '../autosave'
-import { insertElements, insertSlides, parseClip, parseHtmlPaste, serializeElements, serializeSlides } from './clipboard'
+import { insertElements, insertSlides, parseClip, parseHtmlPaste, parseSpreadsheetPaste, serializeElements, serializeSlides } from './clipboard'
 import { openSpeakerWindow, speakerIdleBody } from '../screens'
 import { borderPoint, boxCenter, lineEndpoints, setLineEndpoints, sideMidpoint } from './lineedit'
 import { ICONS } from '../icons'
@@ -2296,6 +2297,12 @@ export class Editor {
       if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return // text edit owns it
       const dt = ev.clipboardData
       if (!dt) return
+      // 0) a copied spreadsheet range. Asked FIRST: Excel also puts a picture
+      // of the range on the clipboard, which step 1 would otherwise take.
+      if (!parseClip(dt.getData('text/plain'))) {
+        const grid = parseSpreadsheetPaste(dt.getData('text/html'), dt.getData('text/plain'))
+        if (grid) { ev.preventDefault(); this.pasteGrid(grid); return }
+      }
       // 1) an image from the OS clipboard (screenshot, copied picture…)
       const imgItem = [...dt.items].find((it) => it.kind === 'file' && it.type.startsWith('image/'))
       if (imgItem) {
@@ -2341,7 +2348,7 @@ export class Editor {
             for (const block of blocks) {
               if (block.kind === 'image' && block.src) {
                 const w = Math.round(width * 0.5), h = Math.round(w * 0.6)
-                const el = defaultImage(internAsset(this.store.doc, block.src), { x: Math.round((width - w) / 2), y, w, h, fit: 'contain' })
+                const el = defaultImage(internAsset(this.store.doc, block.src), { x: Math.round((width - w) / 2), y, w, h, fit: 'contain', ...(block.alt ? { alt: block.alt } : {}) })
                 this.store.slide.elements.push(el); added.push(el); y += h + 24
               } else if (block.kind === 'text' && block.html) {
                 const w = Math.round(width * 0.6), h = 100
@@ -2368,6 +2375,96 @@ export class Editor {
         this.toast(t('Text pasted'))
       }
     })
+  }
+
+  /**
+   * A pasted spreadsheet range. With a single chart selected it becomes that
+   * chart's data (through its linked table when it has one, so the link stays
+   * true); with a single table selected it replaces the table's cells. Else a
+   * new table lands on the slide — and when it has numeric columns, a chart
+   * beside it, live-linked, so editing the table redraws the chart.
+   */
+  private pasteGrid(grid: string[][]) {
+    const content = gridToTableContent(grid)
+    const theme = this.store.doc.theme
+    const sel = this.store.selection.map((id) => this.store.element(id)).filter((e): e is SlideElement => !!e)
+    // a freshly pasted pair (table + the chart linked to it) is still selected
+    // together — pasting again should update that pair, not stack a new one
+    const pairTable = sel.length === 2
+      ? sel.find((e): e is TableElement => e.type === 'table' && sel.some((c) => c.type === 'chart' && c.source?.tableId === e.id))
+      : undefined
+    const target = pairTable ?? (sel.length === 1 ? sel[0] : null)
+    const dims = { r: content.rows.length, c: content.columns.length }
+
+    const linkedTable = target?.type === 'chart' && target.source
+      ? this.store.slide.elements.find((e): e is TableElement => e.type === 'table' && e.id === target.source!.tableId)
+      : undefined
+    const intoTable = target?.type === 'table' ? target : linkedTable
+    // A new range is a new dataset: the chart takes its series count and
+    // names from it too (live sync alone only moves data, keeping styling).
+    const reshape = (chart: ChartElement, labels: string[], cols: { name: string; data: number[] }[]) => {
+      const opt = chart.option as { xAxis?: any; series?: any; legend?: unknown }
+      const old: any[] = Array.isArray(opt.series) ? opt.series : opt.series ? [opt.series] : []
+      if (old[0]?.type === 'pie') {
+        opt.series = [{ ...old[0], name: cols[0].name || old[0].name, data: labels.map((name, j) => ({ name, value: cols[0].data[j] ?? 0 })) }]
+        return
+      }
+      if (opt.xAxis && !Array.isArray(opt.xAxis) && typeof opt.xAxis === 'object') opt.xAxis.data = labels
+      else if (!opt.xAxis) opt.xAxis = { type: 'category', data: labels }
+      opt.series = cols.map((c, i) => ({ ...(old[i] ?? { type: old[0]?.type ?? 'bar' }), name: c.name, data: c.data }))
+      if (cols.length > 1 && !opt.legend) opt.legend = { bottom: 0 }
+    }
+
+    if (intoTable) {
+      this.store.commit(() => {
+        Object.assign(intoTable, content)
+        const { labels, cols } = tableChartColumns(intoTable)
+        if (!cols.length) return
+        for (const c of this.store.slide.elements) {
+          if (c.type === 'chart' && c.source?.tableId === intoTable.id) reshape(c, labels, cols)
+        }
+      })
+      this.toast(t('Replaced the table data ({r}×{c})', dims))
+      return
+    }
+
+    if (target?.type === 'chart') {
+      const { labels, cols } = tableChartColumns({ ...defaultTable({}, theme), ...content })
+      if (!cols.length) { this.toast(t('No numeric column found to chart')); return }
+      this.store.commit(() => reshape(target, labels, cols))
+      this.toast(t('Replaced the chart data ({r}×{c})', dims))
+      return
+    }
+
+    const { width: W, height: H } = this.store.doc.size
+    const tbl = this.newTable()
+    Object.assign(tbl, content)
+    const option = chartOptionFromTable(tbl, theme)
+    const margin = 64, gap = 32
+    const avail = H - 2 * 96
+    const rowH = tbl.style.fontSize * 1.3 + 2 * tbl.style.cellPadY + tbl.style.borderWidth
+    if (content.rows.length * rowH > avail) {
+      const k = avail / (content.rows.length * rowH)
+      tbl.style = { ...tbl.style, fontSize: Math.max(10, Math.round(tbl.style.fontSize * k)), cellPadY: Math.max(3, Math.round(tbl.style.cellPadY * k)) }
+    }
+    const h = Math.min(avail, Math.round(content.rows.length * (tbl.style.fontSize * 1.3 + 2 * tbl.style.cellPadY + tbl.style.borderWidth)))
+    const added: SlideElement[] = [tbl]
+    if (option) {
+      const w = Math.round((W - 2 * margin - gap) / 2)
+      Object.assign(tbl, { x: margin, y: Math.round((H - h) / 2), w, h })
+      added.push(defaultChart(option, {
+        x: margin + w + gap, y: Math.round((H - Math.max(h, 320)) / 2), w, h: Math.max(h, 320),
+        preset: 'bar', source: { tableId: tbl.id },
+      }))
+    } else {
+      const w = Math.min(W - 2 * margin, content.columns.length * 200)
+      Object.assign(tbl, { x: Math.round((W - w) / 2), y: Math.round((H - h) / 2), w, h })
+    }
+    this.store.commit(() => this.store.slide.elements.push(...added))
+    this.store.select(added.map((e) => e.id))
+    this.toast(option
+      ? t('Pasted a table ({r}×{c}) with a live chart — edit the table, the chart follows', dims)
+      : t('Pasted a table ({r}×{c})', dims))
   }
 
   private pasteImageFile(file: File) {

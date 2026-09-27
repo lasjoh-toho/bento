@@ -278,6 +278,10 @@ export interface ImageElement extends ElementBase {
   src: string
   fit: 'contain' | 'cover' | 'fill'
   radius: number
+  /** Alternative text for screen readers, rendered as the <img alt>. Carried
+   *  over from PowerPoint's own alt text on import and from a pasted web
+   *  image's alt attribute. Empty/absent = decorative (alt=""). */
+  alt?: string
   /**
    * Optional crop rectangle, in fractions (0..1) of the SOURCE image's own
    * width/height — not the element box. {x:0,y:0,w:1,h:1} (or omitted) means
@@ -935,27 +939,112 @@ export function deriveChartPalette(accent: string): string[] {
 
 // --- table → chart data extraction (shared by creation + live binding) -------
 
-const stripCell = (html: string) =>
-  html.replace(/<[^>]*>/g, '').replace(/&[a-z]+;/gi, '').replace(/,/g, '').trim()
+/** A cell's visible text: markup and entities out, whitespace collapsed. */
+export const cellText = (html: string) =>
+  html.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').replace(/&[a-z]+;/gi, '').replace(/\s+/g, ' ').trim()
+
+/**
+ * A cell as a number, or NaN. Tolerates what spreadsheets actually paste:
+ * currency/percent signs, spaces as thousands separators, and BOTH decimal
+ * conventions — "1,204" and "1.204.000" are thousands, "12,5" is a German
+ * decimal comma, "1.234,5" / "1,234.5" take the LAST separator as decimal.
+ */
+export function parseCellNumber(html: string): number {
+  let s = cellText(html).replace(/[\s  '’%€$£¥]/g, '')
+  if (!/\d/.test(s)) return NaN
+  const lastDot = s.lastIndexOf('.'), lastComma = s.lastIndexOf(',')
+  if (lastDot >= 0 && lastComma >= 0) {
+    s = lastComma > lastDot ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '')
+  } else if (lastComma >= 0) {
+    s = /^[-+]?\d{1,3}(,\d{3})+$/.test(s) ? s.replace(/,/g, '') : s.replace(',', '.')
+  } else if ((s.match(/\./g) ?? []).length > 1) {
+    s = s.replace(/\./g, '')
+  }
+  return /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(s) ? parseFloat(s) : NaN
+}
 
 /** First column = x labels; each mostly-numeric column after = a data series. */
 export function tableChartColumns(table: TableElement): { labels: string[]; cols: Array<{ name: string; data: number[]; isPct: boolean }> } {
   const bodyRows = table.header ? table.rows.slice(1) : table.rows
   const headerRow = table.header ? table.rows[0] : null
-  const labels = bodyRows.map((r) => stripCell(r.cells[0]?.html ?? ''))
+  const labels = bodyRows.map((r) => cellText(r.cells[0]?.html ?? ''))
   const cols: Array<{ name: string; data: number[]; isPct: boolean }> = []
   for (let c = 1; c < table.columns.length; c++) {
     const raw = bodyRows.map((r) => r.cells[c]?.html ?? '')
-    const parsed = raw.map((h) => parseFloat(stripCell(h)))
+    const parsed = raw.map(parseCellNumber)
     if (parsed.filter((n) => !Number.isNaN(n)).length < Math.ceil(bodyRows.length / 2)) continue
+    const name = headerRow ? cellText(headerRow.cells[c]?.html ?? '') : ''
     cols.push({
-      name: headerRow ? stripCell(headerRow.cells[c]?.html ?? '') : '',
+      name,
       data: parsed.map((n) => (Number.isNaN(n) ? 0 : n)),
-      isPct: /%/.test(headerRow ? stripCell(headerRow.cells[c]?.html ?? '') : '') ||
-        raw.filter((h) => /%/.test(h)).length >= Math.ceil(bodyRows.length / 2),
+      isPct: /%/.test(name) || raw.filter((h) => /%/.test(h)).length >= Math.ceil(bodyRows.length / 2),
     })
   }
   return { labels, cols }
+}
+
+/**
+ * A chart option charting `table` — one series per mostly-numeric column, the
+ * first column as categories. Two columns on very different scales (or one a
+ * percentage) split onto a dual axis: bars left, the odd one as a line right.
+ * Null when there is no numeric column to chart.
+ */
+export function chartOptionFromTable(table: TableElement, theme: BentoDoc['theme']): Record<string, unknown> | null {
+  const { labels, cols } = tableChartColumns(table)
+  if (!cols.length) return null
+  const maxAbs = (c: { data: number[] }) => Math.max(1, ...c.data.map((n) => Math.abs(n)))
+  let secondary = -1
+  if (cols.length === 2) {
+    const pct = cols.filter((c) => c.isPct)
+    if (pct.length === 1) secondary = cols.indexOf(pct[0])
+    else {
+      const big = maxAbs(cols[0]) >= maxAbs(cols[1]) ? 0 : 1
+      if (maxAbs(cols[big]) / maxAbs(cols[1 - big]) >= 12) secondary = 1 - big
+    }
+  }
+  const option: Record<string, unknown> = {
+    xAxis: { type: 'category', data: labels },
+    tooltip: { trigger: 'axis' },
+  }
+  if (secondary >= 0) {
+    const prim = cols[1 - secondary], sec = cols[secondary]
+    option.yAxis = [
+      { type: 'value', name: prim.name || undefined },
+      { type: 'value', name: sec.name || undefined, axisLabel: sec.isPct ? { formatter: '{value}%' } : undefined },
+    ]
+    option.series = [
+      { type: 'bar', name: prim.name, data: prim.data, yAxisIndex: 0 },
+      { type: 'line', name: sec.name, data: sec.data, yAxisIndex: 1, smooth: true },
+    ]
+    option.legend = { bottom: 0 }
+  } else {
+    option.yAxis = { type: 'value' }
+    option.series = cols.map((c) => ({ type: 'bar', name: c.name, data: c.data }))
+    if (cols.length > 1) option.legend = { bottom: 0 }
+  }
+  return applyChartPalette(option, theme)
+}
+
+/**
+ * Rows of plain cell strings (a pasted spreadsheet range) → table rows/columns.
+ * Ragged rows are padded; row 0 counts as a header when any of its cells after
+ * the first is non-numeric while the row below it is numeric there — the shape
+ * of every "labels on top" range.
+ */
+export function gridToTableContent(grid: string[][]): Pick<TableElement, 'rows' | 'columns' | 'header'> {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const width = Math.max(1, ...grid.map((r) => r.length))
+  const rows = grid.map((r) => ({ cells: Array.from({ length: width }, (_, i) => ({ html: esc(r[i] ?? '') })) }))
+  const isNum = (s: string | undefined) => s !== undefined && s.trim() !== '' && !Number.isNaN(parseCellNumber(s))
+  const top = grid[0] ?? []
+  const rest = top.slice(1).filter((c) => c.trim() !== '')
+  const header = grid.length > 1 && (
+    top.some((cell, i) => i > 0 && cell.trim() !== '' && !isNum(cell) && isNum(grid[1][i])) ||
+    // a pivot corner ("" | 2022 | 2023) or years along the top are headers too
+    ((top[0] ?? '').trim() === '' && rest.length > 0) ||
+    (rest.length > 0 && rest.every((c) => /^(19|20)\d\d$/.test(c.trim())))
+  )
+  return { rows, columns: Array.from({ length: width }, () => ({ w: 1 })), header }
 }
 
 /**

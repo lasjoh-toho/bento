@@ -1166,6 +1166,7 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
         wrap.style.cssText = `width:100%;height:100%;overflow:hidden;border-radius:${el.radius}px;position:relative`
         const img = document.createElement('img')
         img.src = resolveAsset(doc, el.src)
+        img.alt = el.alt ?? ''
         img.draggable = false
         const w = (100 / c.w).toFixed(4)
         const h = (100 / c.h).toFixed(4)
@@ -1178,6 +1179,7 @@ export function renderElement(el: SlideElement, doc: BentoDoc, opts: RenderOpts 
       } else {
         const img = document.createElement('img')
         img.src = resolveAsset(doc, el.src)
+        img.alt = el.alt ?? ''
         img.draggable = false
         img.style.cssText = `width:100%;height:100%;object-fit:${el.fit};border-radius:${el.radius}px;display:block`
         node.appendChild(img)

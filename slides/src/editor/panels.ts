@@ -7,7 +7,7 @@
 import type { Store } from '../store'
 import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, dataUriByteSize, dataUriMimeType, defaultChart, defaultText, downscaleImageDataUrl, findUsedAssetAndFontKeys, formatBytesMB, internAsset, isWebUrl, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, chartOptionFromTable, dataUriByteSize, dataUriMimeType, defaultChart, defaultText, downscaleImageDataUrl, findUsedAssetAndFontKeys, formatBytesMB, internAsset, isWebUrl, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement, fitFontSizeToBox } from '../measure'
 import { isMacOS } from '../screens'
@@ -2194,6 +2194,8 @@ export class PropsPanel {
   private buildChartGrid(el: ChartElement, opt: Record<string, any>, series: any[]) {
     const cats: any[] = opt.xAxis?.data ?? []
     this.section(t('Data'))
+    const dataHeading = this.host.lastElementChild
+    if (dataHeading instanceof HTMLElement) this.hintOn(dataHeading, 'Tip: copy a range of cells in Excel or Calc (labels in the first column, one column per series), select this chart and press Ctrl+V / ⌘V to replace its data.')
     const scroll = document.createElement('div')
     scroll.className = 'ed-chart-grid-wrap'
     const table = document.createElement('table')
@@ -2394,63 +2396,8 @@ export class PropsPanel {
 
   /** Bridge: build a bar chart from a table's numeric columns and insert it. */
   private tableToChart(el: TableElement) {
-    const bodyRows = el.header ? el.rows.slice(1) : el.rows
-    // strip markup + entities + thousands separators so "1,204" / "+222%" parse
-    const strip = (html: string) => html.replace(/<[^>]*>/g, '').replace(/&[a-z]+;/gi, '').replace(/,/g, '').trim()
-    const num = (html: string) => parseFloat(strip(html))
-    const labels = bodyRows.map((r) => strip(r.cells[0]?.html ?? ''))
-    const headerRow = el.header ? el.rows[0] : null
-    // every column after the labels that is mostly numeric becomes its own series
-    const cols: Array<{ name: string; data: number[]; isPct: boolean; maxAbs: number }> = []
-    for (let c = 1; c < el.columns.length; c++) {
-      const raw = bodyRows.map((r) => r.cells[c]?.html ?? '')
-      const parsed = raw.map(num)
-      const good = parsed.filter((n) => !Number.isNaN(n))
-      if (good.length < Math.ceil(bodyRows.length / 2)) continue
-      const isPct = /%/.test(headerRow ? strip(headerRow.cells[c]?.html ?? '') : '') ||
-        raw.filter((h) => /%/.test(h)).length >= Math.ceil(bodyRows.length / 2)
-      cols.push({
-        name: headerRow ? strip(headerRow.cells[c]?.html ?? '') : '',
-        data: parsed.map((n) => (Number.isNaN(n) ? 0 : n)),
-        isPct,
-        maxAbs: Math.max(1, ...good.map((n) => Math.abs(n))),
-      })
-    }
-    if (!cols.length) { this.toast(t('No numeric column found to chart')); return }
-
-    // two columns on very different scales (or one is a %) → dual axis: bars
-    // on the left, the odd one as a line on a right-hand axis
-    let secondary = -1
-    if (cols.length === 2) {
-      const pct = cols.filter((c) => c.isPct)
-      if (pct.length === 1) secondary = cols.indexOf(pct[0])
-      else {
-        const big = cols[0].maxAbs >= cols[1].maxAbs ? 0 : 1
-        if (cols[big].maxAbs / cols[1 - big].maxAbs >= 12) secondary = 1 - big
-      }
-    }
-
-    const option: Record<string, unknown> = {
-      xAxis: { type: 'category', data: labels },
-      tooltip: { trigger: 'axis' },
-    }
-    if (secondary >= 0) {
-      const prim = cols[1 - secondary], sec = cols[secondary]
-      option.yAxis = [
-        { type: 'value', name: prim.name || undefined },
-        { type: 'value', name: sec.name || undefined, axisLabel: sec.isPct ? { formatter: '{value}%' } : undefined },
-      ]
-      option.series = [
-        { type: 'bar', name: prim.name, data: prim.data, yAxisIndex: 0 },
-        { type: 'line', name: sec.name, data: sec.data, yAxisIndex: 1, smooth: true },
-      ]
-      option.legend = { bottom: 0 }
-    } else {
-      option.yAxis = { type: 'value' }
-      option.series = cols.map((c) => ({ type: 'bar', name: c.name, data: c.data }))
-      if (cols.length > 1) option.legend = { bottom: 0 }
-    }
-    applyChartPalette(option, this.store.doc.theme)
+    const option = chartOptionFromTable(el, this.store.doc.theme)
+    if (!option) { this.toast(t('No numeric column found to chart')); return }
     const chart = defaultChart(option, {
       x: el.x, y: Math.min(el.y + el.h + 24, 480), w: Math.max(el.w, 640), h: 300, preset: 'bar',
       // live binding: edits to the table flow into this chart
@@ -2497,6 +2444,21 @@ export class PropsPanel {
 
   private buildImageProps(el: SlideElement) {
     const img = el as ImageElement
+    this.section(t('Alt text'))
+    const alt = document.createElement('textarea')
+    alt.className = 'ed-notes ed-alt-text'
+    alt.rows = 2
+    alt.placeholder = t('Describe the picture for screen readers — leave empty if it is purely decorative')
+    alt.value = img.alt ?? ''
+    const setAlt = (final: boolean) => this.mutate(el.id, (e) => {
+      const v = alt.value.trim()
+      if (v) (e as ImageElement).alt = alt.value
+      else delete (e as ImageElement).alt
+    }, final)
+    alt.addEventListener('input', () => setAlt(false))
+    alt.addEventListener('change', () => setAlt(true))
+    this.host.appendChild(alt)
+
     this.section(t('Fit & corners'))
     this.row('Fit', this.select(['contain', 'cover', 'fill'], img.fit, (v) =>
       this.mutate(el.id, (e) => { (e as ImageElement).fit = v as ImageElement['fit'] }, true)))
