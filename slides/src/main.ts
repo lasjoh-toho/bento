@@ -3,6 +3,7 @@
 // Boot sequence. Order matters: capture the pristine document BEFORE any DOM
 // mutation — the captured copy is what gets re-serialized on save.
 
+import { kiosk } from './kiosk' // first: marks an unattended page before anything paints
 import './styles.css'
 import { anim } from './anim'
 import { configureApp, appConfig } from '../../kernel/src/app.ts'
@@ -134,12 +135,11 @@ function playerMode(doc: BentoDoc) {
   document.title = `${doc.title} — ${appConfig().appName}`
   if (doc.fonts?.length) injectFonts(doc)
   document.getElementById('bento-splash')?.remove()
-  const params = new URLSearchParams(location.search)
   // Autostart's own default depends on context — see this variable's own
   // definition below for the full reasoning (standalone file vs.
-  // Moodle-embedded view).
-  const explicitStartScreen = ['yes', '1', 'true'].includes((params.get('startscreen') ?? '').toLowerCase())
-  const explicitAutostart = ['yes', '1', 'true'].includes((params.get('autostart') ?? '').toLowerCase()) || params.has('kiosk')
+  // Moodle-embedded view). The URL options themselves: kiosk.ts.
+  const explicitStartScreen = kiosk.startScreen
+  const explicitAutostart = kiosk.autostart
   // A genuinely standalone file (no Moodle embedding at all — moodleConfig
   // absent) defaults to autostart: a bare .bento.html link is inherently
   // kiosk-ready. Embedded within Moodle (view.php/submission.php render
@@ -149,8 +149,7 @@ function playerMode(doc: BentoDoc) {
   // ?autostart/?kiosk param overrides that, for anyone who genuinely wants
   // a Moodle-hosted activity to behave like a kiosk too.
   const autostart = explicitStartScreen ? false : explicitAutostart ? true : !moodleConfig
-  const intervalSeconds = parseFloat(params.get('interval') ?? '')
-  const loop = params.has('loop')
+  const loop = kiosk.loop
   const card = document.createElement('div')
   card.className = 'ed-player'
   card.innerHTML =
@@ -170,7 +169,7 @@ function playerMode(doc: BentoDoc) {
       }, {
         fullscreen: false,
         ...opts,
-        autoAdvanceMs: intervalSeconds > 0 ? intervalSeconds * 1000 : undefined,
+        autoAdvanceMs: kiosk.intervalMs,
         loop,
         exitInsteadOfEndScreen: autostart,
         onReachedEnd: playlist.length ? () => {
@@ -257,7 +256,7 @@ editor.connectSync(session)
 // corner fullscreen button in present.ts's own overlay is the reliable,
 // always-a-genuinely-fresh-gesture way into fullscreen, whenever the
 // person actually clicks it).
-if (location.hash === '#present') editor.present(true)
+if (location.hash === '#present' || kiosk.unattended) editor.present(true, false, { autoAdvanceMs: kiosk.intervalMs, loop: kiosk.loop })
 
 // Dismiss the boot splash (inline in index.html so it paints before this
 // bundle parses). Hold it briefly so the assemble animation reads as a

@@ -3,6 +3,7 @@
 // Editor shell: topbar, slide sidebar, canvas, properties panel, keyboard
 // shortcuts, save & present wiring.
 
+import { kiosk } from '../kiosk'
 import type { Store } from '../store'
 import {
   FORMAT_VERSION,
@@ -341,7 +342,7 @@ export class Editor {
     this.updatesB = btn(ICONS.sync, '', () => this.openAbout(true), t('Check for updates'))
     this.updatesB.style.display = 'none'
     setTimeout(async () => {
-      if (!autoCheckEnabled() || offlineEnabled() || moodleConfig) return
+      if (!autoCheckEnabled() || offlineEnabled() || moodleConfig || kiosk.unattended) return
       const r = await checkForUpdates()
       this.lastAutoCheck = r
       if (r.status === 'update') {
@@ -2233,7 +2234,7 @@ export class Editor {
     if (!w) this.toast(t('Couldn’t open the speaker view — allow pop-ups for this site.'))
   }
 
-  present(fromStart = false, fullscreen = false) {
+  present(fromStart = false, fullscreen = false, kioskOpts: { autoAdvanceMs?: number; loop?: boolean } = {}) {
     if (this.presenting) return
     // They've started a slideshow — retire the first-run nudge for good.
     lsSet('bento-slideshow-started', '1')
@@ -2253,6 +2254,8 @@ export class Editor {
         this.canvas.render()
       }, {
         fullscreen,
+        autoAdvanceMs: kioskOpts.autoAdvanceMs,
+        loop: kioskOpts.loop,
         onSaveTerms: () => {
           this.store.touch()
           if (moodleConfig) void saveToMoodle(this.store.doc)
@@ -2557,10 +2560,13 @@ export class Editor {
   private wireAutosave() {
     if (this.store.doc.readonly) return // player file — nothing to autosave
     void pruneOld()
+    this.store.on('doc', () => this.scheduleAutosave())
+    // An unattended show (?autostart / ?kiosk / ?interval / ?loop — kiosk.ts)
+    // has nobody to answer a dialog: no recovery offer, no start-up notices.
+    if (kiosk.unattended) return
     void this.checkRecovery() // meaningful here too — Moodle context has no local-file backstop at all, so this is the ONLY safety net against losing in-progress edits to e.g. a crash before the next explicit Save
     this.noticeIfCannotWriteInPlace()
     this.noticeIfJustUpdated()
-    this.store.on('doc', () => this.scheduleAutosave())
   }
 
   private scheduleAutosave() {

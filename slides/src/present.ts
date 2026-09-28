@@ -30,6 +30,17 @@ export interface PresentSession {
   fullscreenReady: Promise<void>
 }
 
+// The overlay is position:fixed — it does NOT cover the page's own
+// scrollbars, so anything that makes the page behind it overflow (a banner,
+// a toast, an embedding host) would show scrollbars beside the show. While a
+// show runs the page is locked (styles.css html.bento-presenting). Counted:
+// a playlist starts the next deck before the previous one exits.
+let presentingCount = 0
+function markPresenting(delta: number) {
+  presentingCount = Math.max(0, presentingCount + delta)
+  document.documentElement.classList.toggle('bento-presenting', presentingCount > 0)
+}
+
 export function startPresentation(
   doc: BentoDoc,
   startIndex: number,
@@ -81,6 +92,7 @@ export function startPresentation(
   })
 
   document.body.appendChild(overlay)
+  markPresenting(+1)
 
   // ——— state-aware linear navigation ———
   // Slides with stateOf are interactive states: linked-to, never walked-to.
@@ -1469,6 +1481,7 @@ export function startPresentation(
       /* Reveal teardown is best-effort */
     }
     overlay.remove()
+    markPresenting(-1)
     window.removeEventListener('resize', onResize)
     document.removeEventListener('keydown', onKeydown, true)
     document.removeEventListener('fullscreenchange', onFsChange)

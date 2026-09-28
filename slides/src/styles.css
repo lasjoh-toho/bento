@@ -1296,6 +1296,13 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   z-index: 1000;
   background: #000;
 }
+/* No scrollbar beside a running show (present.ts markPresenting) … */
+html.bento-presenting, html.bento-presenting body { overflow: hidden; }
+/* … and none at all on an unattended page (?autostart/?kiosk/?interval/?loop,
+   kiosk.ts) — content that can scroll (the long-read view) still scrolls. */
+html.bento-unattended, html.bento-unattended body { overflow: hidden !important; }
+html.bento-unattended, html.bento-unattended * { scrollbar-width: none !important; }
+html.bento-unattended ::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .bento-step-hidden { visibility: hidden; }
 .bento-fs-btn {
   position: absolute;
