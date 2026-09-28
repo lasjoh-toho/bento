@@ -71,6 +71,17 @@ html, body {
 
 #app { height: 100%; }
 
+/* Scrollbars stay out of sight until the pointer is over the area that
+   scrolls — then a thin one appears. Wheel, trackpad and keys scroll as
+   ever; the bar's space stays reserved (transparent), so nothing shifts
+   when it shows. Kiosk pages hide them outright (html.bento-unattended). */
+* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+*:hover { scrollbar-color: rgb(128 128 128 / 0.5) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
+:hover::-webkit-scrollbar-thumb { background: rgb(128 128 128 / 0.5); }
+::-webkit-scrollbar-corner { background: transparent; }
+
 .ed-root {
   height: 100%;
   display: flex;
