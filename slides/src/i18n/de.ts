@@ -4,6 +4,12 @@
 import type { Catalog } from '../i18n'
 
 export const de: Catalog = {
+  "Back to {host}": "Zurück zu {host}",
+  "Back": "Zurück",
+  "Save — writes back onto the server (⌘S)": "Speichern — schreibt zurück auf den Server (⌘S)",
+  "Downloads a self-contained file with everything as it is right now — works even if saving to the server is slow or fails.": "Lädt eine eigenständige Datei mit dem aktuellen Stand herunter — funktioniert auch, wenn das Speichern auf dem Server langsam ist oder fehlschlägt.",
+  "Saved to server ({size})": "Auf dem Server gespeichert ({size})",
+  "This presentation is managed by its hosting server — updates to the app itself are handled there, not here.": "Diese Präsentation wird von ihrem Hosting-Server verwaltet — Updates der App selbst laufen dort, nicht hier.",
   "Insert — text, shapes, images, media, tables, charts": "Einfügen — Text, Formen, Bilder, Medien, Tabellen, Diagramme",
   "More actions": "Weitere Aktionen",
   "Slides — show or hide the slide list": "Folien — Folienliste ein- oder ausblenden",
