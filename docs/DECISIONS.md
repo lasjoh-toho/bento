@@ -14,6 +14,29 @@ Decision. Why. Pointers.
 
 ---
 
+## 2026-09-28 — Unattended shows (kiosk URL options) suppress start-up prompts and all scrollbars
+
+**Decided.** The kiosk URL options (`?autostart=yes`, alias `?autoplay=yes`,
+`?kiosk`, `?interval=N`, `?loop`) are read in ONE place, `slides/src/kiosk.ts`.
+Any of them marks the page *unattended*. On an unattended page:
+- the editor never shows its start-up prompts — crash-recovery offer,
+  "cannot write in place" notice, "just updated" notice — and skips the
+  launch update check (nobody is there to answer; a sign/kiosk must not
+  phone home). Autosave itself keeps running.
+- an EDITABLE file starts presenting on load with the interval/loop options
+  (before, the options only worked for read-only player files; an editable
+  file opened the editor and ignored them).
+- no scrollbar is ever visible: `html.bento-unattended` hides overflow on
+  html/body and every scrollbar (content that scrolls still scrolls).
+
+Independently, every running show locks the page behind it
+(`html.bento-presenting`, counted across playlist hand-offs): the present
+overlay is `position: fixed` and does not cover the page's own scrollbars.
+
+**Unchanged.** Plain `#present` (someone is at the keyboard) still gets the
+recovery offer; inside Moodle the player keeps its click-to-present card unless
+`?autostart`/`?kiosk` is passed; `?startscreen=yes` still wins.
+
 ## 2026-09-23 — present-mode auto-advance is a generic opt-in, not a Moodle-only one
 
 `MoodleConfig.playlist` (present mode's "fetch the next document once the last
@@ -1605,26 +1628,3 @@ feature that genuinely cannot be core (a licence that forbids bundling, or bytes
 that dwarf the shell even after a first-party rewrite), or a demonstrated need
 for third-party authorship. Absent those, the answer to "should this be an
 extension?" is "should this be core, a separate artifact, or a skill?"
-
-## 2026-09-28 — Unattended shows (kiosk URL options) suppress start-up prompts and all scrollbars
-
-**Decided.** The kiosk URL options (`?autostart=yes`, alias `?autoplay=yes`,
-`?kiosk`, `?interval=N`, `?loop`) are read in ONE place, `slides/src/kiosk.ts`.
-Any of them marks the page *unattended*. On an unattended page:
-- the editor never shows its start-up prompts — crash-recovery offer,
-  "cannot write in place" notice, "just updated" notice — and skips the
-  launch update check (nobody is there to answer; a sign/kiosk must not
-  phone home). Autosave itself keeps running.
-- an EDITABLE file starts presenting on load with the interval/loop options
-  (before, the options only worked for read-only player files; an editable
-  file opened the editor and ignored them).
-- no scrollbar is ever visible: `html.bento-unattended` hides overflow on
-  html/body and every scrollbar (content that scrolls still scrolls).
-
-Independently, every running show locks the page behind it
-(`html.bento-presenting`, counted across playlist hand-offs): the present
-overlay is `position: fixed` and does not cover the page's own scrollbars.
-
-**Unchanged.** Plain `#present` (someone is at the keyboard) still gets the
-recovery offer; inside Moodle the player keeps its click-to-present card unless
-`?autostart`/`?kiosk` is passed; `?startscreen=yes` still wins.
