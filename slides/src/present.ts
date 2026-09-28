@@ -4,6 +4,7 @@
 // Slides marked transition:'morph' use GSAP Flip to animate elements whose
 // ids match across the two slides (PowerPoint "Morph" behaviour).
 
+import { kiosk } from './kiosk'
 import Reveal from 'reveal.js'
 import 'reveal.js/dist/reveal.css'
 import { anim, resetXform } from './anim'
@@ -1522,6 +1523,22 @@ export function startPresentation(
       ev.preventDefault()
       ev.stopPropagation()
       exit()
+      return
+    }
+    // First "forward" press of a show that has not been fullscreen yet
+    // (a presenter clicker sends → / PageDown / Space): take the show
+    // fullscreen instead of advancing — the keypress is the user gesture the
+    // browser requires. From then on the same key advances. Once the show
+    // HAS been fullscreen, a deliberate return to the window (Esc / F) is
+    // respected: forward keys just advance. Refused (iframe without
+    // allow=fullscreen, iPhone …) → advance as usual. Unattended pages have
+    // no keyboard to wait for (kiosk.ts).
+    if ((ev.key === 'ArrowRight' || ev.key === 'PageDown' || ev.key === ' ') && !wentFullscreen && !document.fullscreenElement
+      && !ev.repeat && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !longReadOpen && !imgZoomOpen && !inkEnabled
+      && !deck.isOverview() && !kiosk.unattended && typeof overlay.requestFullscreen === 'function') {
+      ev.preventDefault()
+      ev.stopPropagation()
+      overlay.requestFullscreen({ navigationUI: 'hide' }).then(() => fullscreenSettled(), () => { fullscreenSettled(); goNext() })
       return
     }
     if (ev.key === 'ArrowUp' && !longReadOpen) {

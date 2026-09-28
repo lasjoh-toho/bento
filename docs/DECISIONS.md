@@ -14,6 +14,21 @@ Decision. Why. Pointers.
 
 ---
 
+## 2026-09-28 — No recovery prompt over a show; first forward key goes fullscreen
+
+**Recovery offer.** Never shown while a presentation runs. A file opened with
+`#present` (or a show started before the IndexedDB lookup returns) keeps the
+offer pending and shows it when the presenter returns to the editor
+(`editor.pendingRecovery`); unattended pages never show it (entry below).
+
+**Forward key → fullscreen.** In a show that has not been fullscreen yet, the
+first → / PageDown / Space takes it fullscreen instead of advancing (the
+keypress is the user gesture browsers require; presenter clickers send these
+keys). After the show has been fullscreen once, a deliberate return to the
+window (Esc/F) is respected and forward keys just advance. A refused request
+(iframe without `allow=fullscreen`, iPhone) advances as usual; unattended
+pages are never affected. `present.ts onKeydown`.
+
 ## 2026-09-28 — Unattended shows (kiosk URL options) suppress start-up prompts and all scrollbars
 
 **Decided.** The kiosk URL options (`?autostart=yes`, alias `?autoplay=yes`,

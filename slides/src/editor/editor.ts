@@ -2252,6 +2252,7 @@ export class Editor {
         this.presenting = false
         this.store.goTo(last)
         this.canvas.render()
+        if (this.pendingRecovery) { const show = this.pendingRecovery; this.pendingRecovery = null; show() }
       }, {
         fullscreen,
         autoAdvanceMs: kioskOpts.autoAdvanceMs,
@@ -2630,8 +2631,12 @@ export class Editor {
     let recovered: import('../model').BentoDoc
     try { recovered = JSON.parse(snap.json) } catch { return }
     if (docContentKey(recovered) === docContentKey(doc)) return // the file already has these edits
+    // Never over a running show (#present opens straight into one): offer it
+    // once the presenter is back in the editor.
+    if (this.presenting) { this.pendingRecovery = () => this.showRecoveryBanner(snap, recovered); return }
     this.showRecoveryBanner(snap, recovered)
   }
+  private pendingRecovery: (() => void) | null = null
 
   /**
    * Say ONCE, before any work is at risk, that this browser cannot rewrite the
