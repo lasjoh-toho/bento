@@ -755,6 +755,8 @@ export const PACKED: Record<string, ReadonlyArray<string | 0>> = {
   "Removed {count} unused item(s), freed ~{size}": ["未使用の項目を{count}件削除し、約{size}を解放しました","已移除 {count} 个未使用项，释放约 {size}","已移除 {count} 個未使用項目，釋放約 {size}","{count} elemento(s) no utilizados eliminados, ~{size} liberados","{count} élément(s) inutilisé(s) supprimé(s), ~{size} libéré(s)","{count} nicht mehr benötigte Element(e) entfernt, ~{size} freigegeben","{count} elemento/i non utilizzato/i rimosso/i, ~{size} liberati","{count} item(ns) não utilizado(s) removido(s), ~{size} libertado(s)"],
   "No unused media found": ["未使用のメディアは見つかりませんでした","未发现未使用的媒体","未發現未使用的媒體","No se encontraron medios sin usar","Aucun média inutilisé trouvé","Keine nicht mehr benötigten Medien gefunden","Nessun media inutilizzato trovato","Não foi encontrada multimédia não utilizada"],
   "Pick a color from the slide": [0,0,0,0,0,"Farbe von der Folie aufnehmen"],
+  "mixed": [0,0,0,0,0,"gemischt"],
+  "Applies to every selected text box. Arrows on a number step each box from its own value (18 and 24 pt → 19 and 25 pt); a typed value is set on all.": [0,0,0,0,0,"Gilt für alle ausgewählten Textrahmen. Die Pfeile an Zahlenfeldern ändern jeden Rahmen ausgehend von seinem eigenen Wert (18 und 24 pt → 19 und 25 pt); ein eingetippter Wert wird für alle gesetzt."],
   "Alt text": [0,0,0,0,0,"Alternativtext"],
   "Replaced the table data ({r}×{c})": [0,0,0,0,0,"Tabellendaten ersetzt ({r}×{c})"],
   "Replaced the chart data ({r}×{c})": [0,0,0,0,0,"Diagrammdaten ersetzt ({r}×{c})"],

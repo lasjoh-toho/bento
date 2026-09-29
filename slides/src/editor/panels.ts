@@ -851,8 +851,137 @@ export class PropsPanel {
     // 'Pasted 1 item' / 'Pasted {n} items' pair in editor.ts.
     this.section(els.length === 1 ? t('1 element') : t('{n} elements', { n: els.length }))
     this.opsRow(els)
+    const texts = els.filter((e): e is TextElement => e.type === 'text')
+    if (texts.length) this.buildMultiTextProps(texts)
     this.section(t('Arrange'))
     this.arrangeRows(els)
+  }
+
+  /**
+   * Typography for several text boxes at once. Choices (font, weight,
+   * colour, alignment) set every box; a box that differs shows "mixed".
+   * Number fields work RELATIVE with their arrows (and arrow keys / wheel):
+   * each step moves every box by that amount from ITS OWN value — 18 pt and
+   * 24 pt become 19 pt and 25 pt — while a value typed in is set on all.
+   * Inline runs sized/spaced differently inside a box shift along by the
+   * same step, so a box's internal proportions survive.
+   */
+  private buildMultiTextProps(texts: TextElement[]) {
+    this.section(t('Typography'), 'Applies to every selected text box. Arrows on a number step each box from its own value (18 and 24 pt → 19 and 25 pt); a typed value is set on all.')
+    const all = (fn: (te: TextElement) => void, final: boolean) =>
+      this.edit(() => { for (const te of texts) { const cur = this.store.element(te.id); if (cur?.type === 'text') fn(cur) } }, final)
+    // shift every inline `prop: <n>px` inside a box by delta px
+    const shiftCss = (html: string, prop: string, delta: number, min: number) =>
+      html.replace(new RegExp('(' + prop + '\\s*:\\s*)(-?[\\d.]+)px', 'g'), (_m, pre: string, n: string) =>
+        pre + String(Math.round(Math.max(min, parseFloat(n) + delta) * 100) / 100) + 'px')
+
+    this.row('Font', this.multiSelect(
+      [['', t('theme default')], ...(this.store.doc.fonts ?? []).map((f): [string, string] => [f.family, `${f.family} (embedded)`]),
+        ...FONT_CHOICES.map((c): [string, string] => [c.stack, c.label])],
+      texts.map((te) => te.fontFamily ?? ''),
+      (v) => all((te) => { te.fontFamily = v; te.html = this.clearCssPropFromHtml(te.html, 'font-family') }, true),
+      (v, value) => firstFamily(v) === firstFamily(value)))
+    this.row('Size (pt)', this.multiNumber(texts.map((te) => te.fontSize * 0.75), 1, 1,
+      (d) => all((te) => {
+        // step in whole points (the unit shown), so repeated steps never drift
+        const pt = Math.max(3, Math.round(te.fontSize * 0.75 * 10) / 10 + d)
+        const next = Math.round(pt * (4 / 3) * 100) / 100
+        te.html = shiftCss(te.html, 'font-size', next - te.fontSize, 4)
+        te.fontSize = next
+      }, true),
+      (v) => all((te) => {
+        te.fontSize = Math.round(Math.max(v, 3) * (4 / 3) * 100) / 100
+        te.html = this.clearCssPropFromHtml(te.html, 'font-size')
+      }, true)))
+    const WEIGHTS: Array<[string, string]> = [['100', 'Thin'], ['200', 'Extra light'], ['300', 'Light'], ['400', 'Regular'],
+      ['500', 'Medium'], ['600', 'Semibold'], ['700', 'Bold'], ['800', 'Extra bold'], ['900', 'Black']]
+    this.row('Weight', this.multiSelect(WEIGHTS.map(([n, name]) => [n, t(name)]), texts.map((te) => String(te.fontWeight ?? 400)),
+      (v) => all((te) => { te.fontWeight = parseInt(v, 10); te.html = this.clearCssPropFromHtml(te.html, 'font-weight') }, true)))
+    const colors = texts.map((te) => te.color)
+    this.row('Color', this.color(colors.every((c) => c === colors[0]) ? colors[0] : '#808080', (v, fin) =>
+      all((te) => { te.color = v; delete te.colorGradient; te.html = this.clearCssPropFromHtml(te.html, 'color') }, fin)))
+    this.row('Align', this.multiSelect(['left', 'center', 'right', 'justify'].map((a): [string, string] => [a, t(a)]), texts.map((te) => te.align),
+      (v) => all((te) => { te.align = v as TextElement['align'] }, true)))
+    this.row('↕ Ausrichtung', this.multiSelect(['top', 'middle', 'bottom'].map((a): [string, string] => [a, t(a)]), texts.map((te) => te.valign),
+      (v) => all((te) => { te.valign = v as TextElement['valign'] }, true)))
+    this.row('Line height', this.multiNumber(texts.map((te) => te.lineHeight), 0.05, 2,
+      (d) => all((te) => { te.lineHeight = Math.round(Math.max(0.5, te.lineHeight + d) * 100) / 100 }, true),
+      (v) => all((te) => { te.lineHeight = Math.max(v, 0.5) }, true)))
+    this.row('Laufweite', this.multiNumber(texts.map((te) => te.letterSpacing ?? 0), 0.5, 1,
+      (d) => all((te) => {
+        te.letterSpacing = Math.round(((te.letterSpacing ?? 0) + d) * 100) / 100
+        te.html = shiftCss(te.html, 'letter-spacing', d, -1000)
+      }, true),
+      (v) => all((te) => { te.letterSpacing = v; te.html = this.clearCssPropFromHtml(te.html, 'letter-spacing') }, true)))
+  }
+
+  /** A number field over several values. Stepping (spinner arrows, ↑/↓,
+   *  wheel) reports a DELTA; a typed value reports an absolute one. When the
+   *  values differ the field stays empty ("mixed") and each step is simply
+   *  ±step — the browser steps an empty field from 0. */
+  private multiNumber(values: number[], step: number, decimals: number, onDelta: (d: number) => void, onAbs: (v: number) => void): HTMLInputElement {
+    const f = 10 ** decimals
+    const round = (v: number) => Math.round(v * f) / f
+    const input = document.createElement('input')
+    input.type = 'number'
+    input.step = String(step)
+    let base: number | null = values.every((v) => round(v) === round(values[0])) ? round(values[0]) : null
+    input.value = base == null ? '' : String(base)
+    if (base == null) input.placeholder = t('mixed')
+    let typed = false
+    input.addEventListener('input', (ev) => {
+      // typing is an InputEvent with an inputType; a spin/arrow step is not
+      if ((ev as InputEvent).inputType) { typed = true; return }
+      const v = parseFloat(input.value)
+      if (Number.isNaN(v)) return
+      const delta = round(base == null ? v : v - base)
+      if (base == null) input.value = ''
+      else base = v
+      typed = false
+      if (delta) onDelta(delta)
+    })
+    input.addEventListener('change', () => {
+      if (!typed) return
+      typed = false
+      const v = parseFloat(input.value)
+      if (Number.isNaN(v)) return
+      base = v
+      input.placeholder = ''
+      onAbs(v)
+    })
+    return input
+  }
+
+  /** A select over several values: shows the shared value, or "mixed". */
+  private multiSelect(pairs: Array<[string, string]>, values: string[], onChange: (v: string) => void,
+    same: (a: string, b: string) => boolean = (a, b) => a === b): HTMLSelectElement {
+    const sel = document.createElement('select')
+    const shared = values.every((v) => same(v, values[0])) ? values[0] : null
+    if (shared == null) {
+      const o = document.createElement('option')
+      o.value = '\u0000'
+      o.textContent = '— ' + t('mixed') + ' —'
+      o.disabled = true
+      o.selected = true
+      sel.appendChild(o)
+    }
+    let hit = false
+    for (const [value, label] of pairs) {
+      const o = document.createElement('option')
+      o.value = value
+      o.textContent = label
+      if (shared != null && !hit && same(value, shared)) { o.selected = true; hit = true }
+      sel.appendChild(o)
+    }
+    if (shared != null && !hit) {
+      const o = document.createElement('option')
+      o.value = shared
+      o.textContent = firstFamily(shared) || shared
+      o.selected = true
+      sel.appendChild(o)
+    }
+    sel.addEventListener('change', () => onChange(sel.value))
+    return sel
   }
 
   /**

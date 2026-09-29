@@ -215,6 +215,8 @@ export const de: Catalog = {
   "Transition": "Übergang",
   "Triangle": "Dreieck",
   "Typography": "Typografie",
+  "mixed": "gemischt",
+  "Applies to every selected text box. Arrows on a number step each box from its own value (18 and 24 pt → 19 and 25 pt); a typed value is set on all.": "Gilt für alle ausgewählten Textrahmen. Die Pfeile an Zahlenfeldern ändern jeden Rahmen ausgehend von seinem eigenen Wert (18 und 24 pt → 19 und 25 pt); ein eingetippter Wert wird für alle gesetzt.",
   "Undo (⌘Z)": "Rückgängig (⌘Z)",
   "Unsaved changes": "Ungespeicherte Änderungen",
   "Untitled": "Ohne Titel",
