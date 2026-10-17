@@ -77,7 +77,61 @@ if (envelope) {
 async function bootNonEncrypted(embedded: string | null) {
   const handoffJson = moodleConfig?.deckid ? await takeUnsavedMoodleDoc(moodleConfig.deckid) : null
   const handoffDoc = handoffJson ? parseDoc(handoffJson) : null
-  bootWith(handoffDoc || (embedded && parseDoc(embedded)) || starterDoc())
+  if (handoffDoc) { bootWith(handoffDoc); return }
+  const doc = embedded ? parseDoc(embedded) : null
+  if (doc) { bootWith(doc); return }
+  // A file that CARRIES a document (or any page Moodle served for a real
+  // activity) must never silently become the demo deck: the person would be
+  // looking at the wrong content, and one Save would overwrite their real
+  // presentation with it. Say what went wrong and keep the data reachable.
+  // Only a genuinely empty, standalone shell opens the demo.
+  if (embedded || moodleConfig) { unreadableDocument(embedded ?? '', handoffJson); return }
+  bootWith(starterDoc())
+}
+
+/** Why a document could not be read — the JSON error with a bit of context
+ *  around its position, or which required part is missing. */
+function whyUnreadable(text: string): string {
+  if (!text.trim()) return t('The page arrived without any presentation data.')
+  try {
+    const d = JSON.parse(text)
+    if (!d || typeof d !== 'object') return t('The data is not a presentation (a {type} instead of an object).', { type: typeof d })
+    if (d.format !== 'bento/slides') return t('The data is not a bento/slides presentation (format: {f}).', { f: String(d.format) })
+    if (!Array.isArray(d.slides) || !d.slides.length) return t('The presentation contains no slides.')
+    return t('Unknown reason.')
+  } catch (e) {
+    const msg = (e as Error).message
+    const m = /position (\d+)/.exec(msg)
+    const at = m ? parseInt(m[1], 10) : -1
+    const near = at >= 0 ? ' — …' + text.slice(Math.max(0, at - 40), at + 40).replace(/\s+/g, ' ') + '…' : ''
+    return t('The data is not valid JSON: {msg}', { msg }) + near
+  }
+}
+
+function unreadableDocument(embedded: string, handoffJson: string | null) {
+  const reason = whyUnreadable(embedded)
+  console.error('[bento/boot] the document could not be read — not opening the demo deck in its place.', {
+    reason, embeddedLength: embedded.length, embeddedStart: embedded.slice(0, 200), moodle: !!moodleConfig,
+    handoffLength: handoffJson?.length ?? 0,
+  })
+  document.getElementById('bento-splash')?.remove()
+  const card = document.createElement('div')
+  card.className = 'ed-player'
+  card.innerHTML =
+    `<div class="ed-playercard"><h1>${t('This presentation could not be opened')}</h1>` +
+    `<p>${t('Bento could not read the presentation data, so it is not showing anything rather than the wrong content. Nothing has been changed or saved.')}</p>` +
+    `<p class="ed-unreadable-why"></p>` +
+    (embedded.trim() ? `<button class="ed-playgo">⤓&nbsp; ${t('Download the raw data')}</button>` : '') +
+    `</div>`
+  card.querySelector('.ed-unreadable-why')!.textContent = reason + ` (${embedded.length.toLocaleString()} ${t('characters')})`
+  card.querySelector('.ed-playgo')?.addEventListener('click', () => {
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([embedded], { type: 'application/json' }))
+    a.download = 'bento-document-raw.json'
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+  })
+  document.body.appendChild(card)
 }
 
 /** Encrypted file: ask for the password (looping on failure), then boot. */
