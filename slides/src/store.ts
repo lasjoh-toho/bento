@@ -24,6 +24,15 @@ export class Store {
 
   private undoStack: string[] = []
   private redoStack: string[] = []
+  /** entries shifted off the bottom of undoStack (MAX_UNDO) — keeps
+   *  `undoBase + undoStack.length` an absolute history position */
+  private undoBase = 0
+  /** Embedded files deleted from doc.assets, with the history position of
+   *  the edit that deleted them. Snapshots exclude assets (see checkpoint),
+   *  so without this an undo past a deletion — of the file itself, or of
+   *  the element removal that had made it "unused" — would restore a
+   *  reference to data that is gone. */
+  private assetGraveyard: Array<{ key: string; value: string; at: number }> = []
   private listeners = new Map<StoreEvent, Set<Listener>>()
 
   /** read-only viewer: block user edits (commit) while remote ops — which
@@ -78,18 +87,31 @@ export class Store {
   // --- history ------------------------------------------------------------
 
   /** Snapshot current doc state onto the undo stack. Call BEFORE a mutation.
-   *  Excludes `assets` — nothing in the app ever deletes an entry from it
-   *  (only ever grows via internAsset's dedup-by-hash), so undo/redo never
-   *  needs to restore a removed one; the current assets carry over as-is on
-   *  restore(). Skipping them here is what keeps checkpoint() fast on decks
+   *  Excludes `assets` — the current assets carry over as-is on restore();
+   *  the only deletions go through deleteAssets(), whose graveyard lets an
+   *  undo bring the data back. Skipping them here is what keeps checkpoint() fast on decks
    *  with embedded images — JSON.stringify-ing megabytes of base64 data URIs
    *  on literally every single edit was the real cost, not anything about
    *  a particular feature. */
   checkpoint() {
     const { assets: _assets, ...rest } = this.doc
     this.undoStack.push(JSON.stringify(rest))
-    if (this.undoStack.length > MAX_UNDO) this.undoStack.shift()
+    if (this.undoStack.length > MAX_UNDO) { this.undoStack.shift(); this.undoBase++ }
     this.redoStack.length = 0
+  }
+
+  /** Delete embedded files inside an edit — call from within commit(), after
+   *  its checkpoint, so ⌘Z of that edit (or of any earlier one) brings the
+   *  data back. Missing keys are ignored. */
+  deleteAssets(keys: Iterable<string>) {
+    const assets = this.doc.assets
+    if (!assets) return
+    const at = this.undoBase + this.undoStack.length
+    for (const key of keys) {
+      if (!(key in assets)) continue
+      this.assetGraveyard.push({ key, value: assets[key], at })
+      delete assets[key]
+    }
   }
 
   /** checkpoint() + mutate + notify, in one call. */
@@ -117,6 +139,14 @@ export class Store {
     const { assets: _assets, ...rest } = this.doc
     to.push(JSON.stringify(rest))
     this.doc = { ...JSON.parse(snapshot), assets: this.doc.assets }
+    if (from === this.undoStack && this.assetGraveyard.length) {
+      const pos = this.undoBase + this.undoStack.length
+      this.assetGraveyard = this.assetGraveyard.filter((g) => {
+        if (g.at <= pos) return true
+        ;(this.doc.assets ??= {})[g.key] ??= g.value
+        return false
+      })
+    }
     this.currentIndex = Math.min(this.currentIndex, this.doc.slides.length - 1)
     this.selection = this.selection.filter((id) => this.element(id))
     this.setDirty(true)

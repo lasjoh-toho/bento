@@ -7,15 +7,16 @@
 import type { Store } from '../store'
 import type { SlideCanvas } from './canvas'
 import { bakeImagePermanent } from './imagemask'
-import { MEDIA_EMBED_BUDGET, applyChartPalette, chartOptionFromTable, dataUriByteSize, dataUriMimeType, defaultChart, defaultText, downscaleImageDataUrl, findUsedAssetAndFontKeys, formatBytesMB, internAsset, isWebUrl, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
+import { MEDIA_EMBED_BUDGET, applyChartPalette, chartOptionFromTable, dataUriByteSize, defaultChart, defaultText, formatBytesMB, internAsset, isWebUrl, morphKey, tableStyleFor, uid, type ChartElement, type Citation, type GradientFill, type ImageElement, type LineEnding, type LongReadBlock, type MediaElement, type ShapeElement, type ShapeKind, type Slide, type SlideElement, type TableElement, type TextElement, type TransitionKind } from '../model'
 import { resolveAsset } from '../render'
 import { measureElement, fitFontSizeToBox } from '../measure'
 import { isMacOS } from '../screens'
 import { CHART_PRESETS } from '../charts'
 import { FONT_CHOICES, firstFamily, injectFonts } from '../fonts'
 import { DATE_PRESETS, TIME_PRESETS, OTHER_FIELDS, formatDate } from '../datefmt'
-import { imageDownscaleParams } from './moodle'
+import { applyShrunk, assetEntries, deleteAsset, downloadAsset, isFontMime, isImageMime, openMediaLightbox, shrinkPreview } from './medialightbox'
 import { ICONS } from '../icons'
+import { FormatPainter } from './formatpainter'
 import { t } from '../i18n'
 import { lsJson, lsSet } from '../../../kernel/src/storage.ts'
 
@@ -137,6 +138,7 @@ export class PropsPanel {
    *  cancelCrop and imagecrop.ts). Purely a "what does this panel render"
    *  flag; not doc state. */
   private cropElId: string | null = null
+  private painter!: FormatPainter
   /** Same idea as cropElId, for the "Freistellen…" (cutout/erase) mode. */
   private maskElId: string | null = null
   private maskTool: 'wand' | 'eraser' | 'box' | 'ellipse' = 'eraser'
@@ -190,6 +192,9 @@ export class PropsPanel {
       }
       this.rebuild(true)
     })
+    // after the rebuild listener above: a selection made while the painter is
+    // open receives the copied format, and the panel then shows the result
+    this.painter = new FormatPainter(store, host)
     store.on('current', () => {
       // Sticky, not one-shot: stays active — reapplying to whichever slide
       // is now current — for as long as the scope stays 'next', so picking
@@ -272,6 +277,7 @@ export class PropsPanel {
     else if (els.length === 1) this.buildElementPanel(els[0])
     else this.buildMultiPanel(els)
     this.applyAccordion()
+    this.painter?.afterRebuild()
   }
 
   /** Collapsed by default until the user opens them (persisted per title). */
@@ -750,20 +756,14 @@ export class PropsPanel {
   }
 
   private populateAssetsBody(container: HTMLElement) {
-    const doc = this.store.doc
-    const entries = Object.entries(doc.assets ?? {})
-    if (entries.length === 0) {
+    const sized = assetEntries(this.store.doc)
+    if (sized.length === 0) {
       const empty = document.createElement('p')
       empty.className = 'ed-hint'
       empty.textContent = t('Keine eingebetteten Bilder, Videos oder Schriftarten.')
       container.appendChild(empty)
       return
     }
-    const { assetKeys: used } = findUsedAssetAndFontKeys(doc)
-    const fontFamilyByAsset = new Map((doc.fonts ?? []).map((f) => [f.asset, f.family]))
-    const sized = entries
-      .map(([key, value]) => ({ key, value, bytes: dataUriByteSize(value), unused: !used.has(key) }))
-      .sort((a, b) => b.bytes - a.bytes)
     const totalBytes = sized.reduce((sum, e) => sum + e.bytes, 0)
 
     const total = document.createElement('div')
@@ -773,58 +773,63 @@ export class PropsPanel {
 
     const list = document.createElement('div')
     list.className = 'ed-assets-list'
-    for (const { key, value, bytes, unused } of sized) {
-      const mime = dataUriMimeType(value)
+    for (const entry of sized) {
+      const { key, value, mime, bytes, unused } = entry
       const row = document.createElement('div')
       row.className = 'ed-assets-row' + (unused ? ' ed-assets-row-unused' : '')
-      if (mime.startsWith('image/')) {
+      // thumbnail + label open the lightbox, which steps through every file
+      const open = document.createElement('button')
+      open.type = 'button'
+      open.className = 'ed-assets-open'
+      open.dataset.tooltip = t('Groß ansehen — ←/→ blättert durch alle Dateien')
+      open.addEventListener('click', () => openMediaLightbox(this.store, key))
+      if (isImageMime(mime)) {
         const thumb = document.createElement('img')
         thumb.className = 'ed-assets-thumb'
         thumb.src = value
         thumb.loading = 'lazy'
-        row.appendChild(thumb)
+        thumb.alt = ''
+        open.appendChild(thumb)
       } else {
         const icon = document.createElement('span')
         icon.className = 'ed-assets-thumb ed-assets-thumb-icon'
-        icon.textContent = mime.startsWith('video/') ? '▶' : mime.startsWith('font/') || mime.startsWith('application/font') ? 'Aa' : '?'
-        row.appendChild(icon)
+        icon.textContent = mime.startsWith('video/') ? '▶' : mime.startsWith('audio/') ? '♪' : isFontMime(mime, entry) ? 'Aa' : '?'
+        open.appendChild(icon)
       }
+      const text = document.createElement('span')
+      text.className = 'ed-assets-text'
       const label = document.createElement('span')
       label.className = 'ed-assets-label'
-      label.textContent = fontFamilyByAsset.has(key) ? t('Schriftart: {name}', { name: fontFamilyByAsset.get(key)! }) : mime
-      row.appendChild(label)
+      label.textContent = entry.font ? t('Schriftart: {name}', { name: entry.font }) : mime
+      text.appendChild(label)
+      open.appendChild(text)
       if (unused) {
         const badge = document.createElement('span')
         badge.className = 'ed-assets-badge'
         badge.textContent = t('nicht mehr verwendet')
-        badge.dataset.tooltip = t('Kein Element im Dokument verweist mehr hierauf — „Nicht verwendete Medien entfernen“ unten würde diesen Eintrag löschen.')
-        row.appendChild(badge)
+        text.appendChild(badge)
+        open.dataset.tooltip = t('Kein Element im Dokument verweist mehr hierauf — beim Speichern wird es ohnehin weggelassen; der Papierkorb entfernt es sofort.')
       }
-      if (mime.startsWith('image/')) {
+      row.appendChild(open)
+      if (isImageMime(mime)) {
         const sizeBtn = document.createElement('button')
         sizeBtn.type = 'button'
         sizeBtn.className = 'ed-assets-size ed-assets-size-btn'
         sizeBtn.textContent = formatBytesMB(bytes)
-        let previewComputed = false
+        let preview: Promise<string | null> | null = null
+        const getPreview = () => (preview ??= shrinkPreview(entry))
         sizeBtn.addEventListener('mouseenter', () => {
-          if (previewComputed) return
-          previewComputed = true
-          const { maxDim, quality } = imageDownscaleParams()
-          void downscaleImageDataUrl(value, maxDim, quality).then((shrunk) => {
-            const newBytes = dataUriByteSize(shrunk)
-            sizeBtn.dataset.tooltip = newBytes < bytes
-              ? t('Verkleinern auf {size}', { size: formatBytesMB(newBytes) })
+          void getPreview().then((shrunk) => {
+            sizeBtn.dataset.tooltip = shrunk
+              ? t('Verkleinern auf {size}', { size: formatBytesMB(dataUriByteSize(shrunk)) })
               : t('Bereits optimal — Verkleinern würde nichts sparen')
           })
         })
         sizeBtn.addEventListener('click', () => {
           sizeBtn.disabled = true
-          const { maxDim, quality } = imageDownscaleParams()
-          void downscaleImageDataUrl(value, maxDim, quality).then((shrunk) => {
-            this.edit(() => {
-              const d = this.store.doc
-              if (d.assets) d.assets[key] = shrunk
-            }, true)
+          void getPreview().then((shrunk) => {
+            if (shrunk) applyShrunk(this.store, key, shrunk)
+            else sizeBtn.disabled = false
           })
         })
         row.appendChild(sizeBtn)
@@ -833,6 +838,24 @@ export class PropsPanel {
         size.className = 'ed-assets-size'
         size.textContent = formatBytesMB(bytes)
         row.appendChild(size)
+      }
+      const dl = document.createElement('button')
+      dl.type = 'button'
+      dl.className = 'ed-assets-act'
+      dl.innerHTML = ICONS.download
+      dl.setAttribute('aria-label', t('Herunterladen'))
+      dl.dataset.tooltip = t('Herunterladen')
+      dl.addEventListener('click', () => void downloadAsset(entry))
+      row.appendChild(dl)
+      if (unused) {
+        const del = document.createElement('button')
+        del.type = 'button'
+        del.className = 'ed-assets-act ed-assets-del'
+        del.innerHTML = ICONS.trash
+        del.setAttribute('aria-label', t('Löschen'))
+        del.dataset.tooltip = t('Löschen — ⌘Z holt die Datei zurück')
+        del.addEventListener('click', () => deleteAsset(this.store, key))
+        row.appendChild(del)
       }
       list.appendChild(row)
     }
@@ -1833,7 +1856,7 @@ export class PropsPanel {
   }
 
   private buildTextProps(el: TextElement) {
-    this.section(t('Typography'), 'While editing: ⌘B/⌘I/⌘U · markdown auto-converts — **bold** *italic* `code` ~~strike~~ and "- " bullets; pasting markdown converts too. Escape with \\ or press ⌘Z right after to keep the literal characters.')
+    this.painter.attach(this.section(t('Typography'), 'While editing: ⌘B/⌘I/⌘U · markdown auto-converts — **bold** *italic* `code` ~~strike~~ and "- " bullets; pasting markdown converts too. Escape with \\ or press ⌘Z right after to keep the literal characters.'), el)
     this.row('Role', this.select(
       ['none', 'title', 'subtitle', 'body', 'kicker'],
       el.role ?? 'none',
@@ -2048,7 +2071,7 @@ export class PropsPanel {
   }
 
   private buildShapeProps(el: ShapeElement) {
-    this.section(t('Fill & stroke'))
+    this.painter.attach(this.section(t('Fill & stroke')), el)
     const grad = el.fillGradient
     this.row('Fill style', this.labeledSelect(fillStyles(), grad ? 'gradient' : 'solid', (v) =>
       this.mutate(el.id, (e) => {

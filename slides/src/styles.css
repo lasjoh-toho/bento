@@ -808,11 +808,134 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   font-weight: 400;
   text-transform: none;
   letter-spacing: normal;
-  color: var(--muted);
-  opacity: 0.65;
   cursor: help;
 }
-.ed-section-info::before { content: 'ⓘ'; }
+/* dimmed via the glyph's own colour, never opacity: opacity would make the
+   icon a stacking context and its explanation popup see-through, beneath
+   the controls that follow */
+.ed-section-info::before { content: 'ⓘ'; color: color-mix(in srgb, var(--muted) 65%, transparent); }
+/* format painter: grey button with a yellow brush, shown while the header is hovered */
+.ed-painter-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  width: 22px;
+  height: 20px;
+  /* takes no room in the line, so a header never wraps just for the brush
+     (it may spill into the header's own end padding) */
+  margin: -3px -28px 0 6px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: #8b929c;
+  color: #ffd21f;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+.ed-painter-btn svg { width: 14px; height: 14px; }
+.ed-section:hover .ed-painter-btn,
+.ed-painter-btn:focus-visible,
+.ed-painter-btn.active,
+.ed-painter-btn.locked { opacity: 1; }
+.ed-painter-btn:hover { background: #6f7680; }
+.ed-painter-btn.active { background: #5d646e; box-shadow: 0 0 0 2px #ffd21f; }
+.ed-painter-lockdot { display: none; }
+.ed-painter-btn.locked .ed-painter-lockdot {
+  display: block;
+  position: absolute;
+  right: -3px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffd21f;
+  box-shadow: 0 0 0 1.5px var(--surface);
+}
+.ed-painter {
+  position: fixed;
+  z-index: 60;
+  box-sizing: border-box;
+  padding: 8px 10px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.22), 0 0 0 1px var(--line);
+  transition: box-shadow 0.2s ease;
+}
+.ed-painter.applied { box-shadow: 0 6px 24px rgb(0 0 0 / 0.22), 0 0 0 2px #ffd21f; }
+.ed-painter-head { display: flex; align-items: center; gap: 6px; }
+.ed-painter-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+.ed-painter-title svg { width: 14px; height: 14px; color: #e0b400; flex: none; }
+.ed-painter-lock, .ed-painter-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ed-painter-lock svg, .ed-painter-close svg { width: 14px; height: 14px; }
+.ed-painter-lock { background: rgb(255 210 31 / 0.18); color: #c99a00; }
+.ed-painter-lock.on { background: #ffd21f; color: #3a2f00; }
+.ed-painter-lock:hover, .ed-painter-close:hover { background: var(--chrome); color: var(--ink); }
+.ed-painter-lock.on:hover { background: #f0c400; color: #3a2f00; }
+.ed-painter-hint { margin: 4px 0 8px; font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+.ed-painter-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.ed-painter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px 2px 2px 8px;
+  border-radius: 999px;
+  background: var(--chrome);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ed-painter-swatch {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2);
+}
+.ed-painter-pill-x {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ed-painter-pill-x:hover { background: var(--line); color: var(--ink); }
+/* brush cursor over the slide while the painter is open */
+.ed-painting .ed-stage-scale [data-el-id] {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='%23ffd21f' stroke='%23222' stroke-width='1.4' stroke-linejoin='round'%3E%3Cpath d='M9.97 12.06 18.5 3.5a2.12 2.12 0 0 1 3 3l-8.56 8.53z'/%3E%3Cpath d='M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z'/%3E%3C/svg%3E") 3 21, copy;
+}
 /* Custom tooltip mechanism — replaces native title="" tooltips, which
    can't be styled at all (browser-default appearance, often low
    contrast). Attach to any element via a data-tooltip attribute. */
@@ -1091,16 +1214,160 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 }
 .ed-assets-size-btn:hover { background: var(--chrome); color: var(--accent); }
 .ed-assets-size-btn:disabled { opacity: 0.5; cursor: default; }
-.ed-assets-row-unused { background: rgba(192, 129, 43, 0.07); }
-.ed-assets-row-unused:hover { background: rgba(192, 129, 43, 0.13); }
+/* not referenced by anything any more: transparent orange over black, orange rim */
+.ed-assets-row-unused,
+.ed-assets-row-unused:hover {
+  background: linear-gradient(rgb(255 140 0 / 0.24), rgb(255 140 0 / 0.24)), #0b0b0b;
+  box-shadow: inset 0 0 0 1px #ff8c00;
+  color: #f6e3cb;
+}
+.ed-assets-row-unused .ed-assets-label,
+.ed-assets-row-unused .ed-assets-size,
+.ed-assets-row-unused .ed-assets-act { color: #f6e3cb; }
+.ed-assets-row-unused .ed-assets-size-btn:hover,
+.ed-assets-row-unused .ed-assets-act:hover { background: rgb(255 140 0 / 0.25); color: #fff; }
 .ed-assets-badge {
   font-size: 10px;
-  color: #8a6d55;
-  background: rgba(192, 129, 43, 0.15);
+  color: #ffb257;
+  background: rgb(255 140 0 / 0.18);
   border-radius: 4px;
   padding: 1px 6px;
   flex: none;
   white-space: nowrap;
+}
+.ed-assets-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.ed-assets-text .ed-assets-label { max-width: 100%; flex: none; }
+.ed-assets-text .ed-assets-badge { max-width: 100%; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; }
+.ed-assets-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: zoom-in;
+}
+.ed-assets-act {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ed-assets-act svg { width: 14px; height: 14px; }
+.ed-assets-act:hover { background: var(--chrome); color: var(--accent); }
+.ed-assets-row-unused .ed-assets-del:hover { color: #ff8c00; }
+
+/* ————— media lightbox (Medien section) ————— */
+.ed-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: rgb(8 10 14 / 0.92);
+  color: #e7eaf0;
+  font-size: 13px;
+}
+.ed-lb-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  min-width: 0;
+}
+.ed-lb-counter { font-variant-numeric: tabular-nums; color: #8b95a4; flex: none; }
+.ed-lb-info { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; flex-wrap: wrap; }
+.ed-lb-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-lb-size { font-variant-numeric: tabular-nums; padding: 2px 8px; border-radius: 999px; background: rgb(255 255 255 / 0.1); }
+.ed-lb-dims, .ed-lb-used { color: #8b95a4; font-variant-numeric: tabular-nums; }
+.ed-lb-badge { color: #ffb257; background: rgb(255 140 0 / 0.2); border: 1px solid #ff8c00; border-radius: 4px; padding: 1px 6px; }
+.ed-lb-actions { display: flex; gap: 6px; flex: none; }
+.ed-lb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.06);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ed-lb-btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.16); }
+.ed-lb-btn:disabled { opacity: 0.3; cursor: default; }
+.ed-lb-btn[hidden] { display: none; }
+.ed-lb-danger:hover { color: #ff8c00; border-color: #ff8c00; }
+.ed-lb-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 8px 64px;
+}
+.ed-lightbox.ed-lb-is-unused .ed-lb-stage > * { outline: 2px solid #ff8c00; outline-offset: 4px; }
+.ed-lb-media { max-width: 100%; max-height: 100%; object-fit: contain; background: repeating-conic-gradient(#2a2f38 0 25%, #1f232a 0 50%) 0 0 / 16px 16px; }
+.ed-lb-font { display: grid; gap: 12px; padding: 24px; font-size: 28px; line-height: 1.3; text-align: center; overflow-wrap: anywhere; }
+.ed-lb-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 64px;
+}
+.ed-lb-prev { left: 10px; }
+.ed-lb-next { right: 10px; }
+.ed-lb-nav svg { width: 22px; height: 22px; }
+.ed-lb-strip {
+  display: flex;
+  gap: 6px;
+  padding: 10px 14px 14px;
+  overflow-x: auto;
+  justify-content: safe center;
+}
+.ed-lb-thumb {
+  flex: none;
+  width: 56px;
+  height: 42px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #1b1f26;
+  color: #8b95a4;
+  cursor: pointer;
+}
+.ed-lb-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ed-lb-thumb-unused { border-color: #ff8c00; background: linear-gradient(rgb(255 140 0 / 0.24), rgb(255 140 0 / 0.24)), #0b0b0b; }
+.ed-lb-thumb.current { border-color: #fff; }
+@media (max-width: 700px) {
+  .ed-lb-stage { padding: 8px; }
+  .ed-lb-nav { top: auto; bottom: 0; transform: none; height: 44px; }
+  .ed-lb-btn span { display: none; }
 }
 
 .ed-btn-update {

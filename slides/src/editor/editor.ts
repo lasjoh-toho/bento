@@ -159,6 +159,18 @@ export class Editor {
       if (!panel) return
       const panelRect = panel.getBoundingClientRect()
       const targetRect = target.getBoundingClientRect()
+      if (target.matches('.ed-section-info, .ed-section-tool')) {
+        // section info buttons sit mid-header: their explanation spans the
+        // panel's whole content width instead of starting at the icon
+        const cs = getComputedStyle(panel)
+        const left = panelRect.left + panel.clientLeft + parseFloat(cs.paddingLeft)
+        const width = panel.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+        target.style.setProperty('--tooltip-top', 'calc(100% + 6px)')
+        target.style.setProperty('--tooltip-left', `${left - targetRect.left}px`)
+        target.style.setProperty('--tooltip-width', `${width}px`)
+        target.style.setProperty('--tooltip-right', 'auto')
+        return
+      }
       target.style.setProperty('--tooltip-top', 'calc(100% + 6px)')
       target.style.setProperty('--tooltip-left', '0px')
       target.style.setProperty('--tooltip-width', `${panelRect.right - targetRect.left - RIGHT_MARGIN_PX}px`)
@@ -3140,7 +3152,13 @@ export class Editor {
     let removedCount = 0
     let freedBytes = 0
     this.store.commit(() => {
-      ;({ removedCount, freedBytes } = removeUnusedAssets(this.store.doc))
+      const doc = this.store.doc
+      const before = { ...(doc.assets ?? {}) }
+      ;({ removedCount, freedBytes } = removeUnusedAssets(doc))
+      // hand the removed files to the store so ⌘Z can bring them back
+      const removed = Object.keys(before).filter((k) => !(k in (doc.assets ?? {})))
+      for (const k of removed) (doc.assets ??= {})[k] = before[k]
+      this.store.deleteAssets(removed)
     })
     this.toast(
       removedCount > 0

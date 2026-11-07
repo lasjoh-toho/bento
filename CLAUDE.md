@@ -67,6 +67,20 @@ names provisional.
   (64KB, model.ts) tiers the output: full → images dropped for tinted boxes →
   title card. Guards: `scripts/test-preview.ts` + shell-gate's
   preview-carrying-shell invariant. Full rationale in docs/DECISIONS.md.
+- **Medien section + lightbox (`editor/medialightbox.ts`)**: the slide panel's
+  Medien list (largest first) opens a full-screen lightbox per file — ←/→ step
+  through all embedded files, showing file size, pixel size and the slides
+  using it, with download, shrink (images; `imageDownscaleParams`, Moodle
+  settings or 1920px/85%) and, for unreferenced files, delete. Unused rows are
+  orange-over-black with an orange rim. Deletions go through
+  `store.deleteAssets` (undoable; see DECISIONS 2026-11-07).
+- **Format painter (`editor/formatpainter.ts`)**: a grey brush (yellow icon)
+  appears on hover beside the Typography / Fill & stroke headers. It reads the
+  element's properties into a panel-wide dropdown of removable pills; while
+  open, every newly selected element receives them (store `selection` event,
+  one commit each). The lock keeps the pills across closing; unlocked, the
+  next brush press reads the current element afresh. Section info popups
+  (`.ed-section-info`) span the panel's content width (`wireTooltipWidth`).
 - `src/autosave.ts` (v0.9.8) — auto-save + local version history, IndexedDB
   (`bento-autosave`, two stores: `recovery` single-latest-per-docId, `versions`
   capped timeline). Editor debounces (2.5s) on `doc` events: writes a recovery

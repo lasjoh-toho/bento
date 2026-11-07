@@ -14,6 +14,23 @@ Decision. Why. Pointers.
 
 ---
 
+## 2026-11-07 — Deleting embedded files is undoable; format painter is editor-only state
+
+**Asset deletion.** Undo snapshots still exclude `doc.assets` (performance).
+Every deletion now goes through `Store.deleteAssets()`, which parks the data
+with its history position; undoing past that position puts it back. This
+covers undoing the delete itself AND undoing an earlier element removal that
+had made the file "unused" (before, that restored a reference to deleted
+data). `editor.removeUnusedMedia` and the Medien section's per-file delete
+both use it — never `delete doc.assets[k]` directly in an edit.
+
+**Format painter** (`editor/formatpainter.ts`): the copied properties, the
+open dropdown and the lock are viewer-session state, never in the document.
+Application rides on the store's `selection` event (select a target = paint
+it, one undo step each), so canvas clicks, marquee and the layers list all
+work without hooks in canvas.ts. Texts and boxes share only shadow/opacity
+(and a rect's corner radius reaches images).
+
 ## 2026-09-28 — No recovery prompt over a show; first forward key goes fullscreen
 
 **Recovery offer.** Never shown while a presentation runs. A file opened with

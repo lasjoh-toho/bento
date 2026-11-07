@@ -52,6 +52,12 @@ export const ICONS = {
   arrow: svg('<line x1="3" y1="12" x2="19" y2="12"/><polyline points="13 6 19 12 13 18"/>'),
   line: svg('<line x1="4" y1="19" x2="20" y2="5"/>'),
   eyedropper: svg('<path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/>'),
+  brush: svg('<path d="m14.6 6.4 3 3"/><path d="M9.97 12.06 18.5 3.5a2.12 2.12 0 0 1 3 3l-8.56 8.53"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z"/>'),
+  unlock: svg('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V8 a4 4 0 0 1 7.75-1.4"/>'),
+  chevronLeft: svg('<polyline points="15 18 9 12 15 6"/>'),
+  chevronRight: svg('<polyline points="9 18 15 12 9 6"/>'),
+  close: svg('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'),
+  shrink: svg('<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>'),
 } as const
 
 export type IconName = keyof typeof ICONS
