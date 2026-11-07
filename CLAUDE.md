@@ -73,7 +73,14 @@ names provisional.
   using it, with download, shrink (images; `imageDownscaleParams`, Moodle
   settings or 1920px/85%) and, for unreferenced files, delete. Unused rows are
   orange-over-black with an orange rim. Deletions go through
-  `store.deleteAssets` (undoable; see DECISIONS 2026-11-07).
+  `store.deleteAssets`, data replacements (shrink) through
+  `store.replaceAsset` — both undoable (DECISIONS 2026-11-07). Images zoom
+  (wheel at the cursor, drag to pan, −/+/Einpassen/1:1, keys + - 0 1); zoom is
+  image px per SCREEN px (devicePixelRatio), so "Für diese Zoomgröße
+  verkleinern" re-encodes to exactly what is on screen (PNG keeps PNG only when
+  it really has transparency, else JPEG at the chosen quality; offered only for
+  ≥5 % savings). "Wie auf der Folie" = the largest size an image element shows
+  it at in a 1920-px full-screen show (crop/fit aware, `slideZoom`).
 - **Format painter (`editor/formatpainter.ts`)**: a grey brush (yellow icon)
   appears on hover beside the Typography / Fill & stroke headers. It reads the
   element's properties into a panel-wide dropdown of removable pills; while

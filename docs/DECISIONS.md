@@ -14,6 +14,14 @@ Decision. Why. Pointers.
 
 ---
 
+## 2026-11-07 — Shrinking an embedded image is undoable too
+
+`Store.replaceAsset(key, value)` parks the previous data like `deleteAssets`
+does; undo restores the oldest parked value of every edit it steps back over.
+Redo does not re-apply a shrink (the data stays at the restored original) —
+acceptable, since a shrink is one click away and the reverse direction is the
+lossy one. All asset data changes in an edit go through these two methods.
+
 ## 2026-11-07 — Deleting embedded files is undoable; format painter is editor-only state
 
 **Asset deletion.** Undo snapshots still exclude `doc.assets` (performance).

@@ -1283,7 +1283,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   inset: 0;
   z-index: 10000;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   background: rgb(8 10 14 / 0.92);
   color: #e7eaf0;
   font-size: 13px;
@@ -1324,11 +1324,33 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 .ed-lb-stage {
   position: relative;
   display: flex;
-  align-items: center;
-  justify-content: center;
   min-height: 0;
   padding: 8px 64px;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
+/* margin:auto (not justify/align center) keeps a zoomed-in image scrollable to its left/top edge */
+.ed-lb-stage > * { margin: auto; flex: none; }
+.ed-lb-stage .ed-lb-zoomable { max-width: none; max-height: none; }
+.ed-lb-stage.ed-lb-pannable { cursor: grab; }
+.ed-lb-stage.ed-lb-pannable:active { cursor: grabbing; }
+.ed-lb-zoombar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 14px 0;
+}
+.ed-lb-zoombar[hidden], .ed-lb-zoombar [hidden] { display: none; }
+.ed-lb-zoom { min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+.ed-lb-quality { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; color: #8b95a4; }
+.ed-lb-quality select { background: #1b1f26; color: inherit; border: 1px solid rgb(255 255 255 / 0.14); border-radius: 6px; padding: 4px 6px; font: inherit; }
+.ed-lb-zshrink { height: auto; min-height: 34px; padding: 4px 10px; text-align: start; }
+.ed-lb-zshrink svg { flex: none; }
+.ed-lb-zresult { display: block; color: #ffb257; font-variant-numeric: tabular-nums; }
+.ed-lb-zshrink > span { display: flex; flex-direction: column; }
+.ed-lb-zshrink:disabled .ed-lb-zresult { color: #8b95a4; }
 .ed-lightbox.ed-lb-is-unused .ed-lb-stage > * { outline: 2px solid #ff8c00; outline-offset: 4px; }
 .ed-lb-media { max-width: 100%; max-height: 100%; object-fit: contain; background: repeating-conic-gradient(#2a2f38 0 25%, #1f232a 0 50%) 0 0 / 16px 16px; }
 .ed-lb-font { display: grid; gap: 12px; padding: 24px; font-size: 28px; line-height: 1.3; text-align: center; overflow-wrap: anywhere; }
@@ -1367,7 +1389,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 @media (max-width: 700px) {
   .ed-lb-stage { padding: 8px; }
   .ed-lb-nav { top: auto; bottom: 0; transform: none; height: 44px; }
-  .ed-lb-btn span { display: none; }
+  .ed-lb-btn:not(.ed-lb-zshrink) span { display: none; }
 }
 
 .ed-btn-update {

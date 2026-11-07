@@ -100,6 +100,15 @@ export class Store {
     this.redoStack.length = 0
   }
 
+  /** Replace an embedded file's data inside an edit (e.g. a shrunk image) —
+   *  like deleteAssets, ⌘Z of that edit restores the previous data. */
+  replaceAsset(key: string, value: string) {
+    const assets = this.doc.assets
+    if (!assets || !(key in assets) || assets[key] === value) return
+    this.assetGraveyard.push({ key, value: assets[key], at: this.undoBase + this.undoStack.length })
+    assets[key] = value
+  }
+
   /** Delete embedded files inside an edit — call from within commit(), after
    *  its checkpoint, so ⌘Z of that edit (or of any earlier one) brings the
    *  data back. Missing keys are ignored. */
@@ -141,10 +150,10 @@ export class Store {
     this.doc = { ...JSON.parse(snapshot), assets: this.doc.assets }
     if (from === this.undoStack && this.assetGraveyard.length) {
       const pos = this.undoBase + this.undoStack.length
-      this.assetGraveyard = this.assetGraveyard.filter((g) => {
-        if (g.at <= pos) return true
-        ;(this.doc.assets ??= {})[g.key] ??= g.value
-        return false
+      const revive = this.assetGraveyard.filter((g) => g.at > pos).reverse()
+      this.assetGraveyard = this.assetGraveyard.filter((g) => g.at <= pos)
+      revive.forEach((g) => {
+        ;(this.doc.assets ??= {})[g.key] = g.value
       })
     }
     this.currentIndex = Math.min(this.currentIndex, this.doc.slides.length - 1)

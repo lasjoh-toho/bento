@@ -80,9 +80,7 @@ export async function shrinkPreview(e: AssetEntry): Promise<string | null> {
 }
 
 export function applyShrunk(store: Store, key: string, shrunk: string) {
-  store.commit(() => {
-    if (store.doc.assets?.[key] !== undefined) store.doc.assets[key] = shrunk
-  })
+  store.commit(() => store.replaceAsset(key, shrunk))
 }
 
 /** Slide numbers (1-based, linear order; an interactive state counts as its
@@ -122,6 +120,50 @@ function iconButton(icon: string, label: string, cls = '') {
   return b
 }
 
+/** Re-encode an image at w×h. A PNG that really uses transparency stays
+ *  PNG; everything else becomes JPEG at `quality` (0..1). */
+export function encodeImage(src: string, w: number, h: number, quality: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const c = document.createElement('canvas')
+      c.width = w
+      c.height = h
+      const g = c.getContext('2d')
+      if (!g) { resolve(null); return }
+      g.imageSmoothingQuality = 'high'
+      g.drawImage(img, 0, 0, w, h)
+      let alpha = false
+      if (src.startsWith('data:image/png')) {
+        const px = g.getImageData(0, 0, w, h).data
+        for (let i = 3; i < px.length; i += 4) if (px[i] < 255) { alpha = true; break }
+      }
+      resolve(alpha ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', quality))
+    }
+    img.onerror = () => resolve(null)
+    img.src = src
+  })
+}
+
+/** The zoom (image px per screen px) at which this image appears as large as
+ *  it does at most on a slide in a 1920-px-wide full-screen show — crop and
+ *  fit taken into account. null when no image element uses it. */
+export function slideZoom(doc: BentoDoc, key: string, natW: number, natH: number): number | null {
+  const ref = `asset:${key}`
+  const f = 1920 / (doc.size?.width || 1280)
+  let z = 0
+  for (const s of doc.slides) {
+    for (const e of s.elements) {
+      if (e.type !== 'image' || e.src !== ref) continue
+      const c = e.crop ?? { x: 0, y: 0, w: 1, h: 1 }
+      const sx = (e.w * f) / (natW * c.w)
+      const sy = (e.h * f) / (natH * c.h)
+      z = Math.max(z, !e.crop && e.fit === 'contain' ? Math.min(sx, sy) : Math.max(sx, sy))
+    }
+  }
+  return z > 0 ? z : null
+}
+
 let fontSeq = 0
 
 /** Opens the lightbox on `startKey`. ←/→ step through the files, Esc closes.
@@ -151,12 +193,96 @@ export function openMediaLightbox(store: Store, startKey: string) {
   const prevB = iconButton(ICONS.chevronLeft, t('Previous'), 'ed-lb-nav ed-lb-prev')
   const nextB = iconButton(ICONS.chevronRight, t('Next'), 'ed-lb-nav ed-lb-next')
   const strip = el('div', 'ed-lb-strip')
-  root.append(bar, stage, prevB, nextB, strip)
+  // zoom (images only): image px per SCREEN px, so 100 % is 1:1 on any display
+  const zoomBar = el('div', 'ed-lb-zoombar')
+  const zOut = iconButton('−', t('Verkleinern (Zoom)'))
+  const zLabel = el('span', 'ed-lb-zoom')
+  const zIn = iconButton('+', t('Vergrößern (Zoom)'))
+  const zFit = iconButton(t('Einpassen'), t('Einpassen'), 'ed-lb-text')
+  const z100 = iconButton('1:1', t('100 % — ein Bildpunkt pro Bildschirmpunkt'), 'ed-lb-text')
+  const zSlide = iconButton(t('Wie auf der Folie'), t('So groß, wie das Bild auf einer Folie höchstens erscheint (Vollbild, 1920 px breit)'), 'ed-lb-text')
+  const qLabel = el('label', 'ed-lb-quality', t('Qualität'))
+  const qSel = document.createElement('select')
+  const defQ = Math.round(imageDownscaleParams().quality * 100)
+  for (const q of [...new Set([95, 90, 85, 80, 70, 60, defQ])].sort((a, b) => b - a)) {
+    const o = document.createElement('option')
+    o.value = String(q)
+    o.textContent = `${q} %`
+    o.selected = q === defQ
+    qSel.appendChild(o)
+  }
+  qLabel.appendChild(qSel)
+  const zShrink = iconButton(ICONS.shrink, t('Für diese Zoomgröße verkleinern'), 'ed-lb-text ed-lb-zshrink')
+  const zShrinkText = el('span', '', t('Für diese Zoomgröße verkleinern'))
+  const zResult = el('small', 'ed-lb-zresult')
+  zShrinkText.appendChild(zResult)
+  zShrink.appendChild(zShrinkText)
+  zoomBar.append(zOut, zLabel, zIn, zFit, z100, zSlide, qLabel, zShrink)
+  root.append(bar, stage, prevB, nextB, zoomBar, strip)
   document.body.appendChild(root)
 
   let shown = -1
   let shrinkFor: string | null = null
   let shrunk: string | null = null
+
+  let img: HTMLImageElement | null = null
+  let natW = 0
+  let natH = 0
+  let zoom = 1
+  /** after a shrink: keep the image on screen at the size it had */
+  let keepCss: { key: string; w: number } | null = null
+  let est: { key: string; data: string } | null = null
+  let estTimer = 0
+  let estSeq = 0
+  const dpr = () => window.devicePixelRatio || 1
+  const canReencode = (e: AssetEntry) => isImageMime(e.mime) && e.mime !== 'image/svg+xml' && e.mime !== 'image/gif'
+  const fitZoom = () => {
+    const cs = getComputedStyle(stage)
+    const w = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+    const h = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+    return Math.min(1, (w * dpr()) / natW, (h * dpr()) / natH)
+  }
+  const setZoom = (z: number, at?: { x: number; y: number }) => {
+    if (!img || !natW) return
+    const old = zoom
+    zoom = Math.min(8, Math.max(0.02, z))
+    const r = stage.getBoundingClientRect()
+    const ax = at ? at.x - r.left : stage.clientWidth / 2
+    const ay = at ? at.y - r.top : stage.clientHeight / 2
+    const px = stage.scrollLeft + ax
+    const py = stage.scrollTop + ay
+    img.style.width = `${(natW * zoom) / dpr()}px`
+    img.style.height = `${(natH * zoom) / dpr()}px`
+    stage.scrollLeft = px * (zoom / old) - ax
+    stage.scrollTop = py * (zoom / old) - ay
+    zLabel.textContent = `${Math.round(zoom * 100)} %`
+    stage.classList.toggle('ed-lb-pannable', stage.scrollWidth > stage.clientWidth || stage.scrollHeight > stage.clientHeight)
+    scheduleEstimate()
+  }
+  const scheduleEstimate = () => {
+    const e = entries[index]
+    if (!e || !canReencode(e) || !natW) return
+    clearTimeout(estTimer)
+    est = null
+    zShrink.disabled = true
+    zResult.textContent = '…'
+    const seq = ++estSeq
+    estTimer = window.setTimeout(async () => {
+      const w = Math.max(1, Math.round(natW * Math.min(zoom, 1)))
+      const h = Math.max(1, Math.round(natH * Math.min(zoom, 1)))
+      const data = await encodeImage(e.value, w, h, Number(qSel.value) / 100)
+      if (seq !== estSeq) return
+      const bytes = data ? dataUriByteSize(data) : Infinity
+      // re-encoding what was just shrunk saves a byte or two — not worth a generation loss
+      if (data && bytes < e.bytes * 0.95) {
+        est = { key: e.key, data }
+        zShrink.disabled = false
+        zResult.textContent = `${w} × ${h} px · ${formatBytesMB(bytes)} (−${Math.floor((1 - bytes / e.bytes) * 100)} %)`
+      } else {
+        zResult.textContent = t('würde nicht kleiner')
+      }
+    }, 250)
+  }
 
   const renderStrip = () => {
     strip.innerHTML = ''
@@ -200,6 +326,8 @@ export function openMediaLightbox(store: Store, startKey: string) {
     }
 
     deleteB.hidden = !e.unused
+    zoomBar.hidden = !isImageMime(e.mime)
+    qLabel.hidden = zShrink.hidden = !canReencode(e)
     shrinkB.hidden = true
     if (shrinkFor !== e.key) { shrinkFor = e.key; shrunk = null }
     if (isImageMime(e.mime)) {
@@ -215,14 +343,29 @@ export function openMediaLightbox(store: Store, startKey: string) {
       shown = index
       stage.dataset.key = e.key
       stage.innerHTML = ''
+      img = null
       let media: HTMLElement
       if (isImageMime(e.mime)) {
-        const img = document.createElement('img')
-        img.className = 'ed-lb-media'
-        img.alt = ''
-        img.onload = () => { dims.textContent = `${img.naturalWidth} × ${img.naturalHeight} px` }
-        img.src = e.value
-        media = img
+        const im = document.createElement('img')
+        im.className = 'ed-lb-media ed-lb-zoomable'
+        im.alt = ''
+        im.draggable = false
+        im.onload = () => {
+          natW = im.naturalWidth
+          natH = im.naturalHeight
+          dims.textContent = `${natW} × ${natH} px`
+          zoom = 1
+          const keep = keepCss?.key === e.key ? keepCss.w : 0
+          keepCss = null
+          setZoom(keep ? (keep * dpr()) / natW : fitZoom())
+          const sz = slideZoom(store.doc, e.key, natW, natH)
+          zSlide.hidden = !sz
+          zSlide.dataset.zoom = String(sz ?? '')
+        }
+        img = im
+        natW = 0
+        im.src = e.value
+        media = im
       } else if (e.mime.startsWith('video/')) {
         const v = document.createElement('video')
         v.className = 'ed-lb-media'
@@ -266,6 +409,7 @@ export function openMediaLightbox(store: Store, startKey: string) {
 
   function close() {
     off()
+    clearTimeout(estTimer)
     document.removeEventListener('keydown', onKey, true)
     root.remove()
     prevFocus?.focus?.()
@@ -277,6 +421,10 @@ export function openMediaLightbox(store: Store, startKey: string) {
     else if (ev.key === 'ArrowRight') step(1)
     else if (ev.key === 'Home') { index = 0; render() }
     else if (ev.key === 'End') { index = entries.length - 1; render() }
+    else if (img && (ev.key === '+' || ev.key === '=')) setZoom(zoom * 1.25)
+    else if (img && ev.key === '-') setZoom(zoom / 1.25)
+    else if (img && ev.key === '0') setZoom(fitZoom())
+    else if (img && ev.key === '1') setZoom(1)
     else return
     ev.preventDefault()
     ev.stopPropagation()
@@ -285,7 +433,41 @@ export function openMediaLightbox(store: Store, startKey: string) {
   prevB.addEventListener('click', () => step(-1))
   nextB.addEventListener('click', () => step(1))
   closeB.addEventListener('click', close)
-  root.addEventListener('click', (ev) => { if (ev.target === root || ev.target === stage) close() })
+  let panned = false
+  root.addEventListener('click', (ev) => {
+    if (panned) { panned = false; return }
+    if (ev.target === root || ev.target === stage) close()
+  })
+  stage.addEventListener('wheel', (ev) => {
+    if (!img || !natW) return
+    ev.preventDefault()
+    setZoom(zoom * Math.pow(1.0015, -ev.deltaY * (ev.deltaMode === 1 ? 33 : 1)), { x: ev.clientX, y: ev.clientY })
+  }, { passive: false })
+  stage.addEventListener('pointerdown', (ev) => {
+    if (!img || ev.button !== 0 || !stage.classList.contains('ed-lb-pannable')) return
+    const sx = ev.clientX, sy = ev.clientY, l0 = stage.scrollLeft, t0 = stage.scrollTop
+    panned = false
+    const move = (m: PointerEvent) => {
+      if (Math.abs(m.clientX - sx) + Math.abs(m.clientY - sy) > 3) panned = true
+      stage.scrollLeft = l0 - (m.clientX - sx)
+      stage.scrollTop = t0 - (m.clientY - sy)
+    }
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  })
+  zOut.addEventListener('click', () => setZoom(zoom / 1.25))
+  zIn.addEventListener('click', () => setZoom(zoom * 1.25))
+  zFit.addEventListener('click', () => setZoom(fitZoom()))
+  z100.addEventListener('click', () => setZoom(1))
+  zSlide.addEventListener('click', () => { const z = Number(zSlide.dataset.zoom); if (z) setZoom(z) })
+  qSel.addEventListener('change', scheduleEstimate)
+  zShrink.addEventListener('click', () => {
+    const e = entries[index]
+    if (!e || !img || est?.key !== e.key) return
+    keepCss = { key: e.key, w: img.getBoundingClientRect().width }
+    applyShrunk(store, e.key, est.data)
+  })
   downloadB.addEventListener('click', () => { const e = entries[index]; if (e) void downloadAsset(e) })
   deleteB.addEventListener('click', () => { const e = entries[index]; if (e?.unused) deleteAsset(store, e.key) })
   shrinkB.addEventListener('click', () => {
