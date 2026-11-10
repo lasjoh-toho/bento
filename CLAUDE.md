@@ -81,9 +81,10 @@ names provisional.
   it really has transparency, else JPEG at the chosen quality; offered only for
   ≥5 % savings). "Wie auf der Folie" = the largest size an image element shows
   it at in a 1920-px full-screen show (crop/fit aware, `slideZoom`).
-- **Format painter (`editor/formatpainter.ts`)**: a grey brush (yellow icon)
-  appears on hover beside the Typography / Fill & stroke headers. It reads the
-  element's properties into a panel-wide dropdown of removable pills; while
+- **Format painter (`editor/formatpainter.ts`)**: a brush button always sits
+  beside the Typography / Fill & stroke headers — grey, turning yellow on hover
+  (and while open/locked). It reads the element's properties into a panel-wide,
+  yellow-tinted dropdown of removable yellow pills; while
   open, every newly selected element receives them (store `selection` event,
   one commit each). The lock keeps the pills across closing; unlocked, the
   next brush press reads the current element afresh. Section info popups

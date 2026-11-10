@@ -410,8 +410,11 @@ export class Editor {
     const history = div('ed-group ed-group-history')
     history.append(undoB, redoB)
     const saveGroup = div('ed-split')
-    saveGroup.append(saveB, this.saveDropdown())
+    // the "Saved" check takes Save's own place, left of the caret — appended
+    // after it, the caret jumped in front whenever the deck was saved
+    saveGroup.append(saveB)
     if (this.savedIndicator) saveGroup.appendChild(this.savedIndicator)
+    saveGroup.appendChild(this.saveDropdown())
     const shareD = this.shareDropdown()
     const langD = this.languageDropdown()
     actions.append(pdfB, this.avatarsBox, shareD, saveGroup, langD, helpB)

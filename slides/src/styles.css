@@ -829,17 +829,17 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   padding: 0;
   border: none;
   border-radius: 5px;
-  background: #8b929c;
-  color: #ffd21f;
+  /* always there, quietly grey; it turns yellow when it is about to be used */
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+  color: var(--muted);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s ease, background 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 .ed-painter-btn svg { width: 14px; height: 14px; }
-.ed-section:hover .ed-painter-btn,
+.ed-painter-btn:hover,
 .ed-painter-btn:focus-visible,
 .ed-painter-btn.active,
-.ed-painter-btn.locked { opacity: 1; }
+.ed-painter-btn.locked { background: #8b929c; color: #ffd21f; }
 .ed-painter-btn:hover { background: #6f7680; }
 .ed-painter-btn.active { background: #5d646e; box-shadow: 0 0 0 2px #ffd21f; }
 .ed-painter-lockdot { display: none; }
@@ -860,9 +860,10 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   box-sizing: border-box;
   padding: 8px 10px 10px;
   border-radius: 8px;
-  background: var(--surface);
+  /* a yellowish tint sets it apart from the panel underneath */
+  background: color-mix(in srgb, #ffd21f 13%, var(--surface));
   color: var(--ink);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.22), 0 0 0 1px var(--line);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.22), 0 0 0 1px color-mix(in srgb, #ffd21f 45%, var(--line));
   transition: box-shadow 0.2s ease;
 }
 .ed-painter.applied { box-shadow: 0 6px 24px rgb(0 0 0 / 0.22), 0 0 0 2px #ffd21f; }
@@ -904,8 +905,8 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   max-width: 100%;
   padding: 2px 2px 2px 8px;
   border-radius: 999px;
-  background: var(--chrome);
-  box-shadow: inset 0 0 0 1px var(--line);
+  background: color-mix(in srgb, #ffd21f 38%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #e0b400 70%, var(--surface));
   font-size: 11.5px;
   white-space: nowrap;
   overflow: hidden;
@@ -931,7 +932,8 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
   line-height: 1;
   cursor: pointer;
 }
-.ed-painter-pill-x:hover { background: var(--line); color: var(--ink); }
+.ed-painter-pill-x { color: color-mix(in srgb, var(--ink) 65%, transparent); }
+.ed-painter-pill-x:hover { background: color-mix(in srgb, #e0b400 45%, transparent); color: var(--ink); }
 /* brush cursor over the slide while the painter is open */
 .ed-painting .ed-stage-scale [data-el-id] {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='%23ffd21f' stroke='%23222' stroke-width='1.4' stroke-linejoin='round'%3E%3Cpath d='M9.97 12.06 18.5 3.5a2.12 2.12 0 0 1 3 3l-8.56 8.53z'/%3E%3Cpath d='M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z'/%3E%3C/svg%3E") 3 21, copy;
@@ -3191,6 +3193,12 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
   color: #3a8a5e;
   font: 600 13px/1 system-ui, -apple-system, sans-serif;
   white-space: nowrap;
+}
+/* in the split button it is the left half, like the Save button it replaces */
+.ed-split > .ed-saved-indicator {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+  border-inline-end: none;
 }
 
 /* quiet divider between share actions and advanced session controls */
