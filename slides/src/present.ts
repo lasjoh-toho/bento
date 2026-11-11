@@ -1612,13 +1612,16 @@ export function startPresentation(
   // the deck drops back into the editor (phones have no Esc) ———
   let touchX = 0
   let touchY = 0
+  // a finger drawing on the ink layer is a stroke, not a page turn
+  let touchDraws = false
   overlay.addEventListener('touchstart', (ev) => {
     touchX = ev.touches[0].clientX
     touchY = ev.touches[0].clientY
+    touchDraws = inkEnabled && (ev.target as Element | null)?.closest?.('.bento-ink-canvas') != null
   }, { passive: true })
   overlay.addEventListener('touchend', (ev) => {
     const t0 = ev.changedTouches[0]
-    if (!t0) return
+    if (!t0 || touchDraws) return
     const dx = t0.clientX - touchX
     const dy = t0.clientY - touchY
     if (longReadOpen) {
