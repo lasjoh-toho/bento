@@ -67,6 +67,8 @@ export interface RibbonHost {
   toast(message: string, kind?: 'neutral' | 'success' | 'error'): void
   /** host-provided file actions (embed.ts); absent = Bento's own */
   fileActions?: FileActions
+  /** the active tab changed (also once at start) — the format pane follows it */
+  tabChanged?(tab: string): void
 }
 
 /** File menu entries a host can take over (Collegare: PowerPoint import/export). */
@@ -114,7 +116,10 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''):
 
 export class Ribbon {
   readonly root: HTMLElement
+  /** right end of the tab row: the editor moves its own buttons here (undo, print, language, help …) */
+  readonly extras: HTMLElement
   private tabsRow: HTMLElement
+  private tabList: HTMLElement
   private body: HTMLElement
   private tab: Tab
   /** per-tab refreshers for live state (font size of the selection, active transition …) */
@@ -126,13 +131,18 @@ export class Ribbon {
     this.root.setAttribute('role', 'toolbar')
     this.root.setAttribute('aria-label', t('Ribbon'))
     this.tabsRow = el('div', 'ed-ribbon-tabs')
-    this.tabsRow.setAttribute('role', 'tablist')
+    this.tabList = el('div', 'ed-ribbon-tablist')
+    this.tabList.setAttribute('role', 'tablist')
+    this.extras = el('div', 'ed-ribbon-extras')
+    this.tabsRow.append(this.tabList, this.extras)
     this.body = el('div', 'ed-ribbon-body')
     this.root.append(this.tabsRow, this.body)
     const saved = lsGet(TAB_KEY) as Tab | null
     this.tab = saved && TABS.some(([k]) => k === saved) && saved !== 'file' ? saved : 'home'
     this.renderTabs()
     this.renderBody()
+    if (lsGet('bento-ribbon-folded') === '1') this.root.classList.add('ed-ribbon-folded')
+    queueMicrotask(() => this.host.tabChanged?.(this.tab))
     const store = host.store
     store.on('selection', () => this.refresh())
     store.on('current', () => this.refresh())
@@ -162,7 +172,7 @@ export class Ribbon {
   }
 
   private renderTabs() {
-    this.tabsRow.textContent = ''
+    this.tabList.textContent = ''
     for (const [key, label] of TABS) {
       const b = el('button', 'ed-ribbon-tab' + (key === 'file' ? ' ed-ribbon-file' : ''), t(label))
       b.type = 'button'
@@ -170,17 +180,29 @@ export class Ribbon {
       b.setAttribute('aria-selected', String(key === this.tab))
       b.addEventListener('click', () => {
         if (key === 'file') return this.openFileMenu(b)
+        // a second click on the active tab folds the ribbon to its tab row, like PowerPoint
+        if (key === this.tab) return this.setFolded(!this.folded)
         this.tab = key
         lsSet(TAB_KEY, key)
+        this.setFolded(false)
         this.renderTabs()
         this.renderBody()
+        this.host.tabChanged?.(key)
       })
-      this.tabsRow.appendChild(b)
+      this.tabList.appendChild(b)
     }
   }
 
   private refresh() {
     for (const r of this.refreshers) r()
+  }
+
+  get folded() {
+    return this.root.classList.contains('ed-ribbon-folded')
+  }
+  setFolded(on: boolean) {
+    this.root.classList.toggle('ed-ribbon-folded', on)
+    lsSet('bento-ribbon-folded', on ? '1' : '0')
   }
 
   private renderBody() {

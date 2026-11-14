@@ -145,12 +145,21 @@ export class Editor {
   }
 
   private ribbon: Ribbon | null = null
+  private chromeParts: { title: HTMLElement; history: HTMLElement; saveGroup: HTMLElement; pdfB: HTMLElement; langD: HTMLElement; helpB: HTMLElement } | null = null
+  /** hosted with the ribbon (Collegare): no topbar — its few remaining buttons live at the end of the tab row */
+  private ribbonOnly = false
   private ribbonB!: HTMLElement
   private ribbonMain!: HTMLElement
 
   private mountRibbon() {
     this.ribbon = new Ribbon(this.ribbonHost())
     this.root.insertBefore(this.ribbon.root, this.ribbonMain)
+    if (this.ribbonOnly && this.chromeParts) {
+      const c = this.chromeParts
+      const panelB = btn(ICONS.panelRight, '', () => this.togglePanel('right'), t('Format Pane'))
+      panelB.classList.add('ed-ribbon-panel-toggle')
+      this.ribbon.extras.append(c.title, c.history, c.saveGroup, c.pdfB, c.langD, c.helpB, panelB)
+    }
     this.ribbonB.classList.add('ed-btn-armed')
     document.body.classList.add('ed-has-ribbon')
   }
@@ -160,6 +169,7 @@ export class Editor {
     if (this.ribbon) {
       this.ribbon.root.remove()
       this.ribbon = null
+      this.panel.setContext(null)
       this.ribbonB.classList.remove('ed-btn-armed')
       document.body.classList.remove('ed-has-ribbon')
       setRibbonPreferred(false)
@@ -208,6 +218,7 @@ export class Editor {
       togglePanel: (side) => this.togglePanel(side),
       openHelp: () => this.openHelp(),
       openAbout: () => this.openAbout(),
+      tabChanged: (tab) => this.panel.setContext(tab),
       openVersionHistory: () => void this.openVersionHistory(),
       copyDocJson: () => void this.copyDocJson(),
       openReplaceJson: () => this.openReplaceJson(),
@@ -396,6 +407,7 @@ export class Editor {
   private build() {
     this.root.innerHTML = ''
     this.root.className = 'ed-root'
+    this.ribbonOnly = !!hostConfig?.ribbon && !hostConfig.readOnly && this.store.doc.collab?.role !== 'reader'
 
     // topbar
     const bar = div('ed-topbar')
@@ -410,6 +422,8 @@ export class Editor {
     logo.title = t('About bento/slides — version, updates, licenses')
     logo.style.cursor = 'pointer'
     logo.addEventListener('click', () => this.openAbout())
+    // hosted (Collegare): the web app is the product — no Bento wordmark/About entry in its chrome
+    if (hostConfig) logo.style.display = 'none'
     const title = document.createElement('input')
     title.className = 'ed-title'
     title.title = t('Deck title — shown in the tab, on {{title}} fields, and as the suggested file name')
@@ -537,6 +551,7 @@ export class Editor {
     if (hostConfig) shareD.style.display = 'none'
     const langD = this.languageDropdown()
     actions.append(pdfB, this.avatarsBox, shareD, saveGroup, langD, ribbonB, helpB)
+    this.chromeParts = { title, history, saveGroup, pdfB, langD, helpB }
 
     // Phone chrome: two menus that stay EMPTY on a wide screen. Nothing is
     // duplicated — applyPhoneChrome moves the real buttons in and out, so every
@@ -709,7 +724,10 @@ export class Editor {
     // a read-only deck has nothing to edit — the ribbon would be a wall of dead buttons
     const readOnly = !!hostConfig?.readOnly || this.store.doc.collab?.role === 'reader'
     if (readOnly) this.ribbonB.style.display = 'none'
-    else if (ribbonPreferred(!!hostConfig?.ribbon)) this.mountRibbon()
+    else if (this.ribbonOnly) {
+      document.body.classList.add('ed-ribbon-only')
+      this.mountRibbon()
+    } else if (ribbonPreferred(false)) this.mountRibbon()
 
     if (this.store.doc.collab?.role === 'reader') this.enterReaderMode()
     else if (hostConfig?.readOnly) this.enterReaderMode(t('Read-only — you can look through and present this deck, but not change it.'))
@@ -845,7 +863,7 @@ export class Editor {
    */
   private applyPhoneChrome(on: boolean) {
     const p = this.phoneChrome
-    if (!p || this.phoneChromeOn === on) return
+    if (!p || this.phoneChromeOn === on || this.ribbonOnly) return
     // A FRESH bar is already in its authored desktop order, so there is nothing
     // to put back — and running the restore below anyway does not just waste
     // work, it REORDERS: every demoted button lands before formatB regardless
@@ -3549,7 +3567,8 @@ export class Editor {
           : t('This file carries its own app — it works offline, forever, as is.')
 
     let checkBRef: HTMLButtonElement | undefined
-    if (!moodleConfig) {
+    // a hosting web app (Collegare) ships the app itself: no update checks, no bento.page buttons
+    if (!moodleConfig && !hostConfig) {
     const row = div('ed-about-row')
     const checkB = document.createElement('button')
     checkBRef = checkB
@@ -3678,7 +3697,7 @@ export class Editor {
     row.appendChild(checkB)
     box.appendChild(row)
     }
-    box.appendChild(status)
+    if (!hostConfig) box.appendChild(status)
 
     // Appearance — a VIEWER preference, so it sits with the others (language,
     // auto-update) rather than anywhere near the document's own settings.
@@ -3705,7 +3724,7 @@ export class Editor {
     autoCb.checked = autoCheckEnabled()
     autoCb.addEventListener('change', () => setAutoCheck(autoCb.checked))
     autoRow.append(autoCb, document.createTextNode(' ' + t('Check for updates automatically at launch')))
-    if (!moodleConfig) box.appendChild(autoRow)
+    if (!moodleConfig && !hostConfig) box.appendChild(autoRow)
 
     // the hard no-network switch: blocks update checks AND online
     // collaboration for this browser. Same-machine tab sync is not
