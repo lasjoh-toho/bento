@@ -31,6 +31,8 @@ export class SlideCanvas {
   private scroller: HTMLElement
   private surface: HTMLElement | null = null
   private moveable: Moveable
+  /** primary button / finger currently down (see the dragStart hand-over in selectEnd) */
+  private mouseHeld = false
   private selecto: Selecto
   /** The anchor for Shift-click range-select — the last element clicked
    *  with no modifier key held. See wireSelecto()'s own selectEnd handler. */
@@ -180,6 +182,11 @@ export class SlideCanvas {
       renderDirections: ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'],
     })
 
+    window.addEventListener('mousedown', () => { this.mouseHeld = true }, true)
+    window.addEventListener('mouseup', () => { this.mouseHeld = false }, true)
+    window.addEventListener('blur', () => { this.mouseHeld = false })
+    window.addEventListener('touchstart', () => { this.mouseHeld = true }, { capture: true, passive: true })
+    window.addEventListener('touchend', () => { this.mouseHeld = false }, true)
     this.selecto = new Selecto({
       container: this.scroller,
       dragContainer: this.scroller,
@@ -1222,7 +1229,10 @@ export class SlideCanvas {
       if (e.isDragStartEnd) {
         e.inputEvent.preventDefault()
         this.moveable.waitToChangeTarget().then(() => {
-          this.moveable.dragStart(e.inputEvent)
+          // Only hand over while the button is still down: after a plain click the
+          // mouseup has already happened, and a drag started now never ends —
+          // Moveable then swallowed the NEXT click anywhere (ribbon, topbar).
+          if (this.mouseHeld) this.moveable.dragStart(e.inputEvent)
         })
       }
     })
