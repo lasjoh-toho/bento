@@ -158,7 +158,8 @@ export class Editor {
       const c = this.chromeParts
       const panelB = btn(ICONS.panelRight, '', () => this.togglePanel('right'), t('Format Pane'))
       panelB.classList.add('ed-ribbon-panel-toggle')
-      this.ribbon.extras.append(c.title, c.history, c.saveGroup, c.pdfB, c.langD, c.helpB, panelB)
+      if (hostConfig?.titleInHost) this.ribbon.extras.append(c.history, c.pdfB, c.langD, c.helpB, panelB)
+      else this.ribbon.extras.append(c.title, c.history, c.saveGroup, c.pdfB, c.langD, c.helpB, panelB)
     }
     this.ribbonB.classList.add('ed-btn-armed')
     document.body.classList.add('ed-has-ribbon')
@@ -258,9 +259,21 @@ export class Editor {
         this.toast(msg.message, msg.kind === 'error' ? 'error' : msg.kind === 'success' ? 'success' : 'neutral')
       } else if (msg.bento === 'save') {
         if (this.store.dirty) void this.save(false)
+      } else if (msg.bento === 'title' && typeof msg.title === 'string' && !hostConfig!.readOnly) {
+        const title = msg.title.trim().slice(0, 200) || 'Untitled'
+        if (title !== this.store.doc.title) {
+          this.store.commit(() => { this.store.doc.title = title })
+          this.syncWindowTitle()
+        }
       }
     })
-    postToHost({ bento: 'ready' })
+    let lastTitle = this.store.doc.title
+    this.store.on('doc', () => {
+      if (this.store.doc.title === lastTitle) return
+      lastTitle = this.store.doc.title
+      postToHost({ bento: 'title', title: lastTitle })
+    })
+    postToHost({ bento: 'ready', title: this.store.doc.title, dirty: this.store.dirty })
   }
 
   /** See this method's own call site in the constructor for why this
@@ -552,6 +565,7 @@ export class Editor {
     const langD = this.languageDropdown()
     actions.append(pdfB, this.avatarsBox, shareD, saveGroup, langD, ribbonB, helpB)
     this.chromeParts = { title, history, saveGroup, pdfB, langD, helpB }
+    if (hostConfig?.titleInHost) { title.style.display = 'none'; saveGroup.style.display = 'none' }
 
     // Phone chrome: two menus that stay EMPTY on a wide screen. Nothing is
     // duplicated — applyPhoneChrome moves the real buttons in and out, so every

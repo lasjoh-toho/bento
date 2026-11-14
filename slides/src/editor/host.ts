@@ -20,9 +20,11 @@
 //                    {bento:'file', action, doc?, snapshots?}   action ∈ FileActionName;
 //                    snapshots = SVG still of every chart for exportPptx, key 'slideId/elementId'
 //                    {bento:'dirty', dirty}
+//                    {bento:'title', title}         deck title (at ready and on change)
 //   parent → iframe  {bento:'replace', doc}         import result (undoable)
 //                    {bento:'toast', message, kind?}
 //                    {bento:'save'}                 e.g. before leaving the page
+//                    {bento:'title', title}         rename the deck (host shows the title, titleInHost)
 
 export type FileActionName = 'exportPptx' | 'exportHtml' | 'exportJson' | 'importPptx' | 'importHtml' | 'importJson'
 
@@ -41,6 +43,8 @@ export interface HostConfig {
   canImport?: boolean
   /** look and present only (a teacher viewing a group's deck); Save is off */
   readOnly?: boolean
+  /** the host's own header shows (and edits) the title and the saved state — Bento's chrome leaves both out */
+  titleInHost?: boolean
 }
 
 function readHostConfig(): HostConfig | null {
