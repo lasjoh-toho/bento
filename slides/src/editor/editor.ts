@@ -15,7 +15,7 @@ import {
 } from '../model'
 import { THEME_CHOICES, setTheme, themeChoice } from '../../../kernel/src/theme.ts'
 import { APP_VERSION, applyUpdate, applyUpdateInPlace, autoCheckEnabled, canUpdateInPlace, checkForUpdates, compareVersions, offlineEnabled, setAutoCheck, setOffline } from '../update'
-import { CHART_PRESETS } from '../charts'
+import { CHART_PRESETS, chartSnapshotSvg } from '../charts'
 import { renderSlide, renderThumbnail } from '../render'
 import { openExportImagesDialog } from './exportimages'
 import { SlideCanvas } from './canvas'
@@ -177,7 +177,12 @@ export class Editor {
           canImport: hostConfig.canImport !== false,
           ...Object.fromEntries((hostConfig.fileActions ?? []).map((a) => [a, () => {
             this.canvas.commitTextEdit()
-            postToHost({ bento: 'file', action: a, doc: a.startsWith('export') ? this.store.doc : undefined })
+            // charts are drawn by Bento's own engine — a host converter gets a still of each (key: slideId/elementId)
+            const snapshots: Record<string, string> = {}
+            if (a === 'exportPptx') {
+              for (const sl of this.store.doc.slides) for (const e of sl.elements) if (e.type === 'chart') snapshots[`${sl.id}/${e.id}`] = chartSnapshotSvg(e)
+            }
+            postToHost({ bento: 'file', action: a, doc: a.startsWith('export') ? this.store.doc : undefined, snapshots })
           }])),
         }
       : undefined
@@ -323,7 +328,7 @@ export class Editor {
 
   /** Connect to the relay if the current doc is live AND share-eligible. */
   private tryJoin() {
-    if (!this.session) return
+    if (!this.session || hostConfig) return // a hosting web app owns where its decks go
     if (sharingOn(this.store) && this.session.shareEligible() && !onlineTransport()) {
       joinFromDoc(this.session, this.store)
       this.wireOnlineStatus()
@@ -528,6 +533,8 @@ export class Editor {
     if (this.savedIndicator) saveGroup.appendChild(this.savedIndicator)
     saveGroup.appendChild(this.saveDropdown())
     const shareD = this.shareDropdown()
+    // hosted decks belong to the web app (and to its users' data protection): no public live relay
+    if (hostConfig) shareD.style.display = 'none'
     const langD = this.languageDropdown()
     actions.append(pdfB, this.avatarsBox, shareD, saveGroup, langD, ribbonB, helpB)
 

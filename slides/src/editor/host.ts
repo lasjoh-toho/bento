@@ -17,7 +17,8 @@
 // Messages (both directions carry `bento: <type>`; origin must match ours):
 //   iframe → parent  {bento:'ready'}
 //                    {bento:'saved', version}
-//                    {bento:'file', action, doc?}   action ∈ FileActionName
+//                    {bento:'file', action, doc?, snapshots?}   action ∈ FileActionName;
+//                    snapshots = SVG still of every chart for exportPptx, key 'slideId/elementId'
 //                    {bento:'dirty', dirty}
 //   parent → iframe  {bento:'replace', doc}         import result (undoable)
 //                    {bento:'toast', message, kind?}
