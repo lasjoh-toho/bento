@@ -15,7 +15,7 @@ import {
 } from '../model'
 import { THEME_CHOICES, setTheme, themeChoice } from '../../../kernel/src/theme.ts'
 import { APP_VERSION, applyUpdate, applyUpdateInPlace, autoCheckEnabled, canUpdateInPlace, checkForUpdates, compareVersions, offlineEnabled, setAutoCheck, setOffline } from '../update'
-import { CHART_PRESETS } from '../charts'
+import { CHART_PRESETS, chartSnapshotSvg } from '../charts'
 import { renderSlide, renderThumbnail } from '../render'
 import { openExportImagesDialog } from './exportimages'
 import { SlideCanvas } from './canvas'
@@ -24,6 +24,8 @@ import { LongReadEditor } from './longread'
 import { startPresentation, type PresentSession } from '../present'
 import { adoptFileHandle, canWriteInPlace, currentFileName, downloadFile, fileBase, hasFileHandle, isEncryptionActive, openedFileName, saveFile, serializeAuto, serializeFile, setEncryptionPassword, suggestedFileName, writeUpdatedFile, writeUpdatedFileAs } from '../save'
 import { moodleConfig, saveToMoodle, imageDownscaleParams } from './moodle'
+import { HostConflictError, hostConfig, onHostMessage, postToHost, saveToHost } from './host'
+import { Ribbon, ribbonPreferred, setRibbonPreferred, type RibbonHost } from './ribbon'
 import { playlistConfig } from './playlist'
 import { addVersion, clearRecovery, clearVersions, docContentKey, getRecovery, listVersions, pruneOld, putRecovery, type Snapshot } from '../autosave'
 import { insertElements, insertSlides, parseClip, parseHtmlPaste, parseSpreadsheetPaste, serializeElements, serializeSlides } from './clipboard'
@@ -120,7 +122,8 @@ export class Editor {
     store.on('doc', () => this.scheduleThumbs())
     store.on('dirty', () => {
       this.dirtyDot.classList.toggle('on', store.dirty)
-      if (moodleConfig && this.savedIndicator) {
+      postToHost({ bento: 'dirty', dirty: store.dirty })
+      if ((moodleConfig || hostConfig) && this.savedIndicator) {
         this.saveBtn.style.display = store.dirty ? '' : 'none'
         this.savedIndicator.style.display = store.dirty ? 'none' : ''
       }
@@ -138,6 +141,126 @@ export class Editor {
     document.body.classList.toggle('ed-tooltips-hidden', lsJson<boolean>('bento-tooltips-hidden', false))
     this.wireTooltipWidth()
     this.rebuildSidebar()
+    this.wireHost()
+  }
+
+  private ribbon: Ribbon | null = null
+  private chromeParts: { title: HTMLElement; history: HTMLElement; saveGroup: HTMLElement; pdfB: HTMLElement; langD: HTMLElement; helpB: HTMLElement } | null = null
+  /** hosted with the ribbon (Collegare): no topbar — its few remaining buttons live at the end of the tab row */
+  private ribbonOnly = false
+  private ribbonB!: HTMLElement
+  private ribbonMain!: HTMLElement
+
+  private mountRibbon() {
+    this.ribbon = new Ribbon(this.ribbonHost())
+    this.root.insertBefore(this.ribbon.root, this.ribbonMain)
+    if (this.ribbonOnly && this.chromeParts) {
+      const c = this.chromeParts
+      const panelB = btn(ICONS.panelRight, '', () => this.togglePanel('right'), t('Format Pane'))
+      panelB.classList.add('ed-ribbon-panel-toggle')
+      this.ribbon.extras.append(c.title, c.history, c.saveGroup, c.pdfB, c.langD, c.helpB, panelB)
+    }
+    this.ribbonB.classList.add('ed-btn-armed')
+    document.body.classList.add('ed-has-ribbon')
+  }
+
+  /** topbar toggle: the ribbon is a per-viewer preference, never in the file */
+  toggleRibbon() {
+    if (this.ribbon) {
+      this.ribbon.root.remove()
+      this.ribbon = null
+      this.panel.setContext(null)
+      this.ribbonB.classList.remove('ed-btn-armed')
+      document.body.classList.remove('ed-has-ribbon')
+      setRibbonPreferred(false)
+    } else {
+      this.mountRibbon()
+      setRibbonPreferred(true)
+    }
+    this.canvas.render()
+  }
+
+  /** Everything the ribbon calls — existing editor, canvas and panel code. */
+  private ribbonHost(): RibbonHost {
+    const fileActions = hostConfig
+      ? {
+          canImport: hostConfig.canImport !== false,
+          ...Object.fromEntries((hostConfig.fileActions ?? []).map((a) => [a, () => {
+            this.canvas.commitTextEdit()
+            // charts are drawn by Bento's own engine — a host converter gets a still of each (key: slideId/elementId)
+            const snapshots: Record<string, string> = {}
+            if (a === 'exportPptx') {
+              for (const sl of this.store.doc.slides) for (const e of sl.elements) if (e.type === 'chart') snapshots[`${sl.id}/${e.id}`] = chartSnapshotSvg(e)
+            }
+            postToHost({ bento: 'file', action: a, doc: a.startsWith('export') ? this.store.doc : undefined, snapshots })
+          }])),
+        }
+      : undefined
+    return {
+      store: this.store,
+      save: (force) => this.save(force),
+      present: (fromStart, fullscreen) => this.present(fromStart, fullscreen),
+      openSpeakerView: () => this.openSpeakerView(),
+      exportPdf: () => this.exportPdf(),
+      exportImages: () => this.exportImages(),
+      pickImage: () => this.pickImage(),
+      pickMedia: () => this.pickMedia(),
+      promptMediaUrl: (kind) => this.promptMediaUrl(kind),
+      insertCamera: () => this.insertCamera(),
+      insertTable: () => this.canvas.insert(this.newTable()),
+      insertChart: () => this.canvas.insert(defaultChart(applyChartPalette(CHART_PRESETS.bar(), this.store.doc.theme))),
+      insertElement: (el, edit) => this.canvas.insert(el, edit),
+      armDraw: (kind) => this.canvas.armDraw(kind),
+      toggleCommentMode: () => this.canvas.toggleCommentMode(),
+      duplicateSlide: (i) => this.duplicateSlide(i),
+      deleteSlide: (i) => this.deleteSlide(i),
+      openLayoutPicker: (anchor, opts) => this.openLayoutPicker(anchor, opts?.kind === 'apply' ? { kind: 'apply' } : undefined),
+      togglePanel: (side) => this.togglePanel(side),
+      openHelp: () => this.openHelp(),
+      openAbout: () => this.openAbout(),
+      tabChanged: (tab) => this.panel.setContext(tab),
+      openVersionHistory: () => void this.openVersionHistory(),
+      copyDocJson: () => void this.copyDocJson(),
+      openReplaceJson: () => this.openReplaceJson(),
+      downloadCopy: () => void this.downloadCopy(),
+      openLongReadEditor: (id) => this.openLongReadEditor(id),
+      zoom: (dir) => (dir > 0 ? this.canvas.zoomIn() : dir < 0 ? this.canvas.zoomOut() : this.canvas.zoomReset()),
+      align: (els, edge) => this.panel.align(els, edge),
+      distribute: (els, axis) => this.panel.distribute(els, axis),
+      reorder: (els, where) => this.panel.reorder(els, where),
+      step: (els, dir) => this.panel.step(els, dir),
+      group: (els) => this.panel.group(els),
+      ungroup: (els) => this.panel.ungroup(els),
+      duplicate: (els) => this.panel.duplicate(els),
+      deleteEls: (els) => this.panel.deleteEls(els),
+      paintFormat: () => {
+        if (this.props.classList.contains('ed-collapsed')) this.togglePanel('right')
+        return this.panel.paintFormat()
+      },
+      embedFont: () => this.panel.embedFont(),
+      updateReferences: () => this.panel.updateReferences(),
+      insertToc: (hidden) => this.panel.insertToc(hidden),
+      toast: (m, k) => this.toast(m, k),
+      fileActions,
+    }
+  }
+
+  /** Hosted in a web app (host.ts): parent messages — import results replace
+   *  the deck (undoable), toasts, save-before-leave. */
+  private wireHost() {
+    if (!hostConfig) return
+    onHostMessage((msg) => {
+      if (msg.bento === 'replace' && msg.doc && typeof msg.doc === 'object') {
+        this.store.replaceDoc(msg.doc as import('../model').BentoDoc)
+        injectFonts(this.store.doc)
+        this.toast(t('Imported — ⌘Z undoes it'), 'success')
+      } else if (msg.bento === 'toast' && typeof msg.message === 'string') {
+        this.toast(msg.message, msg.kind === 'error' ? 'error' : msg.kind === 'success' ? 'success' : 'neutral')
+      } else if (msg.bento === 'save') {
+        if (this.store.dirty) void this.save(false)
+      }
+    })
+    postToHost({ bento: 'ready' })
   }
 
   /** See this method's own call site in the constructor for why this
@@ -216,7 +339,7 @@ export class Editor {
 
   /** Connect to the relay if the current doc is live AND share-eligible. */
   private tryJoin() {
-    if (!this.session) return
+    if (!this.session || hostConfig) return // a hosting web app owns where its decks go
     if (sharingOn(this.store) && this.session.shareEligible() && !onlineTransport()) {
       joinFromDoc(this.session, this.store)
       this.wireOnlineStatus()
@@ -284,6 +407,7 @@ export class Editor {
   private build() {
     this.root.innerHTML = ''
     this.root.className = 'ed-root'
+    this.ribbonOnly = !!hostConfig?.ribbon && !hostConfig.readOnly && this.store.doc.collab?.role !== 'reader'
 
     // topbar
     const bar = div('ed-topbar')
@@ -298,6 +422,8 @@ export class Editor {
     logo.title = t('About bento/slides — version, updates, licenses')
     logo.style.cursor = 'pointer'
     logo.addEventListener('click', () => this.openAbout())
+    // hosted (Collegare): the web app is the product — no Bento wordmark/About entry in its chrome
+    if (hostConfig) logo.style.display = 'none'
     const title = document.createElement('input')
     title.className = 'ed-title'
     title.title = t('Deck title — shown in the tab, on {{title}} fields, and as the suggested file name')
@@ -354,7 +480,7 @@ export class Editor {
     this.updatesB = btn(ICONS.sync, '', () => this.openAbout(true), t('Check for updates'))
     this.updatesB.style.display = 'none'
     setTimeout(async () => {
-      if (!autoCheckEnabled() || offlineEnabled() || moodleConfig || kiosk.unattended) return
+      if (!autoCheckEnabled() || offlineEnabled() || moodleConfig || hostConfig || kiosk.unattended) return
       const r = await checkForUpdates()
       this.lastAutoCheck = r
       if (r.status === 'update') {
@@ -370,7 +496,9 @@ export class Editor {
     }, 1500)
     const undoB = btn(ICONS.undo, '', () => this.store.undo(), t('Undo (⌘Z)'))
     const redoB = btn(ICONS.redo, '', () => this.store.redo(), t('Redo (⇧⌘Z)'))
-    const saveB = btn(ICONS.save, t('Save'), () => this.save(false), moodleConfig
+    const saveB = btn(ICONS.save, t('Save'), () => this.save(false), hostConfig
+      ? t('Save — writes back into {name} (⌘S)', { name: hostConfig.name })
+      : moodleConfig
       ? t('Save — writes back into this Moodle activity (⌘S)')
       : canWriteInPlace()
         ? t('Save — rewrite this file in place (⌘S)')
@@ -389,7 +517,7 @@ export class Editor {
     // already communicates "nothing changed" without needing to vanish
     // entirely, and re-saving a local file in place is a much cheaper,
     // less surprising no-op than a full Moodle upload round-trip would be.
-    if (moodleConfig) {
+    if (moodleConfig || hostConfig) {
       this.savedIndicator = document.createElement('span')
       this.savedIndicator.className = 'ed-saved-indicator'
       this.savedIndicator.textContent = '✓ ' + t('Saved')
@@ -402,6 +530,9 @@ export class Editor {
     }
     const pdfB = btn(ICONS.pdf, '', () => this.exportPdf(), t('Export PDF (print)'))
     const helpB = btn('<b class="ed-help-q">?</b>', '', () => this.openHelp(), t('Shortcuts & tips (?)'))
+    const ribbonB = btn(ICONS.ribbon, '', () => this.toggleRibbon(), t('Ribbon — the PowerPoint-style menu with tabs (on/off)'))
+    ribbonB.classList.add('ed-ribbon-toggle')
+    this.ribbonB = ribbonB
     helpB.classList.add('ed-btn-help')
     this.avatarsBox = div('ed-avatars')
     // Intuitive grouping: LEFT = the document (identity · title · save-state ·
@@ -416,8 +547,11 @@ export class Editor {
     if (this.savedIndicator) saveGroup.appendChild(this.savedIndicator)
     saveGroup.appendChild(this.saveDropdown())
     const shareD = this.shareDropdown()
+    // hosted decks belong to the web app (and to its users' data protection): no public live relay
+    if (hostConfig) shareD.style.display = 'none'
     const langD = this.languageDropdown()
-    actions.append(pdfB, this.avatarsBox, shareD, saveGroup, langD, helpB)
+    actions.append(pdfB, this.avatarsBox, shareD, saveGroup, langD, ribbonB, helpB)
+    this.chromeParts = { title, history, saveGroup, pdfB, langD, helpB }
 
     // Phone chrome: two menus that stay EMPTY on a wide screen. Nothing is
     // duplicated — applyPhoneChrome moves the real buttons in and out, so every
@@ -585,17 +719,28 @@ export class Editor {
     this.canvas.onCommentModeChange = (on) => commentB.classList.toggle('ed-btn-armed', on)
     this.canvas.onSlideNav = (dir) => this.store.goToLinear(dir)
     this.panel = new PropsPanel(this.props, this.store, this.canvas, () => this.multiSelectedIds, (anchor) => this.openLayoutPickerForSelected(anchor), () => this.openLongReadEditor(this.store.slide.id), () => this.removeUnusedMedia())
+    this.ribbonMain = main
+    this.ribbon = null
+    // a read-only deck has nothing to edit — the ribbon would be a wall of dead buttons
+    const readOnly = !!hostConfig?.readOnly || this.store.doc.collab?.role === 'reader'
+    if (readOnly) this.ribbonB.style.display = 'none'
+    else if (this.ribbonOnly) {
+      document.body.classList.add('ed-ribbon-only')
+      this.mountRibbon()
+    } else if (ribbonPreferred(false)) this.mountRibbon()
 
     if (this.store.doc.collab?.role === 'reader') this.enterReaderMode()
+    else if (hostConfig?.readOnly) this.enterReaderMode(t('Read-only — you can look through and present this deck, but not change it.'))
   }
 
   /** Live viewer: block user edits (store.readOnly), hide editing chrome, and
    *  show a banner. Remote ops still apply — the deck updates as others edit. */
-  private enterReaderMode() {
+  private enterReaderMode(message = t('Read-only — viewing this live session. You can watch and present, but not edit.')) {
     this.store.readOnly = true
     document.body.classList.add('ed-reader')
     const banner = div('ed-reader-banner')
-    banner.innerHTML = `<span class="ed-reader-dot"></span>${t('Read-only — viewing this live session. You can watch and present, but not edit.')}`
+    banner.innerHTML = `<span class="ed-reader-dot"></span>`
+    banner.append(message)
     document.body.appendChild(banner)
   }
 
@@ -718,7 +863,7 @@ export class Editor {
    */
   private applyPhoneChrome(on: boolean) {
     const p = this.phoneChrome
-    if (!p || this.phoneChromeOn === on) return
+    if (!p || this.phoneChromeOn === on || this.ribbonOnly) return
     // A FRESH bar is already in its authored desktop order, so there is nothing
     // to put back — and running the restore below anyway does not just waste
     // work, it REORDERS: every demoted button lands before formatB regardless
@@ -844,10 +989,10 @@ export class Editor {
       // FILE operations only — everything that goes to OTHER PEOPLE lives in
       // the Share panel (one mental model: Save = for me, Share = for others).
       item(ICONS.copy, t('Save a copy…'),
-        moodleConfig
+        moodleConfig || hostConfig
           ? t('Downloads a self-contained file with everything as it is right now — works even if saving to Moodle is slow or fails.')
           : t('A backup of this deck for yourself — same deck, same live session.'),
-        moodleConfig
+        moodleConfig || hostConfig
           ? () => void this.downloadCopy()
           : () => void this.save(true))
       item(ICONS.plus, t('Duplicate as new deck…'),
@@ -2275,6 +2420,7 @@ export class Editor {
         onSaveTerms: () => {
           this.store.touch()
           if (moodleConfig) void saveToMoodle(this.store.doc)
+          else if (hostConfig) void saveToHost(this.store.doc).catch(() => {})
         },
         onReachedEnd: playlist.length ? () => {
           playlistPos = (playlistPos + 1) % playlist.length
@@ -2603,6 +2749,20 @@ export class Editor {
       snapshotted = await putRecovery(doc)
       if (Date.now() - this.lastVersionAt > 120_000) { this.lastVersionAt = Date.now(); await addVersion(doc) }
     }
+    // Hosted (host.ts): the web app's server is the file — write back silently.
+    if (hostConfig && !hostConfig.readOnly && this.store.dirty && !this.presenting) {
+      try {
+        await saveToHost(doc)
+        this.store.setDirty(false)
+        this.flashSaved()
+        return
+      } catch (err) {
+        if (err instanceof HostConflictError) {
+          this.toast(t('Someone else saved this presentation in the meantime — reload the page to see their version (download a copy first to keep yours)'), 'error')
+        }
+        /* otherwise keep dirty; the IndexedDB snapshot is the backstop */
+      }
+    }
     // Silent file write-back once we hold a writable handle (Chrome/Edge).
     if (hasFileHandle()) {
       try {
@@ -2840,7 +3000,7 @@ export class Editor {
   }
 
   private noticeIfCannotWriteInPlace() {
-    if (moodleConfig) return // saves go to Moodle's server here — this notice is about local file rewriting, not applicable
+    if (moodleConfig || hostConfig) return // saves go to Moodle's server here — this notice is about local file rewriting, not applicable
     if (canWriteInPlace()) return
     if (lsGet(SAVE_NOTICE_KEY) === 'seen') return
     const bar = div('ed-recover')
@@ -3039,6 +3199,31 @@ export class Editor {
     // cleanup below only needs the same reference to remove it again).
     const activeThumb = this.sidebar.querySelector<HTMLElement>('.ed-thumb.active')
     activeThumb?.classList.add('ed-thumb-saving')
+
+    if (hostConfig) {
+      // a web app owns the deck (host.ts) — same shape as the Moodle branch
+      if (hostConfig.readOnly) {
+        this.saveBtn.classList.remove('ed-saving')
+        activeThumb?.classList.remove('ed-thumb-saving')
+        return
+      }
+      try {
+        this.canvas.commitTextEdit()
+        const { bytes } = await saveToHost(this.store.doc)
+        this.store.setDirty(false)
+        markFileSaved()
+        this.flashSaved(t('Saved ({size})', { size: formatBytesMB(bytes) }))
+      } catch (err) {
+        console.error('[bento/save] host save failed:', err)
+        this.toast(err instanceof HostConflictError
+          ? t('Someone else saved this presentation in the meantime — reload the page to see their version (download a copy first to keep yours)')
+          : t('Save failed: {error}', { error: (err as Error).message }), 'error')
+      } finally {
+        this.saveBtn.classList.remove('ed-saving')
+        activeThumb?.classList.remove('ed-thumb-saving')
+      }
+      return
+    }
 
     if (moodleConfig) {
       // No local file handle to rewrite here — the "file" is a database
@@ -3382,7 +3567,8 @@ export class Editor {
           : t('This file carries its own app — it works offline, forever, as is.')
 
     let checkBRef: HTMLButtonElement | undefined
-    if (!moodleConfig) {
+    // a hosting web app (Collegare) ships the app itself: no update checks, no bento.page buttons
+    if (!moodleConfig && !hostConfig) {
     const row = div('ed-about-row')
     const checkB = document.createElement('button')
     checkBRef = checkB
@@ -3511,7 +3697,7 @@ export class Editor {
     row.appendChild(checkB)
     box.appendChild(row)
     }
-    box.appendChild(status)
+    if (!hostConfig) box.appendChild(status)
 
     // Appearance — a VIEWER preference, so it sits with the others (language,
     // auto-update) rather than anywhere near the document's own settings.
@@ -3538,7 +3724,7 @@ export class Editor {
     autoCb.checked = autoCheckEnabled()
     autoCb.addEventListener('change', () => setAutoCheck(autoCb.checked))
     autoRow.append(autoCb, document.createTextNode(' ' + t('Check for updates automatically at launch')))
-    if (!moodleConfig) box.appendChild(autoRow)
+    if (!moodleConfig && !hostConfig) box.appendChild(autoRow)
 
     // the hard no-network switch: blocks update checks AND online
     // collaboration for this browser. Same-machine tab sync is not

@@ -3835,3 +3835,229 @@ input.ed-toggle { width: 16px; height: 16px; accent-color: #5E7699; cursor: poin
 [dir="rtl"] .ed-chart-json {
   direction: ltr;
 }
+
+/* ---------------------------------------------------------------------------
+   Ribbon (editor/ribbon.ts) — PowerPoint-style tabs under the topbar. Groups
+   sit side by side with a label underneath and a hairline between them; big
+   buttons carry icon over label, small ones stack three high. The topbar's
+   own insert group hides while the ribbon is on (it would say it twice). */
+body.ed-has-ribbon .ed-topbar .ed-insert { display: none; }
+.ed-ribbon {
+  position: relative;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  z-index: 19;
+  user-select: none;
+}
+.ed-ribbon-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 max(10px, env(safe-area-inset-left));
+}
+.ed-ribbon-tablist {
+  display: flex;
+  gap: 1px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+/* end of the tab row: the editor's remaining topbar buttons in ribbon-only mode */
+.ed-ribbon-extras { margin-inline-start: auto; display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.ed-ribbon-extras:empty { display: none; }
+.ed-ribbon-extras .ed-group { gap: 0; }
+.ed-ribbon-extras .ed-btn { height: 26px; padding: 0 6px; }
+.ed-ribbon-extras .ed-btn svg { width: 16px; height: 16px; }
+.ed-ribbon-extras .ed-title { width: clamp(80px, 12vw, 220px); height: 24px; font-size: 13px; }
+.ed-ribbon-extras .ed-split { height: 26px; }
+.ed-ribbon-extras .ed-saved-indicator, .ed-ribbon-extras .ed-save-btn { font-size: 12px; }
+/* hosted with ribbon: the topbar is gone entirely */
+body.ed-ribbon-only .ed-topbar { display: none; }
+/* folded: only the tab row (click the active tab again) */
+.ed-ribbon-folded .ed-ribbon-body { display: none; }
+.ed-ribbon-tab {
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 5px 10px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ed-ribbon-tab:hover { color: var(--ink); background: var(--chrome-2); border-radius: 6px 6px 0 0; }
+.ed-ribbon-tab[aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+.ed-ribbon-file { color: var(--accent-ink); font-weight: 600; }
+:root[data-theme="dark"] .ed-ribbon-file { color: var(--accent); }
+.ed-ribbon-body {
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+  padding: 2px max(6px, env(safe-area-inset-left)) 0;
+  background: var(--chrome);
+  border-top: 1px solid var(--line);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.ed-rgroup {
+  display: flex;
+  flex-direction: column;
+  padding: 0 6px;
+  border-inline-end: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.ed-rgroup:last-child { border-inline-end: 0; }
+.ed-rgroup-content { display: flex; align-items: flex-start; gap: 2px; flex: 1; }
+.ed-rgroup-label {
+  font-size: 10px;
+  line-height: 12px;
+  color: var(--muted);
+  text-align: center;
+  padding: 1px 0 2px;
+  white-space: nowrap;
+}
+.ed-rbtn {
+  font: inherit;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ed-rbtn:hover { background: var(--chrome-2); color: var(--ink); }
+.ed-rbtn:active { background: var(--line); }
+.ed-rbtn:disabled { opacity: 0.4; cursor: default; }
+.ed-rbtn.on { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--ink); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.ed-rbtn-big {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 48px;
+  max-width: 78px;
+  padding: 3px 4px 2px;
+  font-size: 11.5px;
+  line-height: 1.15;
+  text-align: center;
+}
+.ed-rbtn-big .ed-ricon { font-size: 18px; line-height: 22px; height: 22px; display: grid; place-items: center; }
+.ed-rbtn-big .ed-ricon svg { width: 20px; height: 20px; }
+.ed-rbtn-big .ed-rlabel { white-space: normal; }
+.ed-rbtn-small {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 5px;
+  font-size: 12px;
+  min-height: 20px;
+  white-space: nowrap;
+}
+.ed-rbtn-small .ed-ricon { display: grid; place-items: center; min-width: 16px; font-size: 13px; }
+.ed-rbtn-small .ed-ricon svg { width: 16px; height: 16px; }
+.ed-rstack { display: flex; flex-direction: column; gap: 0; }
+.ed-rgroup-content:has(> .ed-rrow) { flex-direction: column; gap: 3px; padding-top: 2px; }
+.ed-rrow { display: flex; align-items: center; gap: 2px; }
+.ed-rselect {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  height: 22px;
+  padding: 0 4px;
+}
+.ed-rfont { width: 150px; }
+.ed-rsize { width: 52px; }
+.ed-rcolor {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+.ed-rcolor-big { justify-content: flex-start; }
+.ed-rcolor-big .ed-rcolor { width: 30px; height: 28px; margin-top: 0; }
+.ed-rgallery { display: flex; gap: 3px; flex-wrap: nowrap; }
+.ed-rgal-item {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 72px;
+  padding: 2px 3px;
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 1.15;
+  text-align: center;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ed-rgal-item:hover { border-color: var(--accent); color: var(--ink); }
+.ed-rgal-item.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--ink); }
+.ed-rgal-item:disabled { opacity: 0.45; cursor: default; border-color: var(--line); }
+.ed-rgal-icon { font-size: 17px; line-height: 20px; height: 20px; }
+.ed-rmenu {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgb(20 30 45 / 0.16);
+  padding: 4px;
+  z-index: 60;
+}
+.ed-rmenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  text-align: start;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ed-rmenu-item:hover { background: var(--chrome-2); color: var(--ink); }
+.ed-rmenu-item .ed-ricon { display: grid; place-items: center; width: 18px; }
+.ed-rmenu-item .ed-ricon svg { width: 16px; height: 16px; }
+.ed-rmenu-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+/* phones: the ribbon is a single scrolling strip — the topbar's phone menus
+   stay the primary way in, so the ribbon just must not eat the canvas */
+@media (max-width: 700px) {
+  .ed-ribbon-body { min-height: 0; }
+  .ed-rgroup-label { display: none; }
+}
+
+/* format pane following the ribbon tab (panels.ts setContext) */
+.ed-sec-context { color: var(--ink); }
+.ed-anim-steps { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 8px; }
+.ed-anim-step {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr) 20px 20px; align-items: center; gap: 6px;
+  padding: 4px 6px; border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--ink-2);
+}
+.ed-anim-step:hover { background: var(--chrome-2); }
+.ed-anim-step.active { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--ink); }
+.ed-anim-no { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--chrome-2); font-weight: 600; font-size: 11px; }
+.ed-anim-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.ed-anim-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-anim-what { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-anim-btn { width: 20px; height: 20px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink-2); cursor: pointer; line-height: 1; }
+.ed-anim-btn:disabled { opacity: 0.35; cursor: default; }
