@@ -227,6 +227,61 @@ export class PropsPanel {
     this.rebuild()
   }
 
+  /** "Quellenverzeichnis aktualisieren" — also the ribbon's Review › Update References */
+  updateReferences() {
+    const lines: string[] = []
+    for (const s of this.store.doc.slides) {
+      for (const e of s.elements) {
+        if (e.type !== 'image' && e.type !== 'text') continue
+        if (!e.citation?.sourceUrl || e.citation.collectInReferences === false) continue
+        const parts = [[e.citation.author?.trim(), e.citation.title?.trim()].filter(Boolean).join(', '), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
+        lines.push(parts.filter(Boolean).join(', '))
+      }
+    }
+    if (!lines.length) {
+      window.alert(t('Keine Bilder oder Texte mit Quellenangabe im Deck gefunden.'))
+      return
+    }
+    this.edit(() => {
+      const slides = this.store.doc.slides
+      const last = slides[slides.length - 1]
+      if (!last.longRead) last.longRead = { blocks: [] }
+      // A stable id (not a fresh uid() each time) marks this as the
+      // auto-generated block specifically, so running this again UPDATES
+      // it in place rather than appending a second, stale copy.
+      const AUTO_ID = 'lr-auto-citations'
+      const idx = last.longRead.blocks.findIndex((b) => b.id === AUTO_ID)
+      const block: LongReadBlock = { id: AUTO_ID, type: 'references', text: lines.join('\n') }
+      if (idx >= 0) last.longRead.blocks[idx] = block
+      else last.longRead.blocks.push(block)
+    }, true)
+    this.rebuild(true)
+    window.alert(t('{n} Quellenangabe(n) in den Quellennachweise-Block der letzten Folie übernommen.', { n: String(lines.length) }))
+  }
+
+  /** dynamic table of contents on the current slide; `hidden` = the variant before slide 1 */
+  insertToc(hidden: boolean) {
+    this.edit(() => {
+      this.store.slide.elements.push(defaultText({
+        x: 300, y: 160, w: 680, h: 400,
+        fontSize: 26, align: 'left', valign: 'top', lineHeight: 1.7,
+        toc: hidden ? 0 : true, html: '', placeholder: t('Inhaltsverzeichnis (noch keine benannten Folien)'),
+      }))
+    }, true)
+    this.rebuild(true)
+  }
+
+  /** ribbon: format painter from the selected element; false = nothing to copy */
+  paintFormat(): boolean {
+    if (this.painter.active) return this.painter.toggle('')
+    const el = this.store.selectedElements[0]
+    return !!el && this.painter.toggle(el.id)
+  }
+
+  get painting(): boolean {
+    return this.painter.active
+  }
+
   private stale = false
   private suppressNextRebuild = false
 
@@ -643,36 +698,7 @@ export class PropsPanel {
     citeBtn.className = 'ed-btn ed-btn-block'
     citeBtn.textContent = t('Quellenverzeichnis aktualisieren')
     citeBtn.title = t('Sammelt die Quellenangaben aller Bilder im gesamten Deck (Quelle + Abrufdatum, unabhängig davon, ob Autor/Ort gesetzt sind) in einem Quellennachweise-Block auf der letzten Folie. Erneutes Ausführen ersetzt die zuvor gesammelte Liste, statt sie zu verdoppeln.')
-    citeBtn.addEventListener('click', () => {
-      const lines: string[] = []
-      for (const s of this.store.doc.slides) {
-        for (const e of s.elements) {
-          if (e.type !== 'image' && e.type !== 'text') continue
-          if (!e.citation?.sourceUrl || e.citation.collectInReferences === false) continue
-          const parts = [[e.citation.author?.trim(), e.citation.title?.trim()].filter(Boolean).join(', '), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
-          lines.push(parts.filter(Boolean).join(', '))
-        }
-      }
-      if (!lines.length) {
-        window.alert(t('Keine Bilder oder Texte mit Quellenangabe im Deck gefunden.'))
-        return
-      }
-      this.edit(() => {
-        const slides = this.store.doc.slides
-        const last = slides[slides.length - 1]
-        if (!last.longRead) last.longRead = { blocks: [] }
-        // A stable id (not a fresh uid() each time) marks this as the
-        // auto-generated block specifically, so running this again UPDATES
-        // it in place rather than appending a second, stale copy.
-        const AUTO_ID = 'lr-auto-citations'
-        const idx = last.longRead.blocks.findIndex((b) => b.id === AUTO_ID)
-        const block: LongReadBlock = { id: AUTO_ID, type: 'references', text: lines.join('\n') }
-        if (idx >= 0) last.longRead.blocks[idx] = block
-        else last.longRead.blocks.push(block)
-      }, true)
-      this.rebuild(true)
-      window.alert(t('{n} Quellenangabe(n) in den Quellennachweise-Block der letzten Folie übernommen.', { n: String(lines.length) }))
-    })
+    citeBtn.addEventListener('click', () => this.updateReferences())
     this.host.appendChild(citeBtn)
     this.row(t('Auf Abschlussfolie zeigen'), this.toggle(this.store.doc.showEndScreenReferences !== false, (v) =>
       this.edit(() => { this.store.doc.showEndScreenReferences = v }, true)))
@@ -680,32 +706,14 @@ export class PropsPanel {
     tocBtn.className = 'ed-btn ed-btn-block'
     tocBtn.textContent = t('Inhaltsverzeichnis einfügen')
     tocBtn.title = t('Fügt ein dynamisches Inhaltsverzeichnis ein, das alle Folien mit Titel aufführt — bleibt automatisch aktuell, auch wenn Folien später hinzukommen, umbenannt oder entfernt werden.')
-    tocBtn.addEventListener('click', () => {
-      this.edit(() => {
-        this.store.slide.elements.push(defaultText({
-          x: 300, y: 160, w: 680, h: 400,
-          fontSize: 26, align: 'left', valign: 'top', lineHeight: 1.7,
-          toc: true, html: '', placeholder: t('Inhaltsverzeichnis (noch keine benannten Folien)'),
-        }))
-      }, true)
-      this.rebuild(true)
-    })
+    tocBtn.addEventListener('click', () => this.insertToc(false))
     this.host.appendChild(tocBtn)
 
     const tocHiddenBtn = document.createElement('button')
     tocHiddenBtn.className = 'ed-btn ed-btn-block'
     tocHiddenBtn.textContent = t('Verstecktes Inhaltsverzeichnis einfügen (vor Folie 1)')
     tocHiddenBtn.title = t('Wie oben, aber diese Folie wird dabei automatisch aus dem normalen Weiter/Zurück-Durchlauf ausgeblendet — erreichbar nur über Zurück direkt an Folie 1, oder den unsichtbaren Knopf oben in der Mitte jeder anderen Folie.')
-    tocHiddenBtn.addEventListener('click', () => {
-      this.edit(() => {
-        this.store.slide.elements.push(defaultText({
-          x: 300, y: 160, w: 680, h: 400,
-          fontSize: 26, align: 'left', valign: 'top', lineHeight: 1.7,
-          toc: 0, html: '', placeholder: t('Inhaltsverzeichnis (noch keine benannten Folien)'),
-        }))
-      }, true)
-      this.rebuild(true)
-    })
+    tocHiddenBtn.addEventListener('click', () => this.insertToc(true))
     this.host.appendChild(tocHiddenBtn)
 
     const footnoteBtn = document.createElement('button')
@@ -2044,7 +2052,7 @@ export class PropsPanel {
   }
 
   /** Bundle a font file into the document and apply it to this element. */
-  private embedFont(el: TextElement) {
+  embedFont(el?: TextElement) {
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.woff2,.woff,.ttf,.otf'
@@ -2059,8 +2067,12 @@ export class PropsPanel {
           const doc = this.store.doc
           doc.assets = { ...(doc.assets ?? {}), [asset]: String(reader.result) }
           doc.fonts = [...(doc.fonts ?? []).filter((f) => f.family !== family), { family, asset }]
-          const live = this.store.element(el.id)
-          if (live && live.type === 'text') live.fontFamily = family
+          // from the ribbon: every selected text box gets the new font
+          const ids = el ? [el.id] : this.store.selectedElements.filter((x) => x.type === 'text').map((x) => x.id)
+          for (const id of ids) {
+            const live = this.store.element(id)
+            if (live && live.type === 'text') live.fontFamily = family
+          }
         })
         injectFonts(this.store.doc)
         this.toast(`"${family}" embedded into this file`)
@@ -3229,7 +3241,7 @@ export class PropsPanel {
   }
 
   /** Single element aligns to the slide; a multi-selection aligns to its own bounds. */
-  private align(els: SlideElement[], edge: 'left' | 'centerX' | 'right' | 'top' | 'middleY' | 'bottom') {
+  align(els: SlideElement[], edge: 'left' | 'centerX' | 'right' | 'top' | 'middleY' | 'bottom') {
     const { width, height } = this.store.doc.size
     const box = els.length === 1
       ? { x0: 0, y0: 0, x1: width, y1: height }
@@ -3252,7 +3264,7 @@ export class PropsPanel {
   }
 
   /** Even gaps between elements, first and last stay put. */
-  private distribute(els: SlideElement[], axis: 'x' | 'y') {
+  distribute(els: SlideElement[], axis: 'x' | 'y') {
     if (els.length < 3) return
     const size = axis === 'x' ? 'w' : 'h'
     const sorted = [...els].sort((a, b) => a[axis] - b[axis])
@@ -3271,7 +3283,7 @@ export class PropsPanel {
   }
 
   /** Move the selection one step up/down the paint order (adjacent swap). */
-  private step(els: SlideElement[], dir: 1 | -1) {
+  step(els: SlideElement[], dir: 1 | -1) {
     const ids = new Set(els.map((e) => e.id))
     this.store.commit(() => {
       const arr = this.store.slide.elements
@@ -3325,7 +3337,7 @@ export class PropsPanel {
     this.store.select([])
   }
 
-  private reorder(els: SlideElement[], where: 'front' | 'back') {
+  reorder(els: SlideElement[], where: 'front' | 'back') {
     const ids = new Set(els.map((e) => e.id))
     this.store.commit(() => {
       const slide = this.store.slide

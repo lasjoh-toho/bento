@@ -227,17 +227,23 @@ export class FormatPainter {
     if (this.openNow) requestAnimationFrame(() => this.place())
   }
 
-  private toggle(elId: string) {
-    if (this.openNow) { this.close(); return }
+  /** open (reading `elId`) or close; false = the element has nothing to copy */
+  toggle(elId: string): boolean {
+    if (this.openNow) { this.close(); return true }
     if (!(this.locked && this.props)) {
       const el = this.store.element(elId)
       const props = el && propsOf(el)
-      if (!props) return
+      if (!props) return false
       this.props = props
       this.sourceId = elId
     }
     this.openNow = true
     this.render()
+    return true
+  }
+
+  get active(): boolean {
+    return this.openNow
   }
 
   private close() {
