@@ -901,4 +901,10 @@ export const ja: Catalog = {
   "Frees up space taken by images, videos, or fonts no element uses anymore (left behind when one was removed or replaced) — ⌘Z undoes.": "どの要素からも参照されなくなった画像・動画・フォントの容量を解放します（要素の削除や置き換え後に残ったもの）— ⌘Zで元に戻せます。",
   "Removed {count} unused item(s), freed ~{size}": "未使用の項目を{count}件削除し、約{size}を解放しました",
   "No unused media found": "未使用のメディアは見つかりませんでした",
+  "Shape designer": "図形デザイナー",
+  "Formula": "数式",
+  "Symbols": "記号",
+  "WordArt — decorative text: curved, 3D, glowing; double-click it to edit again": "ワードアート — 装飾文字：曲線、3D、光彩。ダブルクリックで再編集",
+  "Shape designer — shapes with text, speech bubbles, stars; double-click to edit again": "図形デザイナー — テキスト付き図形、吹き出し、星。ダブルクリックで再編集",
+  "Formula — LaTeX formula editor; select a formula to edit it": "数式 — LaTeX 数式エディター。選択した数式を編集",
 }

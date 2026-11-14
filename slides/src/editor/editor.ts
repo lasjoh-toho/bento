@@ -24,7 +24,8 @@ import { LongReadEditor } from './longread'
 import { startPresentation, type PresentSession } from '../present'
 import { adoptFileHandle, canWriteInPlace, currentFileName, downloadFile, fileBase, hasFileHandle, isEncryptionActive, openedFileName, saveFile, serializeAuto, serializeFile, setEncryptionPassword, suggestedFileName, writeUpdatedFile, writeUpdatedFileAs } from '../save'
 import { moodleConfig, saveToMoodle, imageDownscaleParams } from './moodle'
-import { HostConflictError, hostConfig, onHostMessage, postToHost, saveToHost } from './host'
+import { HostConflictError, hostConfig, onHostMessage, postToHost, saveToHost, type HostInsertKind } from './host'
+import { colibre } from './colibre'
 import { Ribbon, ribbonPreferred, setRibbonPreferred, type RibbonHost } from './ribbon'
 import { playlistConfig } from './playlist'
 import { addVersion, clearRecovery, clearVersions, docContentKey, getRecovery, listVersions, pruneOld, putRecovery, type Snapshot } from '../autosave'
@@ -160,6 +161,22 @@ export class Editor {
       panelB.classList.add('ed-ribbon-panel-toggle')
       if (hostConfig?.titleInHost) this.ribbon.extras.append(c.history, c.pdfB, c.langD, c.helpB, panelB)
       else this.ribbon.extras.append(c.title, c.history, c.saveGroup, c.pdfB, c.langD, c.helpB, panelB)
+      // Colibre icons (LibreOffice, CC0) beside the ribbon, like its buttons
+      const swap = (host: Element | null, name: string) => {
+        const svg = colibre(name, 'sc')
+        const old = host?.querySelector('svg, b.ed-help-q')
+        if (!svg || !old) return
+        const tpl = document.createElement('template')
+        tpl.innerHTML = svg
+        old.replaceWith(tpl.content.firstElementChild!)
+      }
+      const hb = c.history.querySelectorAll('button')
+      swap(hb[0] ?? null, 'undo')
+      swap(hb[1] ?? null, 'redo')
+      swap(c.pdfB, 'print')
+      swap(c.langD, 'languagemenu')
+      swap(c.helpB, 'helpindex')
+      swap(panelB, 'sidebar')
     }
     this.ribbonB.classList.add('ed-btn-armed')
     document.body.classList.add('ed-has-ribbon')
@@ -211,6 +228,8 @@ export class Editor {
       insertTable: () => this.canvas.insert(this.newTable()),
       insertChart: () => this.canvas.insert(defaultChart(applyChartPalette(CHART_PRESETS.bar(), this.store.doc.theme))),
       insertElement: (el, edit) => this.canvas.insert(el, edit),
+      hostInserts: hostConfig && !hostConfig.readOnly ? hostConfig.inserts ?? [] : [],
+      hostInsert: (kind) => this.hostInsert(kind),
       armDraw: (kind) => this.canvas.armDraw(kind),
       toggleCommentMode: () => this.canvas.toggleCommentMode(),
       duplicateSlide: (i) => this.duplicateSlide(i),
@@ -259,6 +278,8 @@ export class Editor {
         this.toast(msg.message, msg.kind === 'error' ? 'error' : msg.kind === 'success' ? 'success' : 'neutral')
       } else if (msg.bento === 'save') {
         if (this.store.dirty) void this.save(false)
+      } else if (msg.bento === 'inserted' && !hostConfig!.readOnly) {
+        this.applyHostInsert(msg)
       } else if (msg.bento === 'title' && typeof msg.title === 'string' && !hostConfig!.readOnly) {
         const title = msg.title.trim().slice(0, 200) || 'Untitled'
         if (title !== this.store.doc.title) {
@@ -274,6 +295,94 @@ export class Editor {
       postToHost({ bento: 'title', title: lastTitle })
     })
     postToHost({ bento: 'ready', title: this.store.doc.title, dirty: this.store.dirty })
+  }
+
+  // --- host editors (Collegare: WordArt, shapes, formulas) ---------------------
+
+  /** `$$…$$` / `$…$` as the WHOLE text of a box → its TeX source, else null */
+  private static mathOnly(html: string): string | null {
+    const ta = document.createElement('textarea')
+    ta.innerHTML = html.replace(/<br\s*\/?>/g, ' ').replace(/<[^>]+>/g, '')
+    const m = /^\s*\$\$?([^$]+?)\$\$?\s*$/.exec(ta.value)
+    return m ? m[1].trim() : null
+  }
+
+  /** Ask the host to open its editor — for a new element, or for the selected one made there. */
+  hostInsert(kind: HostInsertKind, target?: SlideElement) {
+    if (!hostConfig?.inserts?.includes(kind) || hostConfig.readOnly) return
+    const sel = this.store.selectedElements
+    const one = target ?? (sel.length === 1 ? sel[0] : null)
+    let edit: { id: string; data: string } | undefined
+    if (kind === 'formula' && one?.type === 'text') {
+      const tex = Editor.mathOnly(one.html)
+      if (tex !== null) edit = { id: one.id, data: tex }
+    } else if (one?.type === 'image' && one.source?.kind === kind) {
+      edit = { id: one.id, data: one.source.data }
+    }
+    postToHost({ bento: 'insert', kind, edit })
+  }
+
+  /** Double-click: an element made in a host editor reopens there. */
+  private hostDblClick(el: SlideElement): boolean {
+    if (!hostConfig?.inserts?.length || hostConfig.readOnly) return false
+    if (el.type === 'image' && el.source && hostConfig.inserts.includes(el.source.kind as HostInsertKind)) {
+      this.hostInsert(el.source.kind as HostInsertKind, el)
+      return true
+    }
+    return false
+  }
+
+  private applyHostInsert(msg: { [k: string]: unknown }) {
+    const kind = String(msg.kind ?? '')
+    const editId = typeof msg.editId === 'string' ? msg.editId : null
+    const slide = this.store.slide
+    const target = editId ? slide.elements.find((e) => e.id === editId) : undefined
+    const { width: dw, height: dh } = this.store.doc.size
+    if (typeof msg.tex === 'string') {
+      const tex = msg.tex.trim()
+      if (!tex) return
+      const html = '$$' + tex.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '$$'
+      if (target && target.type === 'text') {
+        this.store.commit(() => { target.html = html })
+        return
+      }
+      const w = Math.round(dw * 0.5), h = Math.round(dh * 0.18)
+      this.canvas.insert(defaultText({
+        html, x: Math.round((dw - w) / 2), y: Math.round((dh - h) / 2), w, h, fontSize: 40, align: 'center', valign: 'middle',
+        color: readableInk(slide.background),
+      }))
+      return
+    }
+    if (typeof msg.svg !== 'string' || !msg.svg.includes('<svg')) return
+    const svg = msg.svg
+    // natural size from width/height or viewBox → aspect ratio
+    const head = /<svg[^>]*>/.exec(svg)?.[0] ?? ''
+    const num = (a: string) => Number(new RegExp(`\\s${a}="([\\d.]+)`).exec(head)?.[1] ?? NaN)
+    let nw = num('width'), nh = num('height')
+    if (!(nw > 0 && nh > 0)) {
+      const vb = /viewBox="([^"]+)"/.exec(head)?.[1]?.trim().split(/[\s,]+/).map(Number)
+      if (vb && vb.length === 4) { nw = vb[2]; nh = vb[3] }
+    }
+    if (!(nw > 0 && nh > 0)) { nw = 400; nh = 300 }
+    const bytes = new TextEncoder().encode(svg)
+    let bin = ''
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+    const src = 'data:image/svg+xml;base64,' + btoa(bin)
+    const source = { app: String(msg.app ?? 'host'), kind, data: typeof msg.data === 'string' ? msg.data : '' }
+    if (target && target.type === 'image') {
+      this.store.commit(() => {
+        target.src = internAsset(this.store.doc, src)
+        target.source = source
+        // keep the width and the centre, follow the new aspect ratio
+        const cy = target.y + target.h / 2
+        target.h = Math.round(target.w * nh / nw)
+        target.y = Math.round(cy - target.h / 2)
+      })
+      return
+    }
+    const scale = Math.min((dw * 0.5) / nw, (dh * 0.5) / nh, 2)
+    const w = Math.round(nw * scale), h = Math.round(nh * scale)
+    this.canvas.insert(defaultImage(src, { x: Math.round((dw - w) / 2), y: Math.round((dh - h) / 2), w, h, source, alt: '' }))
   }
 
   /** See this method's own call site in the constructor for why this
@@ -732,6 +841,7 @@ export class Editor {
     this.canvas = new SlideCanvas(canvasWrap, this.store)
     this.canvas.onCommentModeChange = (on) => commentB.classList.toggle('ed-btn-armed', on)
     this.canvas.onSlideNav = (dir) => this.store.goToLinear(dir)
+    this.canvas.onElementDblClick = (el) => this.hostDblClick(el)
     this.panel = new PropsPanel(this.props, this.store, this.canvas, () => this.multiSelectedIds, (anchor) => this.openLayoutPickerForSelected(anchor), () => this.openLongReadEditor(this.store.slide.id), () => this.removeUnusedMedia())
     this.ribbonMain = main
     this.ribbon = null

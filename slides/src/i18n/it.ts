@@ -901,4 +901,10 @@ export const it: Catalog = {
   "Frees up space taken by images, videos, or fonts no element uses anymore (left behind when one was removed or replaced) — ⌘Z undoes.": "Libera spazio occupato da immagini, video o font non più usati da alcun elemento (rimasti dopo una rimozione o sostituzione) — ⌘Z annulla.",
   "Removed {count} unused item(s), freed ~{size}": "{count} elemento/i non utilizzato/i rimosso/i, ~{size} liberati",
   "No unused media found": "Nessun media inutilizzato trovato",
+  "Shape designer": "Progettazione forme",
+  "Formula": "Equazione",
+  "Symbols": "Simboli",
+  "WordArt — decorative text: curved, 3D, glowing; double-click it to edit again": "WordArt — testo decorativo: curvo, 3D, luminoso; doppio clic per modificarlo",
+  "Shape designer — shapes with text, speech bubbles, stars; double-click to edit again": "Progettazione forme — forme con testo, fumetti, stelle; doppio clic per modificare",
+  "Formula — LaTeX formula editor; select a formula to edit it": "Equazione — editor LaTeX; seleziona un'equazione per modificarla",
 }

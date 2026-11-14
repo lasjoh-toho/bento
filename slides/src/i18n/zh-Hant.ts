@@ -901,4 +901,10 @@ export const zhHant: Catalog = {
   "Frees up space taken by images, videos, or fonts no element uses anymore (left behind when one was removed or replaced) — ⌘Z undoes.": "釋放不再被任何元素使用的圖片、影片或字型佔用的空間（元素被刪除或取代後遺留）— ⌘Z 可復原。",
   "Removed {count} unused item(s), freed ~{size}": "已移除 {count} 個未使用項目，釋放約 {size}",
   "No unused media found": "未發現未使用的媒體",
+  "Shape designer": "圖形設計工具",
+  "Formula": "方程式",
+  "Symbols": "符號",
+  "WordArt — decorative text: curved, 3D, glowing; double-click it to edit again": "文字藝術師 — 裝飾文字：彎曲、3D、光暈；按兩下可再次編輯",
+  "Shape designer — shapes with text, speech bubbles, stars; double-click to edit again": "圖形設計工具 — 含文字的圖形、對話框、星形；按兩下可再次編輯",
+  "Formula — LaTeX formula editor; select a formula to edit it": "方程式 — LaTeX 方程式編輯器；選取方程式即可編輯",
 }

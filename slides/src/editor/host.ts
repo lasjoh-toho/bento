@@ -21,10 +21,16 @@
 //                    snapshots = SVG still of every chart for exportPptx, key 'slideId/elementId'
 //                    {bento:'dirty', dirty}
 //                    {bento:'title', title}         deck title (at ready and on change)
+//                    {bento:'insert', kind, edit?}  open the host's editor for `kind` (one of `inserts`);
+//                                                   edit = {id, data} when an element made there is edited again
 //   parent → iframe  {bento:'replace', doc}         import result (undoable)
 //                    {bento:'toast', message, kind?}
 //                    {bento:'save'}                 e.g. before leaving the page
 //                    {bento:'title', title}         rename the deck (host shows the title, titleInHost)
+//                    {bento:'inserted', kind, svg?, tex?, data?, editId?}
+//                                                   editor result: svg → picture with `source` (data kept for
+//                                                   editing again), tex → text box with $$…$$ math;
+//                                                   editId replaces that element instead of adding one
 
 export type FileActionName = 'exportPptx' | 'exportHtml' | 'exportJson' | 'importPptx' | 'importHtml' | 'importJson'
 
@@ -45,7 +51,11 @@ export interface HostConfig {
   readOnly?: boolean
   /** the host's own header shows (and edits) the title and the saved state — Bento's chrome leaves both out */
   titleInHost?: boolean
+  /** editors the host offers under Insert (loaded by the host only when used) */
+  inserts?: HostInsertKind[]
 }
+
+export type HostInsertKind = 'wordart' | 'shape' | 'formula'
 
 function readHostConfig(): HostConfig | null {
   const meta = document.querySelector('meta[name="bento-host-config"]')

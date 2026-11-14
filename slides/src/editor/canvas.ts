@@ -280,6 +280,9 @@ export class SlideCanvas {
     }, true)
 
     this.stage.addEventListener('dblclick', (ev) => {
+      const hit = (ev.target as HTMLElement).closest<HTMLElement>('[data-el-id]')
+      const hitEl = hit && this.store.slide.elements.find((e) => e.id === hit.dataset.elId)
+      if (hitEl && this.onElementDblClick?.(hitEl)) { ev.preventDefault(); ev.stopPropagation(); return }
       const textEl = (ev.target as HTMLElement).closest<HTMLElement>('.bento-el-text')
       if (textEl) { this.startTextEdit(textEl); return }
       const td = (ev.target as HTMLElement).closest<HTMLElement>('.bento-el-table td[data-c]')
@@ -424,6 +427,8 @@ export class SlideCanvas {
   /** notified when the comment tool arms/disarms (topbar button state) */
   onCommentModeChange: ((on: boolean) => void) | null = null
   onSlideNav: ((dir: 1 | -1) => void) | null = null
+  /** double-click on an element; true = handled (e.g. reopen a host editor) */
+  onElementDblClick: ((el: SlideElement) => boolean) | null = null
   private wheelNavAccum = 0
   private wheelNavCooldown = 0
   private commentCleanup: (() => void) | null = null

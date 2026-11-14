@@ -4061,3 +4061,9 @@ body.ed-ribbon-only .ed-topbar { display: none; }
 .ed-anim-what { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ed-anim-btn { width: 20px; height: 20px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink-2); cursor: pointer; line-height: 1; }
 .ed-anim-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* Colibre-Icons (LibreOffice, CC0) im Menüband: feste Farben; im dunklen Thema umgefärbt, Farbtöne bleiben */
+svg.cb { fill: #3a3a38; stroke: none; }
+.ed-rbtn-big .ed-ricon svg.cb { width: 24px; height: 24px; }
+:root[data-theme="dark"] svg.cb { filter: invert(0.9) hue-rotate(180deg); }
+.ed-rbtn:disabled svg.cb { opacity: 0.45; }

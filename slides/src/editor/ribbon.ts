@@ -20,6 +20,45 @@ import { ICONS } from '../icons'
 import { t } from '../i18n'
 import { lsGet, lsSet } from '../../../kernel/src/storage.ts'
 import { assetEntries, openMediaLightbox } from './medialightbox'
+import { colibre } from './colibre'
+
+/**
+ * LibreOffice command (Colibre icon, CC0) for each ribbon entry, keyed by its English label — or tooltip for
+ * icon-only buttons. Entries without a match keep their own icon.
+ */
+const COLIBRE: Record<string, string> = {
+  'Save': 'save', 'Export as Bento file (.html)…': 'exportto', 'Export as JSON…': 'exportto',
+  'Export as PDF (print)…': 'exportdirecttopdf', 'Export slides as images…': 'insertgraphic',
+  'Export as PowerPoint (.pptx)…': 'saveas', 'Import PowerPoint (.pptx, .ppt)…': 'open',
+  'Import Bento file (.html)…': 'open', 'Import JSON…': 'open', 'Version history…': 'versiondialog',
+  'Document properties & about…': 'setdocumentproperties',
+  'Format Painter': 'formatpaintbrush', 'Duplicate': 'copy', 'Delete': 'delete', 'New Slide': 'insertslide',
+  'Layout': 'assignlayout', 'Duplicate slide': 'duplicatepage', 'Delete slide': 'deletepage',
+  'Increase font size': 'grow', 'Decrease font size': 'shrink', 'Bold (⌘B)': 'bold', 'Italic (⌘I)': 'italic',
+  'Underline (⌘U)': 'underline', 'Strikethrough': 'strikeout', 'Align left': 'leftpara', 'Center': 'centerpara',
+  'Align right': 'rightpara', 'Justify': 'justifypara', 'Bulleted list': 'defaultbullet',
+  'Align text to top': 'cellverttop', 'Align text to middle': 'cellvertcenter', 'Align text to bottom': 'cellvertbottom',
+  'Shapes': 'shapesmenu', 'Arrange': 'bringtofront', 'Bring to Front': 'bringtofront', 'Bring Forward': 'forward',
+  'Send Backward': 'backward', 'Send to Back': 'sendtoback', 'Format Pane': 'sidebar', 'Rectangle': 'rect',
+  'Ellipse': 'ellipse', 'Triangle': 'basicshapes.isosceles-triangle', 'Arrow': 'arrowshapes.right-arrow',
+  'Polygon': 'polygon_unfilled', 'Line': 'line', 'Curved line': 'bezier_unfilled', 'Connector': 'connector',
+  'Freeform': 'freeline_unfilled', 'Table': 'inserttable', 'Pictures': 'insertgraphic', 'Chart': 'insertobjectchart',
+  'Text Box': 'text', 'Table of contents': 'insertmultiindex', 'Slide number': 'insertpagenumberfield',
+  'Video': 'insertavmedia', 'Video or audio file…': 'insertavmedia', 'Video from a link…': 'insertavmedia',
+  'Audio from a link…': 'insertavmedia', 'Camera (live, in present mode)…': 'insertavmedia',
+  'Comment': 'insertannotation', 'New Comment': 'insertannotation', 'Slide Size': 'pagesetup',
+  'Apply background to all': 'backgroundcolor', 'Embed Font': 'fontdialog', 'Media Overview': 'gallery',
+  'Apply To All': 'slidechangewindow', 'Animation Pane': 'customanimation', 'From Beginning': 'presentation',
+  'From Current Slide': 'presentationcurrentslide', 'In a Window': 'normalmultipanegui',
+  'Presenter View': 'presentationdialog', 'Hide Slide': 'hideslide', 'Explanations & Sources': 'insertbookmark',
+  'Update References': 'updateall', 'Slide List': 'diamode', 'Zoom In': 'zoomin', 'Zoom Out': 'zoomout',
+  'Fit to Window': 'zoompage', 'Shortcuts': 'helpindex', 'WordArt': 'fontwork', 'Formula': 'insertmath',
+  'Shape designer': 'insertdraw',
+}
+const cIcon = (key: string, size: 'lc' | 'sc', fallback: string) => {
+  const n = COLIBRE[key]
+  return (n && colibre(n, size)) || fallback
+}
 
 /** What the ribbon needs from the editor — all existing editor methods. */
 export interface RibbonHost {
@@ -67,6 +106,9 @@ export interface RibbonHost {
   toast(message: string, kind?: 'neutral' | 'success' | 'error'): void
   /** host-provided file actions (embed.ts); absent = Bento's own */
   fileActions?: FileActions
+  /** editors the host offers under Insert (Collegare: WordArt, shapes, formulas from its pinnwand) */
+  hostInserts?: Array<'wordart' | 'shape' | 'formula'>
+  hostInsert?(kind: 'wordart' | 'shape' | 'formula'): void
   /** the active tab changed (also once at start) — the format pane follows it */
   tabChanged?(tab: string): void
 }
@@ -236,6 +278,7 @@ export class Ribbon {
   private big(into: HTMLElement, icon: string, label: string, tip: string, onClick: (b: HTMLButtonElement) => void): HTMLButtonElement {
     const b = el('button', 'ed-rbtn ed-rbtn-big')
     b.type = 'button'
+    icon = cIcon(label, 'lc', icon)
     b.innerHTML = `<span class="ed-ricon">${icon}</span><span class="ed-rlabel"></span>`
     b.querySelector('.ed-rlabel')!.textContent = t(label)
     b.title = t(tip)
@@ -248,6 +291,7 @@ export class Ribbon {
   private small(into: HTMLElement, icon: string, label: string, tip: string, onClick: (b: HTMLButtonElement) => void): HTMLButtonElement {
     const b = el('button', 'ed-rbtn ed-rbtn-small')
     b.type = 'button'
+    icon = cIcon(label || tip, 'sc', icon)
     b.innerHTML = `<span class="ed-ricon">${icon}</span>` + (label ? `<span class="ed-rlabel"></span>` : '')
     if (label) b.querySelector('.ed-rlabel')!.textContent = t(label)
     b.title = t(tip)
@@ -282,7 +326,7 @@ export class Ribbon {
       const [icon, label, fn] = it
       const b = el('button', 'ed-rmenu-item')
       b.type = 'button'
-      b.innerHTML = `<span class="ed-ricon">${icon}</span><span></span>`
+      b.innerHTML = `<span class="ed-ricon">${cIcon(label, 'sc', icon)}</span><span></span>`
       b.lastElementChild!.textContent = t(label)
       b.addEventListener('click', () => {
         this.closeMenu()
@@ -561,15 +605,22 @@ export class Ribbon {
     const il = this.group('Illustrations')
     this.big(il, ICONS.shapes, 'Shapes', 'Insert a shape', (b) => this.shapeMenu(b))
     this.big(il, ICONS.chart, 'Chart', 'Insert a chart — edit it visually or link it to a table', () => this.host.insertChart())
+    if ((this.host.hostInserts ?? []).includes('shape')) this.big(il, ICONS.shapes, 'Shape designer', 'Shape designer — shapes with text, speech bubbles, stars; double-click to edit again', () => this.host.hostInsert?.('shape'))
     const tx = this.group('Text')
     this.big(tx, ICONS.text, 'Text Box', 'Insert a text box', () =>
       this.host.insertElement(defaultText({ color: readableInk(this.store.slide.background), y: 120 + Math.random() * 200 }), true),
     )
+    const hi = this.host.hostInserts ?? []
+    if (hi.includes('wordart')) this.big(tx, ICONS.text, 'WordArt', 'WordArt — decorative text: curved, 3D, glowing; double-click it to edit again', () => this.host.hostInsert?.('wordart'))
     const ts = this.stack(tx)
     this.small(ts, ICONS.text, 'Table of contents', 'A table of contents that updates itself', () => this.host.insertToc(false))
     this.small(ts, ICONS.text, 'Slide number', 'A text box showing the slide number', () =>
       this.host.insertElement(defaultText({ html: '{{page}}', fontSize: 14, w: 120, h: 32, x: this.store.doc.size.width - 160, y: this.store.doc.size.height - 56, align: 'right', color: readableInk(this.store.slide.background) })),
     )
+    if (hi.includes('formula')) {
+      const sy = this.group('Symbols')
+      this.big(sy, ICONS.code, 'Formula', 'Formula — LaTeX formula editor; select a formula to edit it', () => this.host.hostInsert?.('formula'))
+    }
     const md = this.group('Media')
     this.big(md, ICONS.media, 'Video', 'Insert video or audio', (b) =>
       this.menu(b, [

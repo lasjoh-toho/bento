@@ -901,4 +901,10 @@ export const zhHans: Catalog = {
   "Frees up space taken by images, videos, or fonts no element uses anymore (left behind when one was removed or replaced) — ⌘Z undoes.": "释放不再被任何元素使用的图片、视频或字体占用的空间（元素被删除或替换后遗留）— ⌘Z 可撤销。",
   "Removed {count} unused item(s), freed ~{size}": "已移除 {count} 个未使用项，释放约 {size}",
   "No unused media found": "未发现未使用的媒体",
+  "Shape designer": "形状设计器",
+  "Formula": "公式",
+  "Symbols": "符号",
+  "WordArt — decorative text: curved, 3D, glowing; double-click it to edit again": "艺术字 — 装饰文字：弯曲、3D、发光；双击可再次编辑",
+  "Shape designer — shapes with text, speech bubbles, stars; double-click to edit again": "形状设计器 — 带文字的形状、气泡、星形；双击可再次编辑",
+  "Formula — LaTeX formula editor; select a formula to edit it": "公式 — LaTeX 公式编辑器；选中公式即可编辑",
 }

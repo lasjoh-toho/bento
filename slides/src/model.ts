@@ -317,6 +317,12 @@ export interface ImageElement extends ElementBase {
    * does and how it's used (on-slide caption vs. references list).
    */
   citation?: Citation
+  /**
+   * Made in a host's editor (Collegare: the WordArt and shape editors of mod_pinnwand). `src` is the
+   * rendered SVG; `data` is the host editor's own source, opaque to Bento, handed back for "edit again"
+   * (double-click or the ribbon button). Optional and additive: older builds show the picture.
+   */
+  source?: { app: string; kind: string; data: string }
 }
 
 /**
