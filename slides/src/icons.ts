@@ -35,6 +35,7 @@ export const ICONS = {
   polygon: svg('<polygon points="12 3 21 10 17 20 7 20 3 10"/>'),
   slideshow: svg('<rect x="3" y="4" width="18" height="12" rx="2"/><polygon points="10 7.5 15 10 10 12.5" fill="currentColor" stroke="none"/><line x1="12" y1="16" x2="12" y2="20"/><line x1="8" y1="20" x2="16" y2="20"/>'),
   eye: svg('<path d="M2 12 C5 6.5 9 4.5 12 4.5 C15 4.5 19 6.5 22 12 C19 17.5 15 19.5 12 19.5 C9 19.5 5 17.5 2 12 Z"/><circle cx="12" cy="12" r="3"/>'),
+  ribbon: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="7" y1="12" x2="7" y2="15"/><line x1="11" y1="12" x2="11" y2="15"/><line x1="15" y1="12" x2="18" y2="12"/>'),
   template: svg('<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2.4"/><line x1="12" y1="9" x2="12" y2="15"/><line x1="9" y1="12" x2="15" y2="12"/>'),
   lock: svg('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V8 a4 4 0 0 1 8 0 v3"/>'),
   key: svg('<circle cx="8" cy="16" r="4"/><path d="M11 13 L20 4"/><path d="M15 9 l3 3"/>'),

@@ -227,6 +227,61 @@ export class PropsPanel {
     this.rebuild()
   }
 
+  /** "Quellenverzeichnis aktualisieren" — also the ribbon's Review › Update References */
+  updateReferences() {
+    const lines: string[] = []
+    for (const s of this.store.doc.slides) {
+      for (const e of s.elements) {
+        if (e.type !== 'image' && e.type !== 'text') continue
+        if (!e.citation?.sourceUrl || e.citation.collectInReferences === false) continue
+        const parts = [[e.citation.author?.trim(), e.citation.title?.trim()].filter(Boolean).join(', '), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
+        lines.push(parts.filter(Boolean).join(', '))
+      }
+    }
+    if (!lines.length) {
+      window.alert(t('Keine Bilder oder Texte mit Quellenangabe im Deck gefunden.'))
+      return
+    }
+    this.edit(() => {
+      const slides = this.store.doc.slides
+      const last = slides[slides.length - 1]
+      if (!last.longRead) last.longRead = { blocks: [] }
+      // A stable id (not a fresh uid() each time) marks this as the
+      // auto-generated block specifically, so running this again UPDATES
+      // it in place rather than appending a second, stale copy.
+      const AUTO_ID = 'lr-auto-citations'
+      const idx = last.longRead.blocks.findIndex((b) => b.id === AUTO_ID)
+      const block: LongReadBlock = { id: AUTO_ID, type: 'references', text: lines.join('\n') }
+      if (idx >= 0) last.longRead.blocks[idx] = block
+      else last.longRead.blocks.push(block)
+    }, true)
+    this.rebuild(true)
+    window.alert(t('{n} Quellenangabe(n) in den Quellennachweise-Block der letzten Folie übernommen.', { n: String(lines.length) }))
+  }
+
+  /** dynamic table of contents on the current slide; `hidden` = the variant before slide 1 */
+  insertToc(hidden: boolean) {
+    this.edit(() => {
+      this.store.slide.elements.push(defaultText({
+        x: 300, y: 160, w: 680, h: 400,
+        fontSize: 26, align: 'left', valign: 'top', lineHeight: 1.7,
+        toc: hidden ? 0 : true, html: '', placeholder: t('Inhaltsverzeichnis (noch keine benannten Folien)'),
+      }))
+    }, true)
+    this.rebuild(true)
+  }
+
+  /** ribbon: format painter from the selected element; false = nothing to copy */
+  paintFormat(): boolean {
+    if (this.painter.active) return this.painter.toggle('')
+    const el = this.store.selectedElements[0]
+    return !!el && this.painter.toggle(el.id)
+  }
+
+  get painting(): boolean {
+    return this.painter.active
+  }
+
   private stale = false
   private suppressNextRebuild = false
 
@@ -272,12 +327,96 @@ export class PropsPanel {
     this.burst = false
     this.host.innerHTML = ''
     this.buildLayersSection()
+    if (this.context === 'animations') this.buildAnimSteps()
     const els = this.store.selectedElements
     if (els.length === 0) this.buildSlidePanel()
     else if (els.length === 1) this.buildElementPanel(els[0])
     else this.buildMultiPanel(els)
     this.applyAccordion()
     this.painter?.afterRebuild()
+  }
+
+  /**
+   * Ribbon tab the panel follows (Collegare, Wunsch Jo): with the ribbon on, the
+   * sections that belong to the active tab come first and open, the rest fold —
+   * Animations shows the slide's animation steps, Transitions the slide's
+   * transition and Morph, and so on. Folding here is temporary (not persisted).
+   */
+  private context: string | null = null
+  private static CONTEXT: Record<string, string[]> = {
+    home: ['Typography', 'Fill & stroke', 'Arrange'],
+    insert: ['Source & playback', 'Chart', 'Data', 'Style'],
+    design: ['Slide', 'Farben', 'Layout'],
+    transitions: ['Slide', 'Morph'],
+    animations: ['Animationsschritte', 'Presenting'],
+    show: ['Slideshow', 'Speaker notes'],
+    review: ['Speaker notes', 'Referenzen'],
+  }
+  setContext(tab: string | null) {
+    if (tab === this.context) return
+    this.context = tab
+    this.rebuild(true)
+  }
+
+  /** Animations tab: everything that moves on this slide, in show order. */
+  private buildAnimSteps() {
+    const slide = this.store.slide
+    this.section(t('Animationsschritte'), 'Alles, was sich auf dieser Folie bewegt, in der Reihenfolge der Präsentation: Schritt 0 erscheint mit der Folie, Schritt 1 beim ersten Klick und so weiter.')
+    const moving = slide.elements
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => e.fx && (e.fx.enter || e.fx.step || e.fx.countUp || e.fx.loop || e.fx.ambient))
+      .sort((a, b) => (a.e.fx!.step ?? 0) - (b.e.fx!.step ?? 0) || (a.e.fx!.order ?? 0) - (b.e.fx!.order ?? 0) || a.i - b.i)
+    if (!moving.length) {
+      const p = document.createElement('p')
+      p.className = 'ed-hint'
+      p.textContent = t('Noch nichts animiert. Element wählen, dann oben unter „Animationen“ einen Effekt.')
+      this.host.appendChild(p)
+      return
+    }
+    const list = document.createElement('div')
+    list.className = 'ed-anim-steps'
+    // same names as the ribbon's Entrance gallery (PowerPoint terms)
+    const enterNames: Record<string, string> = { fade: 'Fade', 'fade-up': 'Float In', 'fade-down': 'Float Down', 'slide-left': 'Fly In (right)', 'slide-right': 'Fly In (left)', 'slide-up': 'Fly In (bottom)', 'slide-down': 'Fly In (top)' }
+    for (const { e } of moving) {
+      const fx = e.fx!
+      const row = document.createElement('div')
+      row.className = 'ed-anim-step' + (this.store.selection.includes(e.id) ? ' active' : '')
+      const no = document.createElement('span')
+      no.className = 'ed-anim-no'
+      no.textContent = String(fx.step ?? 0)
+      no.title = fx.step ? t('Beim {n}. Klick', { n: String(fx.step) }) : t('Mit der Folie')
+      const label = document.createElement('span')
+      label.className = 'ed-anim-label'
+      label.textContent = this.layerLabel(e)
+      const what = document.createElement('span')
+      what.className = 'ed-anim-what'
+      what.textContent = [fx.enter ? t(enterNames[fx.enter] ?? fx.enter) : '', fx.countUp ? t('Count up') : '', fx.loop ? t('Loop') : '', fx.ambient ? t('Ambient') : ''].filter(Boolean).join(' · ') || t('Fade')
+      const stepBtn = (dir: 1 | -1, glyph: string, tip: string) => {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.className = 'ed-anim-btn'
+        b.textContent = glyph
+        b.title = t(tip)
+        b.disabled = dir < 0 && !fx.step
+        b.addEventListener('click', (ev) => {
+          ev.stopPropagation()
+          const next = Math.max(0, (fx.step ?? 0) + dir)
+          this.mutate(e.id, (x) => {
+            const f = { ...(x.fx ?? {}), step: next || undefined }
+            if (!f.step) delete f.step
+            x.fx = f
+          }, true)
+        })
+        return b
+      }
+      const text = document.createElement('span')
+      text.className = 'ed-anim-text'
+      text.append(label, what)
+      row.append(no, text, stepBtn(-1, '−', 'Früher'), stepBtn(1, '+', 'Später'))
+      row.addEventListener('click', () => this.store.select([e.id]))
+      list.appendChild(row)
+    }
+    this.host.appendChild(list)
   }
 
   /** Collapsed by default until the user opens them (persisted per title). */
@@ -293,6 +432,10 @@ export class PropsPanel {
     let openState: Record<string, boolean> = {}
     openState = lsJson<Record<string, boolean>>('bento-panel-open', {})
     const headers = [...this.host.querySelectorAll<HTMLElement>('.ed-section')]
+    let wanted = this.context ? PropsPanel.CONTEXT[this.context]?.map((k) => t(k)) : undefined
+    // nothing of this tab in the current panel (e.g. Home with no selection): keep the usual folding
+    if (wanted && !headers.some((h) => wanted!.includes(h.textContent ?? ''))) wanted = undefined
+    const front: HTMLElement[] = []
     for (const h of headers) {
       const key = h.textContent ?? ''
       const body = document.createElement('div')
@@ -304,8 +447,11 @@ export class PropsPanel {
         n = next
       }
       h.after(body)
-      const isOpen = openState[key] ?? !PropsPanel.CLOSED_BY_DEFAULT.has(key)
+      const ctxIdx = wanted ? wanted.indexOf(key) : -1
+      if (ctxIdx >= 0) front[ctxIdx] = h
+      const isOpen = wanted ? ctxIdx >= 0 : (openState[key] ?? !PropsPanel.CLOSED_BY_DEFAULT.has(key))
       h.classList.add('ed-sec-toggle')
+      if (ctxIdx >= 0) h.classList.add('ed-sec-context')
       if (!isOpen) {
         h.classList.add('closed')
         body.style.display = 'none'
@@ -313,9 +459,16 @@ export class PropsPanel {
       h.addEventListener('click', () => {
         const nowClosed = h.classList.toggle('closed')
         body.style.display = nowClosed ? 'none' : ''
+        if (wanted) return // folding that follows the ribbon tab is not remembered
         openState[key] = !nowClosed
         lsSet('bento-panel-open', JSON.stringify(openState))
       })
+    }
+    // the active tab's sections first, in the order the tab lists them
+    for (const h of front.filter(Boolean).reverse()) {
+      const body = h.nextElementSibling
+      this.host.prepend(h)
+      if (body) h.after(body)
     }
   }
 
@@ -643,36 +796,7 @@ export class PropsPanel {
     citeBtn.className = 'ed-btn ed-btn-block'
     citeBtn.textContent = t('Quellenverzeichnis aktualisieren')
     citeBtn.title = t('Sammelt die Quellenangaben aller Bilder im gesamten Deck (Quelle + Abrufdatum, unabhängig davon, ob Autor/Ort gesetzt sind) in einem Quellennachweise-Block auf der letzten Folie. Erneutes Ausführen ersetzt die zuvor gesammelte Liste, statt sie zu verdoppeln.')
-    citeBtn.addEventListener('click', () => {
-      const lines: string[] = []
-      for (const s of this.store.doc.slides) {
-        for (const e of s.elements) {
-          if (e.type !== 'image' && e.type !== 'text') continue
-          if (!e.citation?.sourceUrl || e.citation.collectInReferences === false) continue
-          const parts = [[e.citation.author?.trim(), e.citation.title?.trim()].filter(Boolean).join(', '), e.citation.sourceUrl, e.citation.retrievedAt ? t('abgerufen am {date}', { date: e.citation.retrievedAt }) : '']
-          lines.push(parts.filter(Boolean).join(', '))
-        }
-      }
-      if (!lines.length) {
-        window.alert(t('Keine Bilder oder Texte mit Quellenangabe im Deck gefunden.'))
-        return
-      }
-      this.edit(() => {
-        const slides = this.store.doc.slides
-        const last = slides[slides.length - 1]
-        if (!last.longRead) last.longRead = { blocks: [] }
-        // A stable id (not a fresh uid() each time) marks this as the
-        // auto-generated block specifically, so running this again UPDATES
-        // it in place rather than appending a second, stale copy.
-        const AUTO_ID = 'lr-auto-citations'
-        const idx = last.longRead.blocks.findIndex((b) => b.id === AUTO_ID)
-        const block: LongReadBlock = { id: AUTO_ID, type: 'references', text: lines.join('\n') }
-        if (idx >= 0) last.longRead.blocks[idx] = block
-        else last.longRead.blocks.push(block)
-      }, true)
-      this.rebuild(true)
-      window.alert(t('{n} Quellenangabe(n) in den Quellennachweise-Block der letzten Folie übernommen.', { n: String(lines.length) }))
-    })
+    citeBtn.addEventListener('click', () => this.updateReferences())
     this.host.appendChild(citeBtn)
     this.row(t('Auf Abschlussfolie zeigen'), this.toggle(this.store.doc.showEndScreenReferences !== false, (v) =>
       this.edit(() => { this.store.doc.showEndScreenReferences = v }, true)))
@@ -680,32 +804,14 @@ export class PropsPanel {
     tocBtn.className = 'ed-btn ed-btn-block'
     tocBtn.textContent = t('Inhaltsverzeichnis einfügen')
     tocBtn.title = t('Fügt ein dynamisches Inhaltsverzeichnis ein, das alle Folien mit Titel aufführt — bleibt automatisch aktuell, auch wenn Folien später hinzukommen, umbenannt oder entfernt werden.')
-    tocBtn.addEventListener('click', () => {
-      this.edit(() => {
-        this.store.slide.elements.push(defaultText({
-          x: 300, y: 160, w: 680, h: 400,
-          fontSize: 26, align: 'left', valign: 'top', lineHeight: 1.7,
-          toc: true, html: '', placeholder: t('Inhaltsverzeichnis (noch keine benannten Folien)'),
-        }))
-      }, true)
-      this.rebuild(true)
-    })
+    tocBtn.addEventListener('click', () => this.insertToc(false))
     this.host.appendChild(tocBtn)
 
     const tocHiddenBtn = document.createElement('button')
     tocHiddenBtn.className = 'ed-btn ed-btn-block'
     tocHiddenBtn.textContent = t('Verstecktes Inhaltsverzeichnis einfügen (vor Folie 1)')
     tocHiddenBtn.title = t('Wie oben, aber diese Folie wird dabei automatisch aus dem normalen Weiter/Zurück-Durchlauf ausgeblendet — erreichbar nur über Zurück direkt an Folie 1, oder den unsichtbaren Knopf oben in der Mitte jeder anderen Folie.')
-    tocHiddenBtn.addEventListener('click', () => {
-      this.edit(() => {
-        this.store.slide.elements.push(defaultText({
-          x: 300, y: 160, w: 680, h: 400,
-          fontSize: 26, align: 'left', valign: 'top', lineHeight: 1.7,
-          toc: 0, html: '', placeholder: t('Inhaltsverzeichnis (noch keine benannten Folien)'),
-        }))
-      }, true)
-      this.rebuild(true)
-    })
+    tocHiddenBtn.addEventListener('click', () => this.insertToc(true))
     this.host.appendChild(tocHiddenBtn)
 
     const footnoteBtn = document.createElement('button')
@@ -2044,7 +2150,7 @@ export class PropsPanel {
   }
 
   /** Bundle a font file into the document and apply it to this element. */
-  private embedFont(el: TextElement) {
+  embedFont(el?: TextElement) {
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.woff2,.woff,.ttf,.otf'
@@ -2059,8 +2165,12 @@ export class PropsPanel {
           const doc = this.store.doc
           doc.assets = { ...(doc.assets ?? {}), [asset]: String(reader.result) }
           doc.fonts = [...(doc.fonts ?? []).filter((f) => f.family !== family), { family, asset }]
-          const live = this.store.element(el.id)
-          if (live && live.type === 'text') live.fontFamily = family
+          // from the ribbon: every selected text box gets the new font
+          const ids = el ? [el.id] : this.store.selectedElements.filter((x) => x.type === 'text').map((x) => x.id)
+          for (const id of ids) {
+            const live = this.store.element(id)
+            if (live && live.type === 'text') live.fontFamily = family
+          }
         })
         injectFonts(this.store.doc)
         this.toast(`"${family}" embedded into this file`)
@@ -3229,7 +3339,7 @@ export class PropsPanel {
   }
 
   /** Single element aligns to the slide; a multi-selection aligns to its own bounds. */
-  private align(els: SlideElement[], edge: 'left' | 'centerX' | 'right' | 'top' | 'middleY' | 'bottom') {
+  align(els: SlideElement[], edge: 'left' | 'centerX' | 'right' | 'top' | 'middleY' | 'bottom') {
     const { width, height } = this.store.doc.size
     const box = els.length === 1
       ? { x0: 0, y0: 0, x1: width, y1: height }
@@ -3252,7 +3362,7 @@ export class PropsPanel {
   }
 
   /** Even gaps between elements, first and last stay put. */
-  private distribute(els: SlideElement[], axis: 'x' | 'y') {
+  distribute(els: SlideElement[], axis: 'x' | 'y') {
     if (els.length < 3) return
     const size = axis === 'x' ? 'w' : 'h'
     const sorted = [...els].sort((a, b) => a[axis] - b[axis])
@@ -3271,7 +3381,7 @@ export class PropsPanel {
   }
 
   /** Move the selection one step up/down the paint order (adjacent swap). */
-  private step(els: SlideElement[], dir: 1 | -1) {
+  step(els: SlideElement[], dir: 1 | -1) {
     const ids = new Set(els.map((e) => e.id))
     this.store.commit(() => {
       const arr = this.store.slide.elements
@@ -3325,7 +3435,7 @@ export class PropsPanel {
     this.store.select([])
   }
 
-  private reorder(els: SlideElement[], where: 'front' | 'back') {
+  reorder(els: SlideElement[], where: 'front' | 'back') {
     const ids = new Set(els.map((e) => e.id))
     this.store.commit(() => {
       const slide = this.store.slide

@@ -24,6 +24,7 @@ import { injectFonts } from './fonts'
 import { Store } from './store'
 import { Editor } from './editor/editor'
 import { moodleConfig, takeUnsavedMoodleDoc } from './editor/moodle'
+import { hostConfig } from './editor/host'
 import { playlistConfig } from './editor/playlist'
 import { startPresentation } from './present'
 import { SyncSession } from './sync/session'
@@ -85,7 +86,7 @@ async function bootNonEncrypted(embedded: string | null) {
   // looking at the wrong content, and one Save would overwrite their real
   // presentation with it. Say what went wrong and keep the data reachable.
   // Only a genuinely empty, standalone shell opens the demo.
-  if (embedded || moodleConfig) { unreadableDocument(embedded ?? '', handoffJson); return }
+  if (embedded || moodleConfig || hostConfig) { unreadableDocument(embedded ?? '', handoffJson); return }
   bootWith(starterDoc())
 }
 
@@ -278,7 +279,8 @@ function editorMode(doc: BentoDoc) {
 // colleague on purpose (see where SyncSession gets created, further down
 // this function) — it only stops that from ever happening automatically
 // purely because a document happened to carry old creds.
-if (moodleConfig && doc.collab) delete doc.collab
+// a hosting web app (host.ts) is in the same position: its server row is the truth
+if ((moodleConfig || hostConfig) && doc.collab) delete doc.collab
 
 document.title = `${doc.title} — ${appConfig().appName}`
 

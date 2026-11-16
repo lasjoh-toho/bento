@@ -31,6 +31,8 @@ export class SlideCanvas {
   private scroller: HTMLElement
   private surface: HTMLElement | null = null
   private moveable: Moveable
+  /** primary button / finger currently down (see the dragStart hand-over in selectEnd) */
+  private mouseHeld = false
   private selecto: Selecto
   /** The anchor for Shift-click range-select — the last element clicked
    *  with no modifier key held. See wireSelecto()'s own selectEnd handler. */
@@ -180,6 +182,11 @@ export class SlideCanvas {
       renderDirections: ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'],
     })
 
+    window.addEventListener('mousedown', () => { this.mouseHeld = true }, true)
+    window.addEventListener('mouseup', () => { this.mouseHeld = false }, true)
+    window.addEventListener('blur', () => { this.mouseHeld = false })
+    window.addEventListener('touchstart', () => { this.mouseHeld = true }, { capture: true, passive: true })
+    window.addEventListener('touchend', () => { this.mouseHeld = false }, true)
     this.selecto = new Selecto({
       container: this.scroller,
       dragContainer: this.scroller,
@@ -273,6 +280,9 @@ export class SlideCanvas {
     }, true)
 
     this.stage.addEventListener('dblclick', (ev) => {
+      const hit = (ev.target as HTMLElement).closest<HTMLElement>('[data-el-id]')
+      const hitEl = hit && this.store.slide.elements.find((e) => e.id === hit.dataset.elId)
+      if (hitEl && this.onElementDblClick?.(hitEl)) { ev.preventDefault(); ev.stopPropagation(); return }
       const textEl = (ev.target as HTMLElement).closest<HTMLElement>('.bento-el-text')
       if (textEl) { this.startTextEdit(textEl); return }
       const td = (ev.target as HTMLElement).closest<HTMLElement>('.bento-el-table td[data-c]')
@@ -417,6 +427,8 @@ export class SlideCanvas {
   /** notified when the comment tool arms/disarms (topbar button state) */
   onCommentModeChange: ((on: boolean) => void) | null = null
   onSlideNav: ((dir: 1 | -1) => void) | null = null
+  /** double-click on an element; true = handled (e.g. reopen a host editor) */
+  onElementDblClick: ((el: SlideElement) => boolean) | null = null
   private wheelNavAccum = 0
   private wheelNavCooldown = 0
   private commentCleanup: (() => void) | null = null
@@ -1222,7 +1234,10 @@ export class SlideCanvas {
       if (e.isDragStartEnd) {
         e.inputEvent.preventDefault()
         this.moveable.waitToChangeTarget().then(() => {
-          this.moveable.dragStart(e.inputEvent)
+          // Only hand over while the button is still down: after a plain click the
+          // mouseup has already happened, and a drag started now never ends —
+          // Moveable then swallowed the NEXT click anywhere (ribbon, topbar).
+          if (this.mouseHeld) this.moveable.dragStart(e.inputEvent)
         })
       }
     })

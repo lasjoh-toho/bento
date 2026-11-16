@@ -1668,3 +1668,33 @@ feature that genuinely cannot be core (a licence that forbids bundling, or bytes
 that dwarf the shell even after a first-party rewrite), or a demonstrated need
 for third-party authorship. Absent those, the answer to "should this be an
 extension?" is "should this be core, a separate artifact, or a skill?"
+
+## 2026-11-14 — Ribbon (Menüband) and web-app hosting (`editor/ribbon.ts`, `editor/host.ts`)
+
+**Ribbon.** An optional PowerPoint-style second chrome row (File, Home, Insert,
+Design, Transitions, Animations, Slide Show, Review, View). It is a FRONT END
+only: every button calls existing editor/canvas/panel code through a
+`RibbonHost` adapter built inside `Editor` (private members stay private), so
+ribbon and panel can never disagree about what a command does. Bento-only
+features get a ribbon home: format painter (Home › Clipboard, drives the
+panel's `FormatPainter`), embedded fonts (Design › Fonts, `PropsPanel.embedFont`
+now applies to every selected text box), media overview (Design › Media, the
+existing lightbox), morph, explanations & sources, update references. On/off is
+a per-viewer preference (localStorage `bento-ribbon`, topbar toggle) and never
+enters the document; while it is on, the topbar's insert group hides.
+
+**Hosting.** A web app (first: Collegare) serves the shell with the document
+spliced into `#bento-doc` plus `<meta name="bento-host-config"
+data-bento-transient content='{name, saveUrl, version, ribbon, fileActions,
+canImport, readOnly}'>`. Save and autosave PUT `{doc, version}` to `saveUrl`
+(409 = someone else saved → tell the user, never overwrite). File-menu actions
+the host lists go to the parent window via same-origin `postMessage`; the
+parent answers an import with `{bento:'replace', doc}` (undoable
+`store.replaceDoc`). Like Moodle, a hosted doc drops `collab` at boot. The meta
+tag is transient, so a copy saved from a hosted deck is an ordinary file again.
+
+**Why PowerPoint conversion stays in the host.** The PPTX/PPT importer that
+exists (mod_bento's `bentoconvert.js`) is not MIT, and a PPTX writer is a large
+dependency for every saved shell. The host owns both; the ribbon only shows
+"Export as PowerPoint" / "Import PowerPoint" when the host declares them. This
+does not settle whether Bento should one day ship a first-party PPTX writer.
