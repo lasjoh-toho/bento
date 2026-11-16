@@ -602,6 +602,7 @@ export class Ribbon {
     this.big(tb, ICONS.table, 'Table', 'Insert a table — edit cells inline; turn it into a live chart from the format pane', () => this.host.insertTable())
     const img = this.group('Images')
     this.big(img, ICONS.image, 'Pictures', 'Insert a picture — or paste one (⌘V)', () => this.host.pickImage())
+    this.big(img, ICONS.image, 'Media Overview', 'Every embedded picture, video and font — largest first; shrink or remove unused files', () => this.openMediaOverview())
     const il = this.group('Illustrations')
     this.big(il, ICONS.shapes, 'Shapes', 'Insert a shape', (b) => this.shapeMenu(b))
     this.big(il, ICONS.chart, 'Chart', 'Insert a chart — edit it visually or link it to a table', () => this.host.insertChart())
@@ -665,12 +666,13 @@ export class Ribbon {
     })
     const fonts = this.group('Fonts')
     this.big(fonts, ICONS.text, 'Embed Font', 'Bundle a .woff2/.woff/.ttf/.otf into this file and use it for the selected text', () => this.host.embedFont())
-    const media = this.group('Media')
-    this.big(media, ICONS.image, 'Media Overview', 'Every embedded picture, video and font — largest first; shrink or remove unused files', () => {
-      const first = assetEntries(this.store.doc)[0]
-      if (!first) return this.host.toast(t('No embedded pictures, videos or fonts yet'))
-      openMediaLightbox(this.store, first.key)
-    })
+  }
+
+  /** Medienübersicht (Jo, 16.11.2026: unter Einfügen › Bilder statt unter Entwurf) */
+  private openMediaOverview() {
+    const first = assetEntries(this.store.doc)[0]
+    if (!first) return this.host.toast(t('No embedded pictures, videos or fonts yet'))
+    openMediaLightbox(this.store, first.key)
   }
 
   // --- Transitions ---------------------------------------------------------------

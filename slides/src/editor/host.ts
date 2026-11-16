@@ -21,12 +21,18 @@
 //                    snapshots = SVG still of every chart for exportPptx, key 'slideId/elementId'
 //                    {bento:'dirty', dirty}
 //                    {bento:'title', title}         deck title (at ready and on change)
-//                    {bento:'insert', kind, edit?}  open the host's editor for `kind` (one of `inserts`);
-//                                                   edit = {id, data} when an element made there is edited again
+//                    {bento:'history', canUndo, canRedo, entries?}   after every edit (undoInHost); entries =
+//                                                   {undo:[{label,slide,at}], redo:[…]} when asked with history-get
+//                    {bento:'insert', kind, edit?, text?}  open the host's editor for `kind` (one of `inserts`);
+//                                                   edit = {id, data} when an element made there is edited again;
+//                                                   text = start text when it is applied to a text box (the result
+//                                                   then replaces the box, or sits over it for a selection)
 //   parent → iframe  {bento:'replace', doc}         import result (undoable)
 //                    {bento:'toast', message, kind?}
 //                    {bento:'save'}                 e.g. before leaving the page
 //                    {bento:'title', title}         rename the deck (host shows the title, titleInHost)
+//                    {bento:'undo'} · {bento:'redo'} · {bento:'history-go', steps}   (−n undoes n, +n redoes n)
+//                    {bento:'history-get'}          answer with the history list
 //                    {bento:'inserted', kind, svg?, tex?, data?, editId?}
 //                                                   editor result: svg → picture with `source` (data kept for
 //                                                   editing again), tex → text box with $$…$$ math;
@@ -53,6 +59,8 @@ export interface HostConfig {
   titleInHost?: boolean
   /** editors the host offers under Insert (loaded by the host only when used) */
   inserts?: HostInsertKind[]
+  /** the host's header carries undo/redo and the history list — Bento's chrome leaves them out */
+  undoInHost?: boolean
 }
 
 export type HostInsertKind = 'wordart' | 'shape' | 'formula'

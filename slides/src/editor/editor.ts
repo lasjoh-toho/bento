@@ -159,7 +159,7 @@ export class Editor {
       const c = this.chromeParts
       const panelB = btn(ICONS.panelRight, '', () => this.togglePanel('right'), t('Format Pane'))
       panelB.classList.add('ed-ribbon-panel-toggle')
-      if (hostConfig?.titleInHost) this.ribbon.extras.append(c.history, c.pdfB, c.langD, c.helpB, panelB)
+      if (hostConfig?.titleInHost) this.ribbon.extras.append(...(hostConfig.undoInHost ? [] : [c.history]), c.pdfB, c.langD, c.helpB, panelB)
       else this.ribbon.extras.append(c.title, c.history, c.saveGroup, c.pdfB, c.langD, c.helpB, panelB)
       // Colibre icons (LibreOffice, CC0) beside the ribbon, like its buttons
       const swap = (host: Element | null, name: string) => {
@@ -278,6 +278,15 @@ export class Editor {
         this.toast(msg.message, msg.kind === 'error' ? 'error' : msg.kind === 'success' ? 'success' : 'neutral')
       } else if (msg.bento === 'save') {
         if (this.store.dirty) void this.save(false)
+      } else if ((msg.bento === 'undo' || msg.bento === 'redo') && !hostConfig!.readOnly) {
+        this.canvas.commitTextEdit()
+        if (msg.bento === 'undo') this.store.undo()
+        else this.store.redo()
+      } else if (msg.bento === 'history-go' && typeof msg.steps === 'number' && !hostConfig!.readOnly) {
+        this.canvas.commitTextEdit()
+        this.store.step(Math.trunc(msg.steps))
+      } else if (msg.bento === 'history-get') {
+        this.postHistory(true)
       } else if (msg.bento === 'inserted' && !hostConfig!.readOnly) {
         this.applyHostInsert(msg)
       } else if (msg.bento === 'title' && typeof msg.title === 'string' && !hostConfig!.readOnly) {
@@ -295,6 +304,29 @@ export class Editor {
       postToHost({ bento: 'title', title: lastTitle })
     })
     postToHost({ bento: 'ready', title: this.store.doc.title, dirty: this.store.dirty })
+    if (hostConfig.undoInHost) {
+      let timer = 0
+      this.store.on('doc', () => {
+        clearTimeout(timer)
+        timer = window.setTimeout(() => this.postHistory(this.historyWanted), 120)
+      })
+      this.postHistory(false)
+    }
+  }
+
+  /** the host shows the history list (asked for it once) — send it along with every change */
+  private historyWanted = false
+
+  private postHistory(withEntries: boolean) {
+    if (withEntries) this.historyWanted = true
+    const msg: Record<string, unknown> = { bento: 'history', canUndo: this.store.canUndo, canRedo: this.store.canRedo }
+    if (withEntries) {
+      const tr = (label: string) => label.split(': ').map((p) => t(p)).join(': ')
+      const h = this.store.history()
+      const map = (e: { label: string; slide: number; at: number }) => ({ ...e, label: tr(e.label) })
+      msg.entries = { undo: h.undo.map(map), redo: h.redo.map(map) }
+    }
+    postToHost(msg)
   }
 
   // --- host editors (Collegare: WordArt, shapes, formulas) ---------------------
@@ -319,7 +351,101 @@ export class Editor {
     } else if (one?.type === 'image' && one.source?.kind === kind) {
       edit = { id: one.id, data: one.source.data }
     }
+    this.pendingApply = null
+    // WordArt / Form aus einem vorhandenen Textfeld (oder dem markierten Text darin): erst nachfragen
+    if (!edit && !target && (kind === 'wordart' || kind === 'shape')) {
+      const src = this.textSource()
+      if (src) {
+        void this.askApplyToField(kind, src)
+        return
+      }
+    }
     postToHost({ bento: 'insert', kind, edit })
+  }
+
+  /** WordArt/Form, die ein Textfeld (bzw. den markierten Text darin) ersetzen soll — bis das Ergebnis kommt. */
+  private pendingApply: { kind: string; id: string; selText: string } | null = null
+
+  /** Das gerade bearbeitete Textfeld (mit markiertem Text) oder das eine ausgewählte Textfeld. */
+  private textSource(): { el: import('../model').TextElement; selText: string } | null {
+    const a = document.activeElement as HTMLElement | null
+    const editing = a && a.isContentEditable ? a.closest<HTMLElement>('.ed-stage-scale [data-el-id]') : null
+    if (editing) {
+      const el = this.store.element(editing.dataset.elId ?? '')
+      if (el?.type === 'text' && Editor.mathOnly(el.html) === null) {
+        const sel = document.getSelection()
+        const selText = sel && !sel.isCollapsed && editing.contains(sel.anchorNode) ? sel.toString().trim() : ''
+        return { el, selText }
+      }
+    }
+    const sel = this.store.selectedElements
+    if (sel.length === 1 && sel[0].type === 'text' && Editor.mathOnly(sel[0].html) === null) return { el: sel[0], selText: '' }
+    return null
+  }
+
+  private static plainText(html: string): string {
+    const d = document.createElement('div')
+    d.innerHTML = html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li)>/gi, '\n')
+    return (d.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim()
+  }
+
+  /** Rückfrage „Auf dieses Feld anwenden?“ — ja: der Editor des Gastgebers startet mit dem Text, das Ergebnis
+   *  ersetzt das Feld (bzw. den markierten Text); nein: wie bisher etwas Neues einfügen. */
+  private askApplyToField(kind: HostInsertKind, src: { el: import('../model').TextElement; selText: string }): Promise<void> {
+    return new Promise((resolve) => {
+      const what = kind === 'wordart' ? 'WordArt' : t('Shape designer')
+      const dlg = document.createElement('dialog')
+      dlg.className = 'ed-dialog ed-apply-dialog'
+      const h = document.createElement('h2')
+      h.textContent = src.selText ? t('Apply to the selected text?') : t('Apply to this field?')
+      const p = document.createElement('p')
+      p.textContent = src.selText
+        ? t('“{text}” becomes {what}; the text box keeps the rest.', { text: src.selText.length > 60 ? src.selText.slice(0, 57) + '…' : src.selText, what })
+        : t('The text box becomes {what} with its text, in the same place.', { what })
+      const actions = document.createElement('div')
+      actions.className = 'ed-dialog-actions'
+      const btn = (label: string, cls: string, fn: () => void) => {
+        const b = document.createElement('button')
+        b.textContent = label
+        if (cls) b.className = cls
+        b.addEventListener('click', () => {
+          dlg.close()
+          dlg.remove()
+          fn()
+          resolve()
+        })
+        actions.appendChild(b)
+        return b
+      }
+      btn(t('Cancel'), 'cancel', () => {})
+      btn(t('Insert new'), '', () => postToHost({ bento: 'insert', kind }))
+      const ok = btn(src.selText ? t('Apply to the selection') : t('Apply to this field'), 'ok ed-primary', () => {
+        const text = src.selText || Editor.plainText(src.el.html)
+        this.canvas.commitTextEdit()
+        this.pendingApply = { kind, id: src.el.id, selText: src.selText }
+        postToHost({ bento: 'insert', kind, text })
+      })
+      dlg.append(h, p, actions)
+      dlg.addEventListener('cancel', () => { dlg.remove(); resolve() })
+      document.body.appendChild(dlg)
+      dlg.showModal()
+      ok.focus()
+    })
+  }
+
+  /** Markierten Text einmal aus dem HTML eines Textfelds entfernen (nur wenn er in einem Textknoten liegt). */
+  private static removeText(html: string, text: string): string | null {
+    const d = document.createElement('div')
+    d.innerHTML = html
+    const walker = document.createTreeWalker(d, NodeFilter.SHOW_TEXT)
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const i = (n.nodeValue ?? '').indexOf(text)
+      if (i >= 0) {
+        n.nodeValue = (n.nodeValue ?? '').slice(0, i) + (n.nodeValue ?? '').slice(i + text.length)
+        return d.innerHTML
+      }
+    }
+    return null
   }
 
   /** Double-click: an element made in a host editor reopens there. */
@@ -369,6 +495,31 @@ export class Editor {
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
     const src = 'data:image/svg+xml;base64,' + btoa(bin)
     const source = { app: String(msg.app ?? 'host'), kind, data: typeof msg.data === 'string' ? msg.data : '' }
+    // Ergebnis für ein Textfeld (Rückfrage „Auf dieses Feld anwenden“)
+    const apply = !editId && this.pendingApply?.kind === kind ? this.pendingApply : null
+    this.pendingApply = null
+    const field = apply ? slide.elements.find((e) => e.id === apply.id) : undefined
+    if (apply && field && field.type === 'text') {
+      const w = apply.selText ? Math.min(field.w, Math.round(nw * Math.min(field.h / nh, 2))) : field.w
+      const h = Math.round(w * nh / nw)
+      const img = defaultImage(src, {
+        x: Math.round(field.x + (field.w - w) / 2), y: Math.round(field.y + (field.h - h) / 2), w, h, source, alt: Editor.plainText(field.html).slice(0, 200),
+      })
+      img.rotation = field.rotation
+      this.store.commit(() => {
+        img.src = internAsset(this.store.doc, img.src)
+        const i = slide.elements.indexOf(field)
+        if (apply.selText) {
+          const rest = Editor.removeText(field.html, apply.selText)
+          if (rest !== null) field.html = rest
+          slide.elements.splice(i + 1, 0, img)
+        } else {
+          slide.elements.splice(i, 1, img)
+        }
+      })
+      this.store.select([img.id])
+      return
+    }
     if (target && target.type === 'image') {
       this.store.commit(() => {
         target.src = internAsset(this.store.doc, src)
