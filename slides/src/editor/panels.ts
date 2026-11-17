@@ -16,6 +16,7 @@ import { FONT_CHOICES, firstFamily, injectFonts } from '../fonts'
 import { DATE_PRESETS, TIME_PRESETS, OTHER_FIELDS, formatDate } from '../datefmt'
 import { applyShrunk, assetEntries, deleteAsset, downloadAsset, isFontMime, isImageMime, openMediaLightbox, shrinkPreview } from './medialightbox'
 import { ICONS } from '../icons'
+import { openMorphView } from './morphview'
 import { FormatPainter } from './formatpainter'
 import { t } from '../i18n'
 import { lsJson, lsSet } from '../../../kernel/src/storage.ts'
@@ -327,7 +328,8 @@ export class PropsPanel {
     this.burst = false
     this.host.innerHTML = ''
     this.buildLayersSection()
-    if (this.context === 'animations') this.buildAnimSteps()
+    // always built; applyAccordion files it with Übergang and Morph (Jo, 17.11.2026)
+    this.buildAnimSteps()
     const els = this.store.selectedElements
     if (els.length === 0) this.buildSlidePanel()
     else if (els.length === 1) this.buildElementPanel(els[0])
@@ -347,11 +349,32 @@ export class PropsPanel {
     home: ['Typography', 'Fill & stroke', 'Arrange'],
     insert: ['Source & playback', 'Chart', 'Data', 'Style'],
     design: ['Slide', 'Farben', 'Layout'],
-    transitions: ['Slide', 'Morph'],
-    animations: ['Animationsschritte', 'Presenting'],
+    // Übergänge, Morph und Animationsschritte gehören zusammen (Jo, 17.11.2026):
+    // both tabs show all of them, in the same order; the tab's own ones open
+    transitions: ['Übergang', 'Morph', '-Animationsschritte', '-Presenting'],
+    animations: ['-Übergang', 'Morph', 'Animationsschritte', 'Presenting'],
     show: ['Slideshow', 'Speaker notes'],
     review: ['Speaker notes', 'Referenzen'],
   }
+
+  /**
+   * Families of sections (Jo, 17.11.2026: similar sections sit together):
+   * the panel is sorted by these ranks, stably, so within a family the build
+   * order stays. A section not listed joins the family of the one before it.
+   */
+  private static RANK: Record<string, number> = {
+    'Text': 1, 'Shape': 1, 'Image': 1, 'Diagram': 1, 'Chart': 1, 'Table': 1, 'Audio': 1, 'Video': 1, 'Kamera': 1, 'Position & size': 1, 'Arrange': 1,
+    'Typography': 2, 'Fill & stroke': 2, 'Alt text': 2, 'Fit & corners': 2, 'Ausschneiden und Freistellen': 2, 'Series': 2, 'Data': 2, 'Slices': 2,
+    'Advanced (JSON)': 2, 'Style': 2, 'Camera': 2, 'Bildausschnitt': 2, 'Auf andere Folie kopieren': 2, 'Source & playback': 2,
+    'Slide': 3, 'Farben': 3, 'Layout': 3, 'Effects': 3,
+    'Übergang': 4, 'Morph': 4.1, 'Animationsschritte': 4.2, 'Presenting': 4.3,
+    'Slideshow': 5, 'Interactivity': 5,
+    'Speaker notes': 6, 'Referenzen': 6,
+    'Folie exportieren/importieren': 7, 'Medien': 7, 'Oberfläche': 8,
+  }
+
+  /** with the ribbon on: show only the active tab's sections (toggle in the panel, remembered) */
+  private focusOnly = lsJson<boolean>('bento-panel-focus', true)
   setContext(tab: string | null) {
     if (tab === this.context) return
     this.context = tab
@@ -420,7 +443,7 @@ export class PropsPanel {
   }
 
   /** Collapsed by default until the user opens them (persisted per title). */
-  private static CLOSED_BY_DEFAULT = new Set(['Slideshow', 'Presenting', 'Interactivity', 'Layout', 'Advanced (JSON)', 'Referenzen', 'Morph', 'Position & size', 'Medien'])
+  private static CLOSED_BY_DEFAULT = new Set(['Slideshow', 'Presenting', 'Interactivity', 'Layout', 'Advanced (JSON)', 'Referenzen', 'Morph', 'Position & size', 'Medien', 'Animationsschritte'])
 
   /**
    * Retrofit the flat panel into an accordion: every .ed-section header
@@ -431,12 +454,19 @@ export class PropsPanel {
   private applyAccordion() {
     let openState: Record<string, boolean> = {}
     openState = lsJson<Record<string, boolean>>('bento-panel-open', {})
-    const headers = [...this.host.querySelectorAll<HTMLElement>('.ed-section')]
-    let wanted = this.context ? PropsPanel.CONTEXT[this.context]?.map((k) => t(k)) : undefined
+    const headers = [...this.host.querySelectorAll<HTMLElement>(':scope > .ed-section')]
+    // context entries: 'Name' = shown and open, '-Name' = shown but folded
+    const ctx = this.context ? PropsPanel.CONTEXT[this.context] : undefined
+    let wanted = ctx?.map((k) => t(k.replace(/^-/, '')))
+    const wantOpen = new Set(ctx?.filter((k) => !k.startsWith('-')).map((k) => t(k)) ?? [])
     // nothing of this tab in the current panel (e.g. Home with no selection): keep the usual folding
     if (wanted && !headers.some((h) => wanted!.includes(h.textContent ?? ''))) wanted = undefined
+    const rankOf = new Map(Object.entries(PropsPanel.RANK).map(([k, r]) => [t(k), r]))
     const front: HTMLElement[] = []
-    for (const h of headers) {
+    const items: Array<{ h: HTMLElement; body: HTMLElement; rank: number; i: number }> = []
+    let lastRank = 0
+    let hidden = 0
+    headers.forEach((h, i) => {
       const key = h.textContent ?? ''
       const body = document.createElement('div')
       body.className = 'ed-section-body'
@@ -447,14 +477,26 @@ export class PropsPanel {
         n = next
       }
       h.after(body)
+      // dynamic titles ("Ebenen (4)", "Für Auswahl (2 Folien)", "3 elements") keep their place in front
+      const rank = h.classList.contains('ed-section-collapsible') ? 0 : (rankOf.get(key) ?? lastRank)
+      lastRank = rank
+      items.push({ h, body, rank, i })
+      if (h.classList.contains('ed-section-collapsible')) return // Ebenen folds itself
       const ctxIdx = wanted ? wanted.indexOf(key) : -1
       if (ctxIdx >= 0) front[ctxIdx] = h
-      const isOpen = wanted ? ctxIdx >= 0 : (openState[key] ?? !PropsPanel.CLOSED_BY_DEFAULT.has(key))
+      const isOpen = wanted ? ctxIdx >= 0 && wantOpen.has(key) : (openState[key] ?? !PropsPanel.CLOSED_BY_DEFAULT.has(key))
       h.classList.add('ed-sec-toggle')
       if (ctxIdx >= 0) h.classList.add('ed-sec-context')
       if (!isOpen) {
         h.classList.add('closed')
         body.style.display = 'none'
+      }
+      // with the ribbon showing a tab, sections of other tabs can be hidden altogether
+      if (wanted && ctxIdx < 0 && this.focusOnly) {
+        h.style.display = 'none'
+        body.style.display = 'none'
+        h.dataset.focusHidden = '1'
+        hidden++
       }
       h.addEventListener('click', () => {
         const nowClosed = h.classList.toggle('closed')
@@ -463,12 +505,38 @@ export class PropsPanel {
         openState[key] = !nowClosed
         lsSet('bento-panel-open', JSON.stringify(openState))
       })
-    }
+    })
+    // similar sections together: stable sort by family
+    items.sort((a, b) => a.rank - b.rank || a.i - b.i)
+    for (const it of items) this.host.append(it.h, it.body)
     // the active tab's sections first, in the order the tab lists them
     for (const h of front.filter(Boolean).reverse()) {
       const body = h.nextElementSibling
       this.host.prepend(h)
       if (body) h.after(body)
+    }
+    // the Ebenen list stays on top
+    const layers = items.find((it) => it.rank === 0 && it.h.classList.contains('ed-section-collapsible'))
+    if (layers) {
+      this.host.prepend(layers.h)
+      layers.h.after(layers.body)
+    }
+    if (wanted && (hidden || !this.focusOnly)) {
+      const bar = document.createElement('div')
+      bar.className = 'ed-focusbar'
+      const label = document.createElement('span')
+      label.textContent = this.focusOnly ? t('{n} weitere Bereiche ausgeblendet', { n: String(hidden) }) : t('Alle Bereiche sichtbar')
+      const toggle = document.createElement('button')
+      toggle.type = 'button'
+      toggle.textContent = this.focusOnly ? t('Alle zeigen') : t('Nur passende')
+      toggle.title = t('Bereiche, die nicht zur gewählten Registerkarte des Menübands gehören, aus- oder einblenden')
+      toggle.addEventListener('click', () => {
+        this.focusOnly = !this.focusOnly
+        lsSet('bento-panel-focus', JSON.stringify(this.focusOnly))
+        this.rebuild(true)
+      })
+      bar.append(label, toggle)
+      this.host.prepend(bar)
     }
   }
 
@@ -518,11 +586,23 @@ export class PropsPanel {
     }
     this.row('Background', this.color(slide.background, (v, fin) =>
       this.edit(() => { this.store.slide.background = v }, fin), undefined, true))
+
+    // Übergang, Morph und Animationsschritte stehen zusammen (Jo, 17.11.2026)
+    this.section(t('Übergang'))
     this.row('Transition', this.select(
       ['none', 'fade', 'slide', 'zoom', 'morph'],
       slide.transition,
       (v) => this.edit(() => { this.store.slide.transition = v as TransitionKind }, true),
     ))
+    const allTr = document.createElement('button')
+    allTr.className = 'ed-btn ed-btn-block'
+    allTr.textContent = t('Auf alle Folien anwenden')
+    allTr.addEventListener('click', () => {
+      const v = this.store.slide.transition
+      this.store.commit(() => { for (const s of this.store.doc.slides) s.transition = v })
+    })
+    this.host.appendChild(allTr)
+    this.buildSlideMorph()
 
     // Deck-wide slideshow chrome, in its own section: these are not properties
     // of THIS slide (the section above) but of how the whole deck presents, and
@@ -1494,6 +1574,7 @@ export class PropsPanel {
    */
   private buildMorphProps(el: SlideElement) {
     this.section(t('Morph'))
+    this.host.appendChild(this.morphViewButton())
     const effective = morphKey(el)
 
     const warn = document.createElement('p')
@@ -1548,6 +1629,41 @@ export class PropsPanel {
     }
 
     this.host.appendChild(warn)
+  }
+
+  /** "Morph-Ansicht…": both neighbour slides side by side, pairs joined by dotted lines (editor/morphview.ts) */
+  private morphViewButton(): HTMLButtonElement {
+    const b = document.createElement('button')
+    b.className = 'ed-btn ed-btn-block'
+    b.textContent = t('Morph-Ansicht…')
+    this.hintOn(b, 'Zeigt diese und die nächste Folie nebeneinander; was ineinander morpht, ist mit gepunkteten Linien verbunden. Paare entstehen per Klick links und rechts, ohne Namen einzugeben.')
+    b.addEventListener('click', () => {
+      const i = this.store.currentIndex
+      openMorphView(this.store, i >= this.store.doc.slides.length - 1 ? i - 1 : i)
+    })
+    return b
+  }
+
+  /** Slide panel: how this slide morphs with its neighbours, plus the morph view. */
+  private buildSlideMorph() {
+    const slides = this.store.doc.slides
+    const i = this.store.currentIndex
+    const keys = (k: number) => new Set((slides[k]?.elements ?? []).map(morphKey))
+    const here = keys(i)
+    const count = (k: number) => [...keys(k)].filter((x) => here.has(x)).length
+    const pairsWith = (k: number) => {
+      const n = count(k)
+      return n === 1 ? t('1 Paar mit Folie {s}', { s: String(k + 1) }) : t('{n} Paare mit Folie {s}', { n: String(n), s: String(k + 1) })
+    }
+    this.section(t('Morph'))
+    const p = document.createElement('p')
+    p.className = 'ed-hint'
+    const parts: string[] = []
+    if (i > 0) parts.push(pairsWith(i - 1))
+    if (i < slides.length - 1) parts.push(pairsWith(i + 1))
+    p.textContent = parts.join(' · ') || t('Nur eine Folie')
+    this.host.appendChild(p)
+    if (slides.length > 1) this.host.appendChild(this.morphViewButton())
   }
 
   /** Set or clear an element's morph-key override. Writing the element's own

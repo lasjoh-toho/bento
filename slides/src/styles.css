@@ -2727,10 +2727,14 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
 .bento-longread-fnrule { margin: 2em 0 1em; border: none; border-top: 1px solid #ece9df; }
 .bento-longread-fnlist { padding-inline-start: 22px; font-size: 0.85em; color: #55524a; }
 .bento-longread-fnlist li { margin-bottom: 0.4em; }
+/* top CENTRE, not the top-right corner: that corner belongs to the
+   fullscreen button (.bento-fs-btn, z-index above this overlay), which
+   sat right on top of this back button (Jo, 17.11.2026). */
 .bento-longread-close {
   position: fixed;
   top: 16px;
-  right: 16px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 91;
   width: 40px;
   height: 40px;
@@ -4067,3 +4071,60 @@ svg.cb { fill: #3a3a38; stroke: none; }
 .ed-rbtn-big .ed-ricon svg.cb { width: 24px; height: 24px; }
 :root[data-theme="dark"] svg.cb { filter: invert(0.9) hue-rotate(180deg); }
 .ed-rbtn:disabled svg.cb { opacity: 0.45; }
+
+/* ————— morph view (editor/morphview.ts): two slides side by side, pairs joined by dotted lines ————— */
+.ed-morphview {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: rgb(14 17 23 / 0.985);
+  color: #e7eaf0;
+  font-size: 13px;
+  outline: none;
+}
+.ed-mv-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid rgb(255 255 255 / 0.08); }
+.ed-mv-title { font-weight: 650; font-size: 14px; white-space: nowrap; }
+.ed-mv-hint { flex: 1; min-width: 0; color: #aab3c2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-mv-btn {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px;
+  border: 1px solid rgb(255 255 255 / 0.14); background: rgb(255 255 255 / 0.06); color: inherit; cursor: pointer;
+}
+.ed-mv-btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.14); }
+.ed-mv-btn:disabled { opacity: 0.35; cursor: default; }
+.ed-mv-btn svg { width: 18px; height: 18px; }
+.ed-mv-stage { position: relative; min-height: 0; overflow: hidden; }
+.ed-mv-panes { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 140px; padding: 0 70px; }
+.ed-mv-pane { display: flex; flex-direction: column; gap: 6px; }
+.ed-mv-cap { font-weight: 600; color: #cfd6e2; }
+.ed-mv-frame { position: relative; overflow: hidden; border-radius: 4px; box-shadow: 0 6px 24px rgb(0 0 0 / 0.45); background: #fff; }
+.ed-mv-frame .bento-slide { position: absolute; left: 0; top: 0; }
+.ed-mv-hit {
+  position: absolute; padding: 0; margin: 0; border: 1px dashed rgb(120 130 150 / 0.55); background: transparent;
+  border-radius: 2px; cursor: pointer; transform-origin: center;
+}
+.ed-mv-hit:hover { border: 2px solid #5b8def; background: rgb(91 141 239 / 0.12); }
+.ed-mv-hit.paired { border: 2px dotted #f0a23c; }
+.ed-mv-hit.picked { border: 2px solid #5b8def; background: rgb(91 141 239 / 0.22); box-shadow: 0 0 0 3px rgb(91 141 239 / 0.35); }
+.ed-mv-trans { min-height: 22px; color: #aab3c2; }
+.ed-mv-trans.warn { color: #f0c27a; }
+.ed-mv-morphon { margin-left: 6px; padding: 2px 10px; border-radius: 99px; border: 1px solid #f0a23c; background: transparent; color: #f0c27a; cursor: pointer; font: inherit; }
+.ed-mv-morphon:hover { background: rgb(240 162 60 / 0.16); }
+.ed-mv-lines { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.ed-mv-halo { fill: none; stroke: rgb(20 22 28 / 0.8); stroke-width: 4.5; stroke-dasharray: 2 5; stroke-linecap: round; }
+.ed-mv-pair { fill: none; stroke: #f0a23c; stroke-width: 2; stroke-dasharray: 2 5; stroke-linecap: round; }
+.ed-mv-out { fill: none; stroke: #8f9bb0; stroke-width: 2; stroke-dasharray: 2 5; stroke-linecap: round; opacity: 0.8; }
+.ed-mv-cut { pointer-events: all; cursor: pointer; }
+.ed-mv-cut circle { fill: #1d222c; stroke: #f0a23c; stroke-width: 1.5; }
+.ed-mv-cut path { stroke: #f0c27a; stroke-width: 1.6; stroke-linecap: round; }
+.ed-mv-cut:hover circle { fill: #f0a23c; }
+.ed-mv-cut:hover path { stroke: #1d222c; }
+.ed-mv-foot { padding: 8px 14px 12px; color: #aab3c2; border-top: 1px solid rgb(255 255 255 / 0.08); }
+.ed-mv-empty { padding: 40px; text-align: center; color: #aab3c2; }
+
+/* format pane: "only the sections of this ribbon tab" bar (panels.ts applyAccordion) */
+.ed-focusbar { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; padding: 6px 8px; border-radius: 8px; background: var(--chrome-2); font-size: 12px; color: var(--ink-2, inherit); }
+.ed-focusbar span { flex: 1; min-width: 0; }
+.ed-focusbar button { flex: none; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); background: var(--field); color: inherit; font: inherit; cursor: pointer; }
+.ed-focusbar button:hover { border-color: var(--accent); }

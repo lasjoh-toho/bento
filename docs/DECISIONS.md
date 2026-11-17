@@ -1698,3 +1698,23 @@ exists (mod_bento's `bentoconvert.js`) is not MIT, and a PPTX writer is a large
 dependency for every saved shell. The host owns both; the ribbon only shows
 "Export as PowerPoint" / "Import PowerPoint" when the host declares them. This
 does not settle whether Bento should one day ship a first-party PPTX writer.
+
+## 2026-11-17 — Format pane families, morph view, long-read back button
+
+Asked by the Collegare host's teacher (Jo):
+
+- **Format pane sorted by families.** `PropsPanel.RANK` gives each section a
+  family (element & position · content · look · motion · show · notes ·
+  files); `applyAccordion` sorts stably by it, unknown sections join the
+  family before them. Motion is one block: Übergang (the slide transition,
+  moved out of "Slide") → Morph → Animationsschritte (now always built) →
+  Presenting. With the ribbon on, sections of other tabs can be HIDDEN, not
+  just folded (`bento-panel-focus`, default on, a bar on top shows how many
+  are hidden and toggles "Alle zeigen").
+- **Morph view (`editor/morphview.ts`).** Two neighbouring slides side by
+  side, morph pairs joined by dotted lines; pairs with the slide before/after
+  leave the view on that side. Click left, then right, to pair; × on a line
+  unpairs. Writes only `morphId` (never `id`) and carries chains onward
+  (`rekeyForward`), so re-pairing B with A keeps B's pair with C.
+- **Long-read back button at top centre.** It sat under `.bento-fs-btn`
+  (top right, higher z-index) in every host, mod_bento included.

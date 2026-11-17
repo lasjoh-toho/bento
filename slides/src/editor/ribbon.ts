@@ -18,6 +18,7 @@ import type { Store } from '../store'
 import { FONT_CHOICES, firstFamily } from '../fonts'
 import { ICONS } from '../icons'
 import { t } from '../i18n'
+import { openMorphView } from './morphview'
 import { lsGet, lsSet } from '../../../kernel/src/storage.ts'
 import { assetEntries, openMediaLightbox } from './medialightbox'
 import { colibre } from './colibre'
@@ -694,7 +695,7 @@ export class Ribbon {
       this.host.toast(t('Transition applied to all slides'), 'success')
     })
     const m = this.group('Morph')
-    this.big(m, '✦', 'Morph pairing', 'Elements with the same id morph between slides — duplicate a slide and move things, or pair elements in the format pane', () => this.host.togglePanel('right'))
+    this.big(m, '✦', 'Morph-Ansicht', 'Diese und die nächste Folie nebeneinander: was ineinander morpht, ist mit gepunkteten Linien verbunden – Paare per Klick links und rechts', () => openMorphView(this.store))
   }
 
   // --- Animations ----------------------------------------------------------------
