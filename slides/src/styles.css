@@ -2727,10 +2727,14 @@ body.ed-col-resizing { cursor: col-resize; user-select: none; }
 .bento-longread-fnrule { margin: 2em 0 1em; border: none; border-top: 1px solid #ece9df; }
 .bento-longread-fnlist { padding-inline-start: 22px; font-size: 0.85em; color: #55524a; }
 .bento-longread-fnlist li { margin-bottom: 0.4em; }
+/* top CENTRE, not the top-right corner: that corner belongs to the
+   fullscreen button (.bento-fs-btn, z-index above this overlay), which
+   sat right on top of this back button (Jo, 17.11.2026). */
 .bento-longread-close {
   position: fixed;
   top: 16px;
-  right: 16px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 91;
   width: 40px;
   height: 40px;
