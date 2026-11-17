@@ -44,6 +44,11 @@ export interface MoodleConfig {
    *  downloading all of them just to start the first one. Absent or
    *  empty means "just this one document", same as before this existed. */
   playlist?: { url: string }[]
+  /** mod_bento's image_proxy.php (with courseid), present only when the
+   *  admin switched the proxy on and the viewer has mod/bento:usebentoproxy —
+   *  images dragged or pasted from other tabs are fetched through it when
+   *  their site's CORS headers would block a direct read (editor/webimage.ts). */
+  imageproxy?: string
 }
 
 function readMoodleConfig(): MoodleConfig | null {

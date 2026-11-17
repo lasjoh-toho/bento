@@ -907,4 +907,11 @@ export const ja: Catalog = {
   "WordArt — decorative text: curved, 3D, glowing; double-click it to edit again": "ワードアート — 装飾文字：曲線、3D、光彩。ダブルクリックで再編集",
   "Shape designer — shapes with text, speech bubbles, stars; double-click to edit again": "図形デザイナー — テキスト付き図形、吹き出し、星。ダブルクリックで再編集",
   "Formula — LaTeX formula editor; select a formula to edit it": "数式 — LaTeX 数式エディター。選択した数式を編集",
+  // images from other tabs (editor/webimage.ts)
+  "Images from the web are not allowed here.": "ここではウェブ上の画像は使用できません。",
+  "Fetching {n} images…": "{n} 枚の画像を取得しています…",
+  "This site does not let its images be copied. Save the image and drop the file instead.": "このサイトは画像のコピーを許可していません。画像を保存してファイルをドロップしてください。",
+  "{n} of {all} images inserted — the others could not be fetched.": "{all} 枚中 {n} 枚の画像を挿入しました — 残りは取得できませんでした。",
+  "Image inserted with its source": "出典付きで画像を挿入しました",
+  "{n} images inserted with their sources": "出典付きで {n} 枚の画像を挿入しました",
 }

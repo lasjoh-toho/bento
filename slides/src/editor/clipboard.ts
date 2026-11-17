@@ -12,6 +12,7 @@
 import type { BentoDoc, Slide, SlideElement, TextElement } from '../model'
 import { uid, downscaleImageDataUrl } from '../model'
 import { imageDownscaleParams } from './moodle'
+import { fetchWebImage } from './webimage'
 import { firstFamily } from '../fonts'
 
 export interface ClipPayload {
@@ -117,6 +118,7 @@ export interface HtmlPasteBlock {
   html?: string // sanitized inner HTML, text blocks only
   src?: string // a usable image src (data: URI, or a fetched-and-inlined one), image blocks only
   alt?: string // the source <img alt>, image blocks only
+  from?: string // the image's own http(s) address, when it came from the web (citation)
 }
 
 const HTML_PASTE_BLOCK_TAGS = new Set(['p', 'div', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'img'])
@@ -161,21 +163,10 @@ async function resolveImageSrc(src: string): Promise<string | null> {
   const { maxDim, quality } = imageDownscaleParams()
   if (src.startsWith('data:')) return downscaleImageDataUrl(src, maxDim, quality)
   if (!/^https?:\/\//.test(src)) return null
-  try {
-    const res = await fetch(src, { mode: 'cors' })
-    if (!res.ok) return null
-    const blob = await res.blob()
-    if (!blob.type.startsWith('image/')) return null
-    const dataUrl = await new Promise<string | null>((resolve) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(String(reader.result))
-      reader.onerror = () => resolve(null)
-      reader.readAsDataURL(blob)
-    })
-    return dataUrl ? downscaleImageDataUrl(dataUrl, maxDim, quality) : null
-  } catch {
-    return null // most cross-origin images without permissive CORS headers land here — silently skipped rather than left broken
-  }
+  // directly where CORS allows, else through the host's/Moodle's image proxy
+  // (webimage.ts); without a proxy, blocked images are skipped rather than left broken
+  const dataUrl = await fetchWebImage(src)
+  return dataUrl ? downscaleImageDataUrl(dataUrl, maxDim, quality) : null
 }
 
 /** Parses a paste event's own text/html into a flat list of usable blocks —
@@ -195,7 +186,7 @@ export async function parseHtmlPaste(html: string): Promise<HtmlPasteBlock[]> {
       if (!src) continue
       const resolved = await resolveImageSrc(src)
       const alt = (node.getAttribute('alt') ?? '').trim()
-      if (resolved) blocks.push({ kind: 'image', src: resolved, ...(alt ? { alt } : {}) })
+      if (resolved) blocks.push({ kind: 'image', src: resolved, ...(alt ? { alt } : {}), ...(/^https?:\/\//.test(src) ? { from: src } : {}) })
       continue
     }
     const inner = sanitizeInlineHtml(node)

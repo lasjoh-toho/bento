@@ -907,4 +907,11 @@ export const zhHans: Catalog = {
   "WordArt — decorative text: curved, 3D, glowing; double-click it to edit again": "艺术字 — 装饰文字：弯曲、3D、发光；双击可再次编辑",
   "Shape designer — shapes with text, speech bubbles, stars; double-click to edit again": "形状设计器 — 带文字的形状、气泡、星形；双击可再次编辑",
   "Formula — LaTeX formula editor; select a formula to edit it": "公式 — LaTeX 公式编辑器；选中公式即可编辑",
+  // images from other tabs (editor/webimage.ts)
+  "Images from the web are not allowed here.": "此处不允许使用网络图片。",
+  "Fetching {n} images…": "正在获取 {n} 张图片…",
+  "This site does not let its images be copied. Save the image and drop the file instead.": "此网站不允许复制其图片。请保存图片后拖入文件。",
+  "{n} of {all} images inserted — the others could not be fetched.": "已插入 {all} 张中的 {n} 张图片 — 其余无法获取。",
+  "Image inserted with its source": "已插入图片及其来源",
+  "{n} images inserted with their sources": "已插入 {n} 张图片及其来源",
 }

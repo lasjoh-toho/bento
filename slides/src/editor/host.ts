@@ -61,6 +61,14 @@ export interface HostConfig {
   inserts?: HostInsertKind[]
   /** the host's header carries undo/redo and the history list — Bento's chrome leaves them out */
   undoInHost?: boolean
+  /** images from other tabs: the host fetches them server-side (no CORS) — URL prefix, the image URL is appended encoded */
+  imageProxy?: string
+  /** author/licence/page for a web image — URL prefix answering {credit, license, title, origin} (see webimage.ts) */
+  imageInfo?: string
+  /** false keeps web images out (e.g. students until a teacher allows it); images from the host's own origin still arrive */
+  webImages?: boolean
+  /** toast shown when a web image is refused (webImages false) */
+  webImagesHint?: string
 }
 
 export type HostInsertKind = 'wordart' | 'shape' | 'formula'
