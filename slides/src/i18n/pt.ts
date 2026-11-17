@@ -905,4 +905,11 @@ export const pt: Catalog = {
   "WordArt — decorative text: curved, 3D, glowing; double-click it to edit again": "WordArt — texto decorativo: curvo, 3D, brilhante; clique duplo para editar",
   "Shape designer — shapes with text, speech bubbles, stars; double-click to edit again": "Designer de formas — formas com texto, balões, estrelas; clique duplo para editar",
   "Formula — LaTeX formula editor; select a formula to edit it": "Equação — editor LaTeX; selecione uma equação para editá-la",
+  // images from other tabs (editor/webimage.ts)
+  "Images from the web are not allowed here.": "Imagens da web não são permitidas aqui.",
+  "Fetching {n} images…": "Obtendo {n} imagens…",
+  "This site does not let its images be copied. Save the image and drop the file instead.": "Este site não permite copiar suas imagens. Salve a imagem e solte o arquivo.",
+  "{n} of {all} images inserted — the others could not be fetched.": "{n} de {all} imagens inseridas — as outras não puderam ser obtidas.",
+  "Image inserted with its source": "Imagem inserida com a fonte",
+  "{n} images inserted with their sources": "{n} imagens inseridas com as fontes",
 }

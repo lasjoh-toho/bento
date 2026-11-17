@@ -26,6 +26,7 @@ import { adoptFileHandle, canWriteInPlace, currentFileName, downloadFile, fileBa
 import { moodleConfig, saveToMoodle, imageDownscaleParams } from './moodle'
 import { HostConflictError, hostConfig, onHostMessage, postToHost, saveToHost, type HostInsertKind } from './host'
 import { colibre } from './colibre'
+import { WEB_IMAGE_MAX, fetchWebImage, isOwnOrigin, lookUpCitation, mayHoldWebImages, webImagesAllowed, webImagesFrom, type WebImage } from './webimage'
 import { Ribbon, ribbonPreferred, setRibbonPreferred, type RibbonHost } from './ribbon'
 import { playlistConfig } from './playlist'
 import { addVersion, clearRecovery, clearVersions, docContentKey, getRecovery, listVersions, pruneOld, putRecovery, type Snapshot } from '../autosave'
@@ -2726,7 +2727,7 @@ export class Editor {
     // A dropped .bento.html OPENS as a deck (and adopts a writable handle);
     // anything else falls through to the existing image/media drop behaviour.
     document.addEventListener('dragover', (ev: DragEvent) => {
-      if ([...(ev.dataTransfer?.items ?? [])].some((i) => i.kind === 'file')) ev.preventDefault()
+      if ([...(ev.dataTransfer?.items ?? [])].some((i) => i.kind === 'file') || (!this.presenting && mayHoldWebImages(ev.dataTransfer))) ev.preventDefault()
     })
     document.addEventListener('drop', (ev: DragEvent) => { void this.handleDrop(ev) })
 
@@ -2779,7 +2780,11 @@ export class Editor {
       const html = dt.getData('text/html')
       if (html && html.trim()) {
         ev.preventDefault()
-        parseHtmlPaste(html).then((blocks) => {
+        parseHtmlPaste(html).then((all) => {
+          // web images a host keeps out (students until a teacher allows it) stay out of a paste too
+          const refused = all.filter((b) => b.kind === 'image' && b.from && !webImagesAllowed({ url: b.from, alt: '', page: null }))
+          if (refused.length) this.toast(hostConfig?.webImagesHint || t('Images from the web are not allowed here.'), 'error')
+          const blocks = all.filter((b) => !refused.includes(b))
           if (blocks.length < 2 && !blocks.some((b) => b.kind === 'image')) return // nothing worth the async detour — falls through to plain text below
           const { width } = this.store.doc.size
           const added: SlideElement[] = []
@@ -2788,7 +2793,7 @@ export class Editor {
             for (const block of blocks) {
               if (block.kind === 'image' && block.src) {
                 const w = Math.round(width * 0.5), h = Math.round(w * 0.6)
-                const el = defaultImage(internAsset(this.store.doc, block.src), { x: Math.round((width - w) / 2), y, w, h, fit: 'contain', ...(block.alt ? { alt: block.alt } : {}) })
+                const el = defaultImage(internAsset(this.store.doc, block.src), { x: Math.round((width - w) / 2), y, w, h, fit: 'contain', ...(block.alt ? { alt: block.alt } : {}), ...(block.from && !isOwnOrigin(block.from) ? { citation: { sourceUrl: block.from, retrievedAt: new Date().toISOString().slice(0, 10) } } : {}) })
                 this.store.slide.elements.push(el); added.push(el); y += h + 24
               } else if (block.kind === 'text' && block.html) {
                 const w = Math.round(width * 0.6), h = 100
@@ -2905,6 +2910,43 @@ export class Editor {
     this.toast(option
       ? t('Pasted a table ({r}×{c}) with a live chart — edit the table, the chart follows', dims)
       : t('Pasted a table ({r}×{c})', dims))
+  }
+
+  /**
+   * Images dragged from other tabs (editor/webimage.ts): fetched (directly or
+   * through the host's proxy), downscaled like any picked image, placed
+   * cascading from the slide centre, each with a citation — the page it came
+   * from when known (a link around it, or the host's lookup), else its own
+   * address. One toast says what arrived and why the rest did not.
+   */
+  private async insertWebImages(list: WebImage[]) {
+    const ok = list.filter((x) => webImagesAllowed(x)).slice(0, WEB_IMAGE_MAX)
+    if (ok.length < list.length) this.toast(hostConfig?.webImagesHint || t('Images from the web are not allowed here.'), 'error')
+    if (!ok.length) return
+    if (ok.length > 1) this.toast(t('Fetching {n} images…', { n: ok.length }))
+    const { width, height } = this.store.doc.size
+    const { maxDim, quality } = imageDownscaleParams()
+    const box = ok.length > 1 ? { w: 420, h: 315 } : { w: 640, h: 480 }
+    const added: string[] = []
+    let failed = 0
+    for (const img of ok) {
+      let src = img.url ? await fetchWebImage(img.url) : null
+      if (!src && img.file) src = await new Promise<string | null>((res) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => res(null); r.readAsDataURL(img.file!) })
+      if (!src) { failed++; continue }
+      src = await downscaleImageDataUrl(src, maxDim, quality)
+      const nat = await new Promise<{ w: number; h: number }>((res) => { const im = new Image(); im.onload = () => res({ w: im.naturalWidth || 400, h: im.naturalHeight || 300 }); im.onerror = () => res({ w: 400, h: 300 }); im.src = src! })
+      const sc = Math.min(1, box.w / nat.w, box.h / nat.h)
+      const w = Math.round(nat.w * sc), h = Math.round(nat.h * sc)
+      const off = (added.length % 8) * 28
+      const citation = img.url && (img.citation || !isOwnOrigin(img.url)) ? await lookUpCitation(img) : undefined
+      const el = defaultImage(src, { x: Math.round((width - w) / 2) - 98 + off, y: Math.max(0, Math.round((height - h) / 2) - 98 + off), w, h, fit: 'contain', ...(img.alt ? { alt: img.alt } : {}), ...(citation ? { citation } : {}) })
+      this.canvas.insert(el)
+      added.push(el.id)
+    }
+    if (added.length > 1) this.store.select(added)
+    if (failed && !added.length) this.toast(t('This site does not let its images be copied. Save the image and drop the file instead.'), 'error')
+    else if (failed) this.toast(t('{n} of {all} images inserted — the others could not be fetched.', { n: added.length, all: ok.length }), 'error')
+    else this.toast(added.length === 1 ? t('Image inserted with its source') : t('{n} images inserted with their sources', { n: added.length }))
   }
 
   private pasteImageFile(file: File) {
@@ -3208,6 +3250,17 @@ export class Editor {
    *  tab to the dropped file instead of doing anything useful with it. */
   private async handleDrop(ev: DragEvent) {
     if (await this.openDroppedDeck(ev)) return
+    // An image dragged from another tab (or from the host's own sources list):
+    // fetched through the host's proxy when CORS blocks it, cited automatically.
+    const dt = ev.dataTransfer
+    const web = dt && !this.presenting && !this.store.readOnly ? webImagesFrom(dt) : []
+    if (web.length) {
+      ev.preventDefault()
+      const files = [...(dt?.files ?? [])].filter((f) => f.type.startsWith('image/'))
+      if (web.length === 1 && files.length === 1) web[0].file = files[0] // Firefox hands over the bytes too
+      void this.insertWebImages(web)
+      return
+    }
     const file = [...(ev.dataTransfer?.files ?? [])].find((f) => f.type.startsWith('image/'))
     if (file) {
       ev.preventDefault()

@@ -972,4 +972,11 @@ export const de: Catalog = {
   "Videos": "Videos",
   "Element": "Element",
   "Elements": "Elemente",
+  // images from other tabs (editor/webimage.ts)
+  "Images from the web are not allowed here.": "Bilder aus dem Netz sind hier nicht erlaubt.",
+  "Fetching {n} images…": "{n} Bilder werden geholt …",
+  "This site does not let its images be copied. Save the image and drop the file instead.": "Diese Seite gibt ihre Bilder nicht heraus. Speichere das Bild und zieh die Datei herein.",
+  "{n} of {all} images inserted — the others could not be fetched.": "{n} von {all} Bildern eingefügt — die übrigen ließen sich nicht holen.",
+  "Image inserted with its source": "Bild mit Quellenangabe eingefügt",
+  "{n} images inserted with their sources": "{n} Bilder mit Quellenangabe eingefügt",
 }
